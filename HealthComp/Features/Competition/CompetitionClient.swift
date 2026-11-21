@@ -2,8 +2,6 @@ import CompetitionCore
 import Dependencies
 import Foundation
 
-// MARK: - Source-agnostic presentation compatibility
-
 typealias CompetitionAcceptedPresentation = LocalCompetitionAcceptedPresentation
 typealias CompetitionLifecyclePresentation = LocalCompetitionLifecyclePresentation
 typealias CompetitionOwnerAvailability = LocalCompetitionOwnerAvailability
@@ -40,11 +38,6 @@ struct CompetitionInviteClaimOutcome: Equatable, Sendable {
     let expectedPublicationRevision: UInt64
 }
 
-/// The source-neutral dependency consumed by competition features.
-///
-/// Task 6 intentionally preserves the existing local endpoint surface and
-/// presentation contract. Remote commands and transport arrive only once they
-/// have executable behavior in later tasks.
 struct CompetitionClient: Sendable {
     var start: @Sendable () -> AsyncStream<CompetitionPublication>
     var updates: @Sendable () -> AsyncStream<CompetitionPublication>
@@ -83,17 +76,12 @@ struct CompetitionClient: Sendable {
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInviteClaimOutcome
     var resolveInviteRecipient: @Sendable (UUID) async throws -> AuthenticatedProfile
-    /// A pending challenge's link, when this iPhone can get it back.
     var restoreInvite: @Sendable (
         CompetitionID
     ) async throws -> CompetitionInviteCreationOutcome
-    /// Withdraws your pending challenge, or cancels a match before Day 1.
     var cancel: @Sendable (CompetitionID) async -> CompetitionPublication
-    /// Declines the pending challenge and blocks its sender.
     var block: @Sendable (CompetitionID) async -> CompetitionPublication
-    /// The people you blocked, newest first.
     var loadBlockedProfiles: @Sendable () async throws -> [AuthenticatedProfile]
-    /// Takes a profile id.
     var unblock: @Sendable (UUID) async throws -> Void
     var getFriendSettings: @Sendable () async throws -> FriendSettings
     var setUsername: @Sendable (String) async throws -> FriendSettings
@@ -105,10 +93,8 @@ struct CompetitionClient: Sendable {
     var listFriends: @Sendable () async throws -> FriendsList
     var searchPeople: @Sendable (String) async throws -> [FriendPerson]
     var sendFriendRequest: @Sendable (UUID) async throws -> FriendRelationship
-    /// The profile, then whether you accepted.
     var respondToFriendRequest: @Sendable (UUID, Bool) async throws -> FriendRelationship
     var removeFriend: @Sendable (UUID) async throws -> FriendRelationship
-    /// Blocks a person by profile id; answers with their blocked-list row.
     var blockProfile: @Sendable (UUID) async throws -> AuthenticatedProfile
     var reportProfile: @Sendable (UUID) async throws -> Void
     var previewInvite: @Sendable (
@@ -116,50 +102,32 @@ struct CompetitionClient: Sendable {
     ) async throws -> CompetitionInvitePreview
     var loadChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode
     var resetChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode
-    /// The link owner's display name.
     var resolveChallengeLink: @Sendable (
         CompetitionChallengeLinkCode
     ) async throws -> String
-    /// Asks the other person to open HealthComp; returns when the server accepted it.
     var nudge: @Sendable (CompetitionID) async throws -> Date
-    /// Sets (or, with nil, removes) your reaction and returns the republished
-    /// dashboard.
     var setReaction: @Sendable (
         CompetitionID,
         CompetitionReactionTarget,
         CompetitionReactionKind?
     ) async throws -> CompetitionPublication
-    /// Starts a practice match on this iPhone; a failure is
-    /// `commandRejected(PracticeMatch.startCommandID)`.
     var startPractice: @Sendable (PracticeStartTarget) async -> CompetitionPublication
 
     func startPractice(_ difficulty: OpponentDifficulty) async -> CompetitionPublication {
         await startPractice(.bot(difficulty))
     }
-    /// The current photo of each of these people (yours included) that you
-    /// may see; anyone missing shows initials. Drops their stale cached files.
     var loadProfilePhotos: @Sendable ([UUID]) async throws -> [ProfilePhotoReference]
-    /// Your own photo and whether a reviewer removed the last one.
     var loadOwnProfilePhoto: @Sendable () async throws -> OwnProfilePhoto
-    /// The JPEG from this account's disk cache, else downloaded and cached.
     var profilePhotoData: @Sendable (ProfilePhotoReference) async throws -> Data
-    /// Any cached photo of this person, without the network.
     var cachedProfilePhotoData: @Sendable (UUID) async -> (data: Data, version: UUID)?
-    /// Uploads a `ProfilePhotoImage.jpeg(from:crop:)` result as your photo.
     var setProfilePhoto: @Sendable (Data) async throws -> ProfilePhotoReference
-    /// Initials again, and the stored objects are deleted.
     var removeProfilePhoto: @Sendable () async throws -> Void
-    /// Reports this person's photo; it is hidden for you from then on.
     var reportProfilePhoto: @Sendable (UUID) async throws -> Void
-    /// Whether you reported this person's photo on this iPhone.
     var isProfilePhotoReported: @Sendable (UUID) async -> Bool
     var groupMatchCommand: @Sendable (GroupMatchCommand) async throws -> CompetitionPublication
-    /// Sleep beta: turns sleep on for a challenge you just created and
-    /// returns the republished dashboard.
     var enableSleep: @Sendable (CompetitionID) async throws -> CompetitionPublication = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Sleep beta: Health's sleep sheet (its own permission).
     var requestSleepAuthorization: @Sendable () async throws -> Void = {}
 
     init(
@@ -402,8 +370,6 @@ struct CompetitionClient: Sendable {
     }
 }
 
-// Existing local-focused helpers and tests stay source-compatible while the
-// feature dependency moves to the source-neutral name.
 typealias LocalCompetitionClient = CompetitionClient
 
 extension DependencyValues {

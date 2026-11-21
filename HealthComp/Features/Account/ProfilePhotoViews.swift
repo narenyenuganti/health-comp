@@ -1,18 +1,10 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Photos on screen
-
-/// A decoded photo you may see. A new version is a new value, so it
-/// crossfades over the old one.
 struct ProfilePhoto: Equatable, @unchecked Sendable {
-    /// The server's version of this photo. A cached photo carries the
-    /// version its cache file was saved under, so the server's list can
-    /// confirm it without a second read. The app never passes nil.
     let version: UUID?
     let image: UIImage
 
-    /// Decodes ahead of display; call it off the main actor.
     init?(jpeg: Data, version: UUID?) {
         guard let image = UIImage(data: jpeg)?.preparingForDisplay() else { return nil }
         self.version = version
@@ -24,9 +16,6 @@ struct ProfilePhoto: Equatable, @unchecked Sendable {
     }
 }
 
-/// Every photo the signed-in person may see, by profile id. Anyone missing
-/// shows their initial. Set once near the root; the default is empty, so a
-/// host without it (widgets, previews) draws initials.
 struct ProfilePhotoImages: Equatable, Sendable {
     var ownID: UUID?
     var photos: [UUID: ProfilePhoto] = [:]
@@ -50,27 +39,17 @@ extension EnvironmentValues {
 }
 
 extension LocalCompetitionPresentation {
-    /// The other person's account, for their photo. Nil for practice,
-    /// simulated and pending opponents, who never have one.
     var opponentProfileID: UUID? {
         RemoteCompetitionOpponentIdentity.profileID(opponentIdentity)
     }
 }
 
-/// A person's photo in a circle, over the initial that shows until it lands
-/// and whenever there is none. `isYou` uses your own photo and adds the
-/// amber ring. A photo that arrives after first paint fades in; one already
-/// in memory is there on the first frame. Reduce Motion shows it at once.
-/// Always hidden from VoiceOver: the name next to it says who it is.
-/// A bot is an ink rounded square and never has a photo or the amber ring.
 struct PersonAvatar: View {
     let name: String
-    /// Their profile id; ignored when `isYou`.
     var photo: UUID? = nil
     let size: CGFloat
     var isYou = false
     var isBot = false
-    /// The initial's font at this call site.
     var initialFont: Font = .headline.weight(.heavy).width(.condensed)
 
     @Environment(\.profilePhotos) private var photos
@@ -81,21 +60,17 @@ struct PersonAvatar: View {
         ZStack {
             Text(name.first.map { String($0).uppercased() } ?? "")
                 .font(initialFont)
-                // A text-style initial grows with Dynamic Type; shrink it
-                // to stay inside the circle instead of clipping.
                 .lineLimit(1)
                 .minimumScaleFactor(0.1)
                 .padding(size * 0.15)
                 .foregroundStyle(isBot ? Theme.onInk : isYou ? Theme.you : Theme.ink)
             if let shown {
                 Image(uiImage: shown.image)
-                    // A toolbar would tint it otherwise.
                     .renderingMode(.original)
                     .resizable()
                     .scaledToFill()
                     .frame(width: size, height: size)
                     .overlay {
-                        // Amber is always you; theirs keeps a pale photo's edge.
                         Circle().strokeBorder(
                             isYou ? Theme.youFill : Theme.ink.opacity(0.1),
                             lineWidth: isYou ? 2 : 1
@@ -113,18 +88,12 @@ struct PersonAvatar: View {
     }
 }
 
-// MARK: - Move and Scale
-
-/// Move and Scale's math in points. `offset` is the photo's centre from the
-/// circle's; `zoom` 1 is aspect fill.
 struct ProfilePhotoCropGeometry: Equatable {
     static let zoomRange: ClosedRange<CGFloat> = 1...4
 
-    /// The upright photo, in pixels.
     let imageSize: CGSize
     let diameter: CGFloat
 
-    /// Points per pixel at 1×: the short side fills the circle.
     var fillScale: CGFloat {
         diameter / max(min(imageSize.width, imageSize.height), 1)
     }
@@ -133,7 +102,6 @@ struct ProfilePhotoCropGeometry: Equatable {
         CGSize(width: imageSize.width * fillScale * zoom, height: imageSize.height * fillScale * zoom)
     }
 
-    /// The nearest offset where the photo still covers the circle.
     func clamped(_ offset: CGSize, zoom: CGFloat) -> CGSize {
         let size = displaySize(zoom: zoom)
         let x = max((size.width - diameter) / 2, 0)
@@ -141,8 +109,6 @@ struct ProfilePhotoCropGeometry: Equatable {
         return CGSize(width: min(max(offset.width, -x), x), height: min(max(offset.height, -y), y))
     }
 
-    /// The offset after zooming `from` → `to`, keeping the photo point at
-    /// `anchor` (from the circle's centre) still. Not clamped.
     func zooming(_ offset: CGSize, from: CGFloat, to: CGFloat, around anchor: CGPoint = .zero) -> CGSize {
         let ratio = to / from
         return CGSize(
@@ -151,8 +117,6 @@ struct ProfilePhotoCropGeometry: Equatable {
         )
     }
 
-    /// The square under the circle, in the photo's pixels, origin top left:
-    /// what `ProfilePhotoImage.jpeg(from:crop:)` takes.
     func cropRect(offset: CGSize, zoom: CGFloat) -> CGRect {
         let scale = fillScale * zoom
         let side = diameter / scale
@@ -164,14 +128,11 @@ struct ProfilePhotoCropGeometry: Equatable {
         )
     }
 
-    /// Past a limit the photo follows at a third of the finger.
     static func rubberBand(_ value: CGFloat, to limit: CGFloat) -> CGFloat {
         limit + (value - limit) / 3
     }
 }
 
-/// Black and full screen after the picker closes: pinch and drag inside the
-/// circle, then Save. It stays up until the upload lands.
 struct ProfilePhotoCropView: View {
     let load: @Sendable () async throws -> Data
     let isSaving: Bool
@@ -185,16 +146,13 @@ struct ProfilePhotoCropView: View {
     @State private var encodeFailed = false
     @State private var zoom: CGFloat = 1
     @State private var offset: CGSize = .zero
-    /// Bumped on every release, so the settle runs through `moving`.
     @State private var releases = 0
-    /// The circle as laid out, for Save.
     @State private var diameter: CGFloat = 1
     @GestureState private var pinch: CGFloat = 1
     @GestureState private var pan: CGSize = .zero
 
     var body: some View {
         NavigationStack {
-            // The text takes its height first; the circle fits what is left.
             GeometryReader { proxy in
                 let side = max(min(proxy.size.width, proxy.size.height) - 32, 1)
                 circle(side)
@@ -212,7 +170,6 @@ struct ProfilePhotoCropView: View {
                             .transition(Motion.appear)
                             .accessibilityIdentifier("account.photo.crop.error")
                     }
-                    // Who can see it: private.can_view_profile_photo.
                     Text("Friends and people you play can see it, and anyone who finds you in search.")
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondary)
@@ -245,7 +202,6 @@ struct ProfilePhotoCropView: View {
                 }
             }
         }
-        // Always on black, like the system's own crop.
         .environment(\.colorScheme, .dark)
         .tint(Theme.ink)
         .task { await loadImage() }
@@ -300,7 +256,6 @@ struct ProfilePhotoCropView: View {
                 }
                 .padding(32)
             } else {
-                // iCloud originals can take a while.
                 ProgressView("Loading photo…")
                     .foregroundStyle(Theme.secondary)
                     .tint(Theme.ink)
@@ -345,14 +300,12 @@ struct ProfilePhotoCropView: View {
                 let next = min(max(zoom * value.magnification, range.lowerBound), range.upperBound)
                 offset = geometry.zooming(offset, from: zoom, to: next)
                 zoom = next
-                // A drag still running settles when it lets go.
                 if pan == .zero { offset = geometry.clamped(offset, zoom: zoom) }
                 releases += 1
             }
         let drag = DragGesture()
             .updating($pan) { value, state, _ in state = value.translation }
             .onEnded { value in
-                // While a pinch runs, the pan is in its zoomed points.
                 offset.width += value.translation.width / pinch
                 offset.height += value.translation.height / pinch
                 if pinch == 1 { offset = geometry.clamped(offset, zoom: zoom) }
@@ -409,13 +362,10 @@ struct ProfilePhotoCropView: View {
     }
 }
 
-/// Carries a decoded photo off the decoding task. CGImage is immutable.
 private struct DecodedPhoto: @unchecked Sendable {
     let image: CGImage
 }
 
-/// Everything but the circle, for an even-odd fill. Reaches far past its
-/// frame, so the photo dims outside the circle up to the screen's edges.
 private struct ProfilePhotoCropScrim: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path(rect.insetBy(dx: -2_000, dy: -2_000))

@@ -40,7 +40,6 @@ final class RemoteScoreLedgerTests: XCTestCase {
         let decoded = try JSONDecoder().decode(RemoteAcceptedScoreRow.self, from: JSONEncoder().encode(rings))
         XCTAssertEqual(decoded.ringBasisPoints, [10_000, 5_000, 2_500])
 
-        // A row stored before rings were kept replays as the same row.
         var ledger = try fixtureLedger()
         let stored = try row(ordinal: 1, points: 17_500, revision: 1, sequence: 2)
         XCTAssertTrue(try ledger.accept(stored))

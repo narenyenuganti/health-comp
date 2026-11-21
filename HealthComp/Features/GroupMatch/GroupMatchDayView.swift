@@ -2,17 +2,12 @@ import CompetitionCore
 import ComposableArchitecture
 import SwiftUI
 
-/// One day for everyone: each person's points and rings, best first, and a
-/// reaction for anyone else's day. Doubles groups the same panels by team.
-/// Bots show points only.
 struct GroupMatchDayView: View {
     let match: GroupMatchPresentation
     let ordinal: Int
     let store: StoreOf<GroupMatchFeature>
 
     @State private var reactingTo: UUID?
-    /// What you sent from here, shown until the match catches up; nil
-    /// while removing. The match's own reactions are the rest.
     @State private var sent: [UUID: CompetitionReactionKind?] = [:]
     @ScaledMetric(relativeTo: .title) private var pointsSize: CGFloat = 28
     @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 32
@@ -58,7 +53,6 @@ struct GroupMatchDayView: View {
         return winners.isEmpty ? "Not final yet" : "Final"
     }
 
-    /// Day reactions close when the result lands, as in a duel.
     private var canReact: Bool {
         switch match.lifecycle {
         case .active, .endsToday, .tallying: match.seats.contains { canReact(to: $0) }
@@ -71,7 +65,6 @@ struct GroupMatchDayView: View {
             && match.dayCentipoints(seat, ordinal: ordinal) != nil
     }
 
-    /// A player, or in doubles a team header and its two players.
     @ViewBuilder
     private func section(_ standing: MatchStanding) -> some View {
         let isTeam = match.format == .doubles
@@ -89,7 +82,6 @@ struct GroupMatchDayView: View {
         let name = match.name(of: standing.subject)
         let points = Double(standing.centipoints) / 100
         let won = winners.contains(standing.subject)
-        // The chip goes under the name, and at accessibility sizes the points too.
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))
         return layout {
@@ -172,13 +164,10 @@ struct GroupMatchDayView: View {
             .fixedSize()
         return VStack(alignment: .leading, spacing: 8) {
             if isLarge {
-                // Stacked so the name keeps the line: avatar and name, then
-                // the tags and chip, then the points.
                 HStack(spacing: 12) {
                     PersonAvatar(name: seat.name, photo: seat.profileID, size: min(avatarSize, 56), isYou: isYou, isBot: seat.isBot)
                     name
                 }
-                // Another person opens their profile; the rest of the panel reacts.
                 .modifier(CompetitionProfileTap(route: match.profileRoute(seat)))
                 if seat.isBot { GroupMatchTag("BOT") }
                 if match.hasLeft(seat) { GroupMatchTag("LEFT") }
@@ -192,7 +181,6 @@ struct GroupMatchDayView: View {
                         if seat.isBot { GroupMatchTag("BOT") }
                         if match.hasLeft(seat) { GroupMatchTag("LEFT") }
                     }
-                    // One line beside the name when it fits; the chip drops under it otherwise.
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 8) {
                             name
@@ -211,7 +199,6 @@ struct GroupMatchDayView: View {
                     pointsText
                 }
             }
-            // Bots have points, never rings.
             if let rings, !seat.isBot {
                 ringRows(rings.centipoints, isYou: isYou)
             }
@@ -235,7 +222,6 @@ struct GroupMatchDayView: View {
         }
     }
 
-    /// Everyone's reactions to this seat's day, yours first.
     private func reactions(on seat: GroupMatchSeat) -> [GroupMatchReaction] {
         let others = match.reactions.filter {
             $0.targetSeatID == seat.id && $0.ordinal == ordinal && $0.authorSeatID != match.viewerSeatID
@@ -244,7 +230,6 @@ struct GroupMatchDayView: View {
         return [GroupMatchReaction(authorSeatID: match.viewerSeatID, targetSeatID: seat.id, ordinal: ordinal, kind: own)] + others
     }
 
-    /// What you sent from here unless it failed, otherwise what the match has.
     private func ownReaction(_ seat: GroupMatchSeat) -> CompetitionReactionKind? {
         if !isFailed(seat), let local = sent[seat.id] { return local }
         return match.reactions.first {
@@ -273,7 +258,6 @@ struct GroupMatchDayView: View {
         let rings = Array(["Move", "Exercise", "Stand"].enumerated())
         return Group {
             if dynamicTypeSize.isAccessibilitySize {
-                // Label and value on one line, never broken; the bar under them.
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(rings, id: \.offset) { index, title in
                         let percent = Self.percent(centipoints[index])
@@ -323,7 +307,6 @@ struct GroupMatchDayView: View {
             }
     }
 
-    /// A ring's points are its percent: 1 point per 1%.
     private static func percent(_ centipoints: Int) -> Int { (centipoints + 50) / 100 }
 
     private func playerLabel(_ seat: GroupMatchSeat, won: Bool) -> String {
@@ -341,7 +324,6 @@ struct GroupMatchDayView: View {
     }
 
     private func picker(_ seat: GroupMatchSeat) -> some View {
-        // A failed send isn't selected, so tapping it again retries it.
         let failed = isFailed(seat)
         let selection = failed ? nil : ownReaction(seat)
         return CompetitionReactionPicker(

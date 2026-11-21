@@ -6,8 +6,6 @@ const sql = postgres(databaseURL, { max: 24 });
 const claims = (id: string, role = "authenticated") =>
   JSON.stringify({ sub: id, role });
 
-// A losing call may fail only with a raised domain error (P0001); a deadlock
-// (40P01), lock timeout or other exception is a regression the end state hides.
 function assertOnlyDomainErrors(results: PromiseSettledResult<unknown>[]) {
   for (const result of results) {
     if (result.status === "rejected") {

@@ -59,8 +59,6 @@ export async function deriveInviteTokenV1(
 
 const challengeLinkCodePattern = /^[A-Za-z0-9_-]{22}$/;
 
-// Exactly one recipient: an account id (rematches and 1.0.2's body), or a
-// challenge link's code, which the database checks is still current.
 type Recipient =
   | { recipientProfileId: string }
   | { challengeLinkCode: string };
@@ -96,7 +94,6 @@ function parseBody(value: unknown): {
     null;
   let recipient: Recipient;
   if (body.challengeLinkCode !== undefined) {
-    // A rematch is between people who already played, so never by link.
     if (
       body.recipientProfileId !== undefined || rematchParentId !== null ||
       typeof body.challengeLinkCode !== "string" ||
@@ -199,7 +196,6 @@ export async function createCompetitionInviteHandler(
         "An invitation to this account is already pending",
       );
     }
-    // Raised by the database's per-creator and per-pair challenge caps.
     if (error.message === "invite_rate_limited") {
       return errorResponse(
         429,

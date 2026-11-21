@@ -1,17 +1,12 @@
 import CompetitionCore
 import SwiftUI
 
-/// Group matches in History, below the duel record and apart from it: finishes
-/// for free-for-all, wins and losses per partner for doubles, then each week.
-/// Nothing here touches a belt or a head-to-head record. Empty until a group
-/// match has the server's result.
 struct GroupMatchRecord: View {
     let matches: [GroupMatchPresentation]
     var now = Date()
 
     @Environment(\.locale) private var locale
 
-    /// Finished, newest first.
     static func finished(_ matches: [GroupMatchPresentation]) -> [GroupMatchPresentation] {
         matches
             .filter { $0.frozenStandings != nil && $0.viewerRow != nil }
@@ -47,9 +42,6 @@ struct GroupMatchRecord: View {
         }
     }
 
-    // MARK: Record
-
-    /// "1st twice, 2nd once"; "2 firsts of 5", shared firsts included.
     private func freeForAllRow(_ matches: [GroupMatchPresentation]) -> some View {
         let places = matches.compactMap { $0.viewerRow?.place }
         let finishes = Set(places).sorted().map { place in
@@ -72,9 +64,6 @@ struct GroupMatchRecord: View {
         )
     }
 
-    /// Won, lost and tied with each partner of these finished matches, in
-    /// their order (newest first in History): one record per
-    /// person (by profile) or bot (by mode), under the newest name.
     static func partnerRecords(_ matches: [GroupMatchPresentation]) -> [(name: String, record: [Int])] {
         var partners: [GroupMatchSeat.Partner] = []
         var names: [GroupMatchSeat.Partner: String] = [:]
@@ -90,7 +79,6 @@ struct GroupMatchRecord: View {
         return partners.map { (names[$0]!, records[$0]!) }
     }
 
-    /// "2–0 with Priya, 1–1 with Sam"; ties only when there are some.
     private func doublesRow(_ matches: [GroupMatchPresentation]) -> some View {
         let partners = Self.partnerRecords(matches)
         func text(_ record: [Int]) -> String {
@@ -145,9 +133,6 @@ struct GroupMatchRecord: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    // MARK: Weeks
-
-    /// "Four-Way · Nov 2 – 8 · Sam, Priya, Leo · 1st of 4", opening its result.
     private func weekRow(_ match: GroupMatchPresentation) -> some View {
         let others = match.seats.filter { $0.id != match.viewerSeatID }
         let title: String
@@ -169,7 +154,6 @@ struct GroupMatchRecord: View {
             isWin = place == 1
         }
         let detail = [weekText(match), names].compactMap { $0 }.joined(separator: " · ")
-        // The chevron tells these rows from the record rows above, which don't open.
         let chevron = DisclosureChevron()
         return NavigationLink(value: CompetitionHomeRoute.competition(match.id)) {
             ViewThatFits(in: .horizontal) {
@@ -228,7 +212,6 @@ private extension GroupMatchPresentation {
         seats.first { $0.id != viewerSeatID && $0.team == viewer.team }
     }
 
-    /// From the server's places: both teams first is a tie.
     var doublesOutcome: DoublesOutcome {
         guard viewerRow?.place == 1 else { return .lost }
         return standingRows.filter { $0.place == 1 }.count > 1 ? .tied : .won

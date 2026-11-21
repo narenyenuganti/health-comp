@@ -346,7 +346,6 @@ Deno.test("attestation with the extension flag reaches signed nonce validation",
   authData[32] = 0xc0;
   const attestation = await cbor.encodeAsync({ ...decoded, authData });
 
-  // Changing the signed flag must still fail the unchanged certificate nonce.
   assertEquals(
     captureCode(() =>
       verifyAppAttestAttestation({
@@ -707,7 +706,6 @@ Deno.test("published assertion verifies independently of the synthetic signer", 
     () => verifyAppAttestAssertion({ ...input, assertion: tamperedAssertion }),
   );
 
-  // Do not accept the former, synthetic-only convention as a fallback.
   const { privateKey, publicKey } = generateKeyPairSync("ec", {
     namedCurve: "prime256v1",
   });

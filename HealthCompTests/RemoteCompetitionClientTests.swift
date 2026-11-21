@@ -483,8 +483,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
             )
         )
         let probe = LiveActivityProbe(running: [leftover], started: [leftover.matchID])
-        // Discovery fails, so publish can't tell whether the match is gone
-        // and leaves the card: only stop() ends it.
         let client = CompetitionClient.remote(
             remoteAPI: remoteAPI(listCompetitions: { throw CompetitionRemoteFailure.operationFailed }),
             environment: try environment(),
@@ -779,7 +777,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         _ = try await first.createInvite(request)
         await first.stop()
 
-        // A relaunch: a new client on the same profile storage.
         let relaunched = try makeClient()
         try await relaunched.mountAuthenticatedProfile(profile, paths)
         var relaunchedIterator = relaunched.start().makeAsyncIterator()
@@ -846,7 +843,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         let start = Date(timeIntervalSince1970: 1_786_000_000)
 
         await store.save(request, for: old, now: start)
-        // Saving again keeps the first time it was saved.
         await store.save(request, for: old, now: start.addingTimeInterval(3_600))
         let withinWindow = await store.request(for: old, now: start.addingTimeInterval(24.9 * 3_600))
         XCTAssertEqual(withinWindow, request)
@@ -909,7 +905,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
-    /// One real match for the reaction tests, mounted for `profile`.
     private func reactionMatch(
         profile: AuthenticatedProfile,
         root: URL,
@@ -957,7 +952,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
             competitionID: competitionID, target: .day(1), authorProfileID: profile.id,
             kind: .fire, updatedAt: Date(timeIntervalSince1970: 1_786_540_000)
         )
-        // Another match's reaction never lands on this one.
         let elsewhere = CompetitionReactionRecord(
             competitionID: UUID(uuidString: "82000000-0000-4000-8000-0000000000d9")!,
             target: .result, authorProfileID: jordan,
@@ -1081,7 +1075,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
                 mounted.value == first.id ? firstMatch.page : secondMatch.page
             }
         )
-        // Only the first profile's first fetch succeeds.
         api.listReactions = {
             guard calls.next() == 1 else { throw CompetitionRemoteFailure.retryableTransport }
             return [CompetitionReactionRecord(
@@ -1293,9 +1286,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
-    /// A challenge link opened over the Health step: the signed-in session
-    /// answers the preview and Decline, and nothing refreshes (which reads
-    /// Health) or publishes until the competition starts, failures included.
     func testChallengeLinkPreviewAndDeclineBeforeStartDoNotRefresh()
         async throws
     {
@@ -1372,7 +1362,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         )
         let returned = await client.decline(competitionID)
         let rejected = await client.decline(rejectedID)
-        // Cancelled or expired meanwhile: nothing left to decline.
         let lapsed = await client.decline(lapsedID)
 
         XCTAssertEqual(loaded, preview)
@@ -1477,7 +1466,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
                 ownerAttestedStable: ownerAttestedStable
             )
         }
-        // You first, then their days, then their last check.
         XCTAssertEqual(
             attention(ownerMissing: [7], opponentMissing: [6, 7], ownerAttestedStable: false),
             .incomplete(missingOrdinals: [7], unavailableOrdinals: [])
@@ -1488,8 +1476,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
                 .opponentPlanUnavailable
             )
         }
-        // Your stable check locks your window: your missing days can't
-        // change any more, so the wait is theirs.
         XCTAssertEqual(
             attention(ownerMissing: [7], opponentMissing: [6, 7], ownerAttestedStable: true),
             .opponentPlanUnavailable
@@ -1615,7 +1601,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         let challengeID = UUID(uuidString: "81000000-0000-4000-8000-0000000000c1")!
         let calls = ChallengeFetchCounter()
         var api = remoteAPI(listCompetitions: { [] })
-        // Only the first profile's first fetch succeeds.
         api.listChallenges = {
             let call = calls.next()
             guard call == 1 else { throw CompetitionRemoteFailure.retryableTransport }
@@ -2131,8 +2116,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         }
         await fulfillment(of: [cancellationObserved], timeout: 1)
         if !cancellationFlag.value {
-            // Rescue the RED path so a regression fails promptly rather than
-            // leaving an unbounded XCTest process behind.
             await client.stop()
         }
         try await teardownTask.value
@@ -2423,7 +2406,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
             try await mountTask.value
             XCTFail("cancelled bootstrap mount unexpectedly succeeded")
         } catch is CancellationError {
-            // The invalidated mount lease must win over late bootstrap work.
         } catch {
             XCTFail("unexpected cancelled mount error: \(error)")
         }
@@ -2506,7 +2488,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
             try await remountTask.value
             XCTFail("invalidated committed remount unexpectedly succeeded")
         } catch is CancellationError {
-            // The committed source lease must remain terminally recoverable.
         } catch {
             XCTFail("unexpected committed remount error: \(error)")
         }
@@ -2813,7 +2794,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
             )
             XCTFail("terminal teardown succeeded without a durable receipt")
         } catch {
-            // The source callback and mounted receipt client remain retryable.
         }
         let completionAfterFailure = await fixture.source
             .signalCompletionCount("fixture-signal-1")
@@ -3979,8 +3959,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         XCTAssertEqual(nextDay.competitions, [])
         XCTAssertEqual(nextDay.hiddenTerminalCompetitionCount, 1)
 
-        // Notifications keep the stored lifecycle, so expiry alerts stay
-        // with the notification planner.
         XCTAssertEqual(
             RemoteCompetitionProjector.notificationCompetition(
                 from: materialization,
@@ -3989,7 +3967,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
             )?.lifecycle,
             .pending(direction: .outgoing, expiresAt: expiresAt)
         )
-        // A republish without a read can't vouch for the totals.
         XCTAssertEqual(
             RemoteCompetitionProjector.notificationCompetition(
                 from: materialization,
@@ -4159,8 +4136,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
             createdAt: createdAt
         )
         let fetches = RemoteCompetitionFetchSequenceProbe(page: page)
-        // sync-11: a pass whose listed cursor has not moved sends no fetch,
-        // so the failing pass lists a newer change for the fetch to fail on.
         let moved = try pendingDescriptor(
             competitionID: competitionID,
             profile: profile,
@@ -4242,8 +4217,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         var iterator = client.start().makeAsyncIterator()
         _ = await iterator.next()
 
-        // The first wake-up's pass is held open; the other four must still
-        // be read, not queued behind it one pass each.
         var allPulled = false
         for _ in 0..<500 {
             allPulled = await probe.allPulled
@@ -4255,7 +4228,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
 
         let lists = await probe.listCount
-        // Start, the held pass and at most one more, instead of one per wake-up.
         XCTAssertLessThanOrEqual(lists, 3)
     }
 
@@ -4280,15 +4252,10 @@ final class RemoteCompetitionClientTests: XCTestCase {
 
         await client.stop()
 
-        // Otherwise the pass could write GroupMatches/ after teardown removed
-        // the profile directory.
         let exited = await hold.exited
         XCTAssertTrue(exited, "stop must cancel and join the group pass")
     }
 
-    /// A sync that fails once and works on the next try never reaches the
-    /// screen: "Couldn't update scores" used to flash for a moment when the
-    /// app came back to the foreground.
     func testOneTransientSyncFailureIsRetriedAndRaisesNoIssue()
         async throws
     {
@@ -4313,7 +4280,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         )
         let page = try pendingHistoryPage(descriptor: descriptor, profileID: profile.id, createdAt: createdAt)
         let fetches = RemoteCompetitionFetchSequenceProbe(page: page)
-        // A newer listed change, so the pass sends the fetch that fails.
         let moved = try pendingDescriptor(
             competitionID: competitionID,
             profile: profile,
@@ -4343,8 +4309,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
-    /// A one-off 401/PGRST301 while Supabase refreshes an expired token is
-    /// retried before publishing, so it never flashes "Couldn't update scores".
     func testTransientUnauthenticatedSyncFailureIsRetriedAndRaisesNoIssue()
         async throws
     {
@@ -4398,9 +4362,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
-    /// Reopening the app (.foreground) and immediately pulling to refresh must
-    /// not flash "Couldn't update scores" when the foreground pass still fails
-    /// its retry but the queued pull-to-refresh pass succeeds.
     func testOverlappingForegroundAndPullToRefreshDoNotFlashScoreUpdateIssue()
         async throws
     {
@@ -4448,8 +4409,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         let first = try XCTUnwrap(optionalFirst)
         XCTAssertEqual(first.dashboard.issues, [])
 
-        // Both attempts of .foreground fail while .pullToRefresh waits on the
-        // gate; .pullToRefresh then succeeds.
         await fetches.failNextFetches(count: 2, pauseFirstFetch: true)
         let foreground = Task { await client.reconcileAll(.foreground) }
         await fetches.waitUntilPausedFetchEntered()
@@ -4469,7 +4428,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         XCTAssertEqual(pub1.dashboard.issues, [])
         XCTAssertEqual(pub2.dashboard.issues, [])
 
-        // A real persistent failure with nothing queued behind it still shows and stays.
         await fetches.failSubsequentFetches()
         let persistent = await client.reconcileAll(.pullToRefresh)
         let optionalPersistentStreamed = await iterator.next()
@@ -4479,8 +4437,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
-    /// A realtime wake-up landing during a failing pull-to-refresh runs before
-    /// publishing, so a recovery right after the failure never flashes an error.
     func testRealtimeWakeUpDuringFailingPullToRefreshDoesNotFlashScoreUpdateIssue()
         async throws
     {
@@ -4587,8 +4543,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
             createdAt: createdAt
         )
         let fetches = RemoteCompetitionFetchSequenceProbe(page: page)
-        // sync-11: a pass whose listed cursor has not moved sends no fetch,
-        // so the failing pass lists a newer change for the fetch to fail on.
         let moved = try pendingDescriptor(
             competitionID: competitionID,
             profile: profile,
@@ -4710,8 +4664,6 @@ final class RemoteCompetitionClientTests: XCTestCase {
             [CompetitionID(competitionID)]
         )
         XCTAssertEqual(relaunchedPublication?.dashboard.issues, [])
-        // sync-11: the durable cursor (1) already equals the listed cursor, so
-        // the relaunch sends no fetch; a lost cursor would fetch from 0.
         let observations = await probe.observations()
         XCTAssertEqual(observations.count, 0)
         await relaunched.stop()
@@ -5836,8 +5788,6 @@ private actor RemoteBlockingCompetitionPushProbe {
     }
 }
 
-/// Holds the second list (the first wake-up's pass) until released, and
-/// hands out five wake-ups, noting when all have been read.
 private actor ReconcileBurstProbe {
     private(set) var listCount = 0
     private(set) var allPulled = false
@@ -5867,7 +5817,6 @@ private actor ReconcileBurstProbe {
     }
 }
 
-/// A group list that hangs until its task is cancelled.
 private actor GroupListHold {
     private(set) var entered = false
     private(set) var exited = false
@@ -5925,7 +5874,6 @@ private actor RemoteCompetitionNotificationProbe {
         }
     }
 
-    /// Stands in for a request scheduled outside the duel path (group banter).
     private var seeded: Set<String> = []
 
     func seedPending(_ identifier: String) {
@@ -5972,8 +5920,6 @@ private actor RemoteCompetitionFetchSequenceProbe {
         nextFailure = .operationFailed
     }
 
-    /// Fails the next fetch only, like the first request after the app
-    /// comes back to the foreground.
     func failNextFetchOnly() {
         failNextFetches(count: 1)
     }
@@ -6398,16 +6344,12 @@ private final class ProfileBox: @unchecked Sendable {
     }
 }
 
-// MARK: - Practice match
-
 extension RemoteCompetitionClientTests {
-    /// Thu Aug 13 2026, 9 AM in Los Angeles; a practice started now runs Aug 14–20.
     private func practiceSource(
         changes: [FixtureActivityChange] = []
     ) throws -> (source: FixtureActivitySource, calendar: CompetitionCalendar, startedAt: Date) {
         let calendar = try CompetitionCalendar(timeZoneIdentifier: "America/Los_Angeles")
         let startedAt = try practiceDay(13, in: calendar).addingTimeInterval(9 * 3_600)
-        // Every practice day has rings, so the week can finish.
         let week = try calendar.sevenDayWindow(
             startingOn: calendar.day(containing: practiceDay(14, in: calendar))
         )
@@ -6490,7 +6432,6 @@ extension RemoteCompetitionClientTests {
         XCTAssertEqual(listsAfter, listsBefore)
         XCTAssertEqual(fetches.count, fetchesBefore)
         XCTAssertEqual(publication.source, .remoteParticipants)
-        // The real match sits beside the practice, unchanged.
         XCTAssertEqual(
             publication.dashboard.competitions.filter { !$0.isPractice },
             [real]
@@ -6504,7 +6445,6 @@ extension RemoteCompetitionClientTests {
         XCTAssertEqual(publication.dashboard.issues, [])
         XCTAssertEqual(spy.writes.last?.snapshot.matches, [])
 
-        // One at a time.
         let again = await client.startPractice(.chill)
         XCTAssertTrue(again.dashboard.issues.contains(.commandRejected(PracticeMatch.startCommandID)))
         XCTAssertEqual(again.dashboard.competitions.filter(\.isPractice).map(\.id), practice.map(\.id))
@@ -6523,7 +6463,6 @@ extension RemoteCompetitionClientTests {
         _ = await iterator.next()
         _ = await client.startPractice(.pacer)
 
-        // Midnight starts Day 1 with no tap: the boundary republish refreshes practice.
         try await fixture.source.advance(to: practiceDay(14, in: fixture.calendar))
         await waitForBoundedAsyncCondition("Day 1 at the boundary") {
             for await publication in client.updates() {
@@ -6562,7 +6501,6 @@ extension RemoteCompetitionClientTests {
         let rejected = await client.delete(other)
         XCTAssertTrue(rejected.dashboard.issues.contains(.commandRejected(other)))
 
-        // Nothing is underway any more.
         let restarted = await client.startPractice(.chill)
         let next = try XCTUnwrap(restarted.dashboard.competitions.first(where: \.isPractice))
         XCTAssertNotEqual(next.id, id)
@@ -6606,7 +6544,6 @@ extension RemoteCompetitionClientTests {
         _ = await iterator.next()
         _ = await client.startPractice(.pacer)
 
-        // The week ends Aug 21; best available after 24 h of tallying.
         let end = try practiceDay(21, in: fixture.calendar)
         try await fixture.source.advance(to: end.addingTimeInterval(1))
         _ = await client.reconcileAll(.pullToRefresh)
@@ -6723,7 +6660,6 @@ extension RemoteCompetitionClientTests {
         }
         try await client.mountAuthenticatedProfile(profile, paths)
 
-        // Opponent: listed, downloaded once, then served from disk.
         let references = try await client.loadProfilePhotos([opponent, opponent])
         XCTAssertEqual(references.map(\.ownerProfileID), [opponent])
         let first = try await client.profilePhotoData(references[0])
@@ -6735,19 +6671,16 @@ extension RemoteCompetitionClientTests {
         XCTAssertEqual(cached?.data, first)
         XCTAssertEqual(cached?.version, references[0].version)
 
-        // A block (or their removal) drops them from the list and the cache.
         await server.hideOpponent()
         let hidden = try await client.loadProfilePhotos([opponent])
         XCTAssertEqual(hidden, [])
         let afterHide = await client.cachedProfilePhotoData(opponent)
         XCTAssertNil(afterHide)
 
-        // Reporting hides and remembers it.
         try await client.reportProfilePhoto(opponent)
         let reported = await client.isProfilePhotoReported(opponent)
         XCTAssertTrue(reported)
 
-        // Your own: set clears leftovers around the upload; remove clears all.
         let mine = try await client.setProfilePhoto(server.jpeg)
         XCTAssertEqual(mine.ownerProfileID, profile.id)
         let own = await client.cachedProfilePhotoData(profile.id)
@@ -6755,7 +6688,6 @@ extension RemoteCompetitionClientTests {
         let ownState = try await client.loadOwnProfilePhoto()
         XCTAssertEqual(ownState, OwnProfilePhoto(reference: mine, removedByReview: false))
 
-        // A reviewer's removal: told once, and the cached file goes.
         await server.removeByReview()
         let reviewed = try await client.loadOwnProfilePhoto()
         XCTAssertEqual(reviewed, OwnProfilePhoto(reference: nil, removedByReview: true))

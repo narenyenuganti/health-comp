@@ -1,5 +1,4 @@
 begin;
--- Included inside each group test transaction; no product fixture state persists.
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
@@ -44,7 +43,6 @@ begin
  update public.competitions set start_day=current_date-days_ago,invitation_expires_at=now()-interval '20 days',
    best_available_deadline=(current_date-days_ago+9)::timestamp at time zone 'UTC' where id=cid;
 end; $$;
--- Real submission path: fixed semantic identity and evaluation time allow exact replay.
 create function pg_temp.score(cid uuid,person integer,day integer,rev bigint,points integer default 30000) returns jsonb language plpgsql as $$
 declare evaluated timestamptz; d text;
 begin

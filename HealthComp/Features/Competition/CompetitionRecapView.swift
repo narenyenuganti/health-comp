@@ -4,15 +4,12 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-// MARK: Model
-
 struct CompetitionRecapHighlight: Equatable {
     let title: String
     let value: String
     let accessibilityValue: String
 }
 
-/// The belt as the card tells it. Nil = no line (tie, retired, no data).
 enum CompetitionRecapBelt: Equatable {
     case youTook, theyTook, youDefended(defenses: Int), theyDefended(defenses: Int)
 
@@ -26,9 +23,7 @@ enum CompetitionRecapBelt: Equatable {
 
 struct CompetitionRecap: Equatable {
     let weekText: String?
-    /// "Match won" / "{Name} won" / "They won" / "All square"
     let headline: String
-    /// "{Name}" or "Them"
     let opponentLabel: String
     let userPointsText: String
     let opponentPointsText: String
@@ -36,17 +31,13 @@ struct CompetitionRecap: Equatable {
     let marginIsYours: Bool
     let daysText: String?
     let days: [LocalCompetitionDayPresentation]
-    /// 0...2
     let highlights: [CompetitionRecapHighlight]
     let belt: CompetitionRecapBelt?
     let beltText: String?
-    /// The footer's one line, picked as on Home and the Verdict.
     let line: CompetitionHeadline?
     let accessibilityText: String
 }
 
-/// The card's belt line from PR 1's per-match event: a take or a title
-/// defense. Never on a tie or for a retired pair.
 func competitionRecapBelt(
     _ event: CompetitionBeltEvent?,
     outcome: CompetitionOutcome,
@@ -62,12 +53,10 @@ func competitionRecapBelt(
     }
 }
 
-/// False for "Former competitor": that name is always hidden.
 func competitionRecapAllowsNameChoice(_ competition: LocalCompetitionPresentation) -> Bool {
     competition.opponentDisplayName != competitionFormerCompetitorName
 }
 
-/// "Took the belt" / "Sam's 3rd title defense". A nil name is hidden: "They …".
 func competitionRecapBeltText(_ belt: CompetitionRecapBelt, opponentName: String?) -> String {
     let they = opponentName ?? "They"
     return switch belt {
@@ -165,8 +154,6 @@ func competitionRecap(
     )
 }
 
-/// Photo finish, comeback, then best (or perfect) day: the first two that exist.
-/// Day values are whole points; only your own days count.
 func competitionRecapHighlights(
     days: [LocalCompetitionDayPresentation],
     userPoints: Double,
@@ -179,7 +166,6 @@ func competitionRecapHighlights(
     func points(_ value: Double) -> String { competitionPointsText(value, locale: locale) }
     func spoken(_ value: Double) -> String { competitionPointsAccessibilityText(value, locale: locale) }
 
-    // Photo finish: decided by under 1% of the higher score.
     let margin = competitionDisplayedMargin(
         userPoints: userPoints, opponentPoints: opponentPoints, fractionDigits: fractionDigits
     )
@@ -191,8 +177,6 @@ func competitionRecapHighlights(
         ))
     }
 
-    // Comeback: a win after trailing by 50+ at the end of some day 1–6, from
-    // the final day scores, only when they add up to the final margin.
     let ordered = days.sorted { $0.ordinal < $1.ordinal }
     let sumUser = ordered.reduce(0.0) { $0 + ($1.ownerAcceptedPoints ?? 0) }
     let sumOpponent = ordered.reduce(0.0) { $0 + ($1.opponentRevealedPoints ?? 0) }
@@ -222,11 +206,9 @@ func competitionRecapHighlights(
         }
     }
 
-    // Best day, or perfect day when the shown value reaches 600.
     let scored = ordered.compactMap { day in
         day.ownerAcceptedPoints.map { (day: day.day, points: $0) }
     }.filter { $0.points.rounded(.toNearestOrAwayFromZero) > 0 }
-    // max(by:) keeps the first of equal values: the earliest day.
     if let best = scored.max(by: { $0.points < $1.points }) {
         let perfect = scored.filter {
             $0.points.rounded(.toNearestOrAwayFromZero) >= ActivityScore.maximumDailyPoints
@@ -250,9 +232,6 @@ func competitionRecapHighlights(
     return Array(highlights.prefix(2))
 }
 
-// MARK: Card
-
-/// Fixed-size card; never reads Dynamic Type.
 struct CompetitionRecapCard: View {
     let recap: CompetitionRecap
     static let size = CGSize(width: 360, height: 450)
@@ -274,8 +253,6 @@ struct CompetitionRecapCard: View {
                 }
             }
 
-            // With no strip or highlights this and the footer spacer centre
-            // the score, so the card doesn't end in an empty half.
             Spacer(minLength: 12)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -311,7 +288,6 @@ struct CompetitionRecapCard: View {
                             Text(highlight.value)
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(Theme.ink)
-                                // One line, as in the mockup: shrink before wrapping.
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.7)
                         }
@@ -326,7 +302,6 @@ struct CompetitionRecapCard: View {
                 if recap.line != nil {
                     Rectangle().fill(Theme.hairline).frame(height: 1)
                 }
-                // A belt line too long for the footer row gets a row of its own.
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .center, spacing: 8) {
                         beltLine(fits: true)
@@ -352,8 +327,6 @@ struct CompetitionRecapCard: View {
             .fixedSize()
     }
 
-    /// Whole, or on its own row with the name truncated: "took the belt" /
-    /// "’s 3rd title defense" is never cut. Any other line gets two rows.
     @ViewBuilder
     private func beltLine(fits: Bool) -> some View {
         if let line = recap.line {
@@ -420,18 +393,11 @@ struct CompetitionRecapCard: View {
     }
 }
 
-// MARK: Sticker
-
-/// The margin and the card's one headline: "Won by 110 points · 2nd title
-/// defense". Nil on a tie with no headline.
 func competitionRecapStickerLine(_ recap: CompetitionRecap) -> String? {
     let parts = [recap.marginText, recap.line?.text].compactMap { $0 }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
 }
 
-/// The result on a clear ground, to lay over a photo: score, margin, the lead
-/// line and the belt line. Points only. The card's size, so the preview slot
-/// keeps still; never reads Dynamic Type. A light scheme is dark ink.
 struct CompetitionRecapSticker: View {
     let recap: CompetitionRecap
     static let size = CompetitionRecapCard.size
@@ -493,7 +459,6 @@ struct CompetitionRecapSticker: View {
     }
 }
 
-/// Says "clear" behind the sticker's preview; never in the image.
 private struct CompetitionStickerGround: View {
     var body: some View {
         Canvas { context, size in
@@ -514,10 +479,6 @@ private struct CompetitionStickerGround: View {
     }
 }
 
-// MARK: Image
-
-/// What the share sheet receives: PNG bytes, so size and type are known,
-/// titled with the card's headline.
 final class CompetitionRecapShareItem: NSObject, UIActivityItemSource {
     let png: Data
     let image: UIImage
@@ -549,8 +510,6 @@ final class CompetitionRecapShareItem: NSObject, UIActivityItemSource {
     }
 }
 
-/// Presents the system share sheet over whatever is on screen. A ShareLink in
-/// this sheet dismissed the sheet too once an action such as Save Image finished.
 @MainActor
 func competitionPresentShareSheet(_ item: CompetitionRecapShareItem) {
     guard var top = UIApplication.shared.connectedScenes
@@ -573,13 +532,11 @@ func competitionRecapImage(_ recap: CompetitionRecap) -> UIImage? {
     competitionShareImage(CompetitionRecapCard(recap: recap))
 }
 
-/// A card at `CompetitionRecapCard.size` as 1080×1350 px, always light.
 @MainActor
 func competitionShareImage(_ card: some View) -> UIImage? {
     competitionRender(card, size: CompetitionRecapCard.size, scheme: .light, isOpaque: true)
 }
 
-/// 1080×1350 px on a clear ground. Light ink is the dark scheme's colours.
 @MainActor
 func competitionRecapStickerImage(_ recap: CompetitionRecap, lightInk: Bool) -> UIImage? {
     competitionRender(
@@ -603,15 +560,12 @@ private func competitionRender(
     renderer.proposedSize = ProposedViewSize(size)
     renderer.scale = 3
     renderer.isOpaque = isOpaque
-    // The trait pins UIKit dynamic colors too, whatever the phone's appearance.
     var image: UIImage?
     UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light).performAsCurrent {
         image = renderer.uiImage
     }
     return image
 }
-
-// MARK: Sheet
 
 @MainActor
 struct CompetitionRecapSheet: View {
@@ -671,8 +625,6 @@ struct CompetitionRecapSheet: View {
 
     private func preview(_ recap: CompetitionRecap) -> some View {
         let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-        // The real card, so the sheet slides up with it there. The image is
-        // made on Share: making it here would drop frames from the slide.
         return Color.clear
             .aspectRatio(4 / 5, contentMode: .fit)
             .overlay {
@@ -695,8 +647,6 @@ struct CompetitionRecapSheet: View {
                         proxy.size.width / CompetitionRecapCard.size.width,
                         anchor: .topLeading
                     )
-                    // The text clipping audit flags every line of scaled
-                    // Text, even hidden: to it, this is a picture.
                     .accessibilityRepresentation { Color.clear }
                 }
             }
@@ -712,7 +662,6 @@ struct CompetitionRecapSheet: View {
             .accessibilityIdentifier(isSticker ? "competition.recap.sticker" : "competition.recap.card")
     }
 
-    /// Two answers as segments; the largest sizes get a switch.
     @ViewBuilder
     private func choice(
         _ title: String,
@@ -731,14 +680,11 @@ struct CompetitionRecapSheet: View {
                 .font(.body)
                 .foregroundStyle(Theme.ink)
                 .frame(minHeight: 44)
-                // Amber, not the inherited ink, which hides the On thumb in dark mode.
                 .tint(Theme.youFill)
                 .accessibilityIdentifier(id)
         }
     }
 
-    /// PNG bytes keep the sticker's clear ground on the pasteboard and in
-    /// the share sheet.
     private func rendered(_ recap: CompetitionRecap) -> (image: UIImage, png: Data)? {
         let image = isSticker
             ? competitionRecapStickerImage(recap, lightInk: lightInk)
@@ -785,9 +731,6 @@ struct CompetitionRecapSheet: View {
     }
 }
 
-// MARK: Your month, your year
-
-/// A calendar month, or the whole year when `month` is nil.
 struct CompetitionRecapPeriod: Hashable, Identifiable, Sendable {
     let year: Int
     var month: Int? = nil
@@ -797,12 +740,10 @@ struct CompetitionRecapPeriod: Hashable, Identifiable, Sendable {
         day.year == year && (month == nil || day.month == month)
     }
 
-    /// "October 2026", or "2026" for the year.
     func title(locale: Locale = .current) -> String {
         month.map { "\(competitionMonthName($0, locale: locale)) \(year)" } ?? String(year)
     }
 
-    /// "Your October", or "Your 2026" for the year.
     func headline(locale: Locale = .current) -> String {
         "Your " + (month.map { competitionMonthName($0, locale: locale) } ?? String(year))
     }
@@ -814,20 +755,17 @@ private func competitionMonthName(_ month: Int, locale: Locale) -> String {
     return calendar.standaloneMonthSymbols[month - 1]
 }
 
-/// The day a finished week counts on: its last, in the match's calendar.
 private func competitionRecapDay(_ week: LocalCompetitionPresentation) -> CompetitionDay? {
     week.acceptedConfiguration.flatMap {
         try? $0.schedule.calendar.sevenDayWindow(startingOn: $0.schedule.startDay).last
     } ?? week.days.last?.day
 }
 
-/// Today in the publication's zone.
 func competitionRecapToday(_ publication: LocalCompetitionPublication) -> CompetitionDay? {
     try? CompetitionCalendar(timeZoneIdentifier: publication.timeZoneIdentifier)
         .day(containing: publication.evaluatedAt)
 }
 
-/// A period's finished real weeks, oldest first, across every rival.
 func competitionRecapWeeks(
     _ competitions: [LocalCompetitionPresentation],
     in period: CompetitionRecapPeriod
@@ -837,9 +775,6 @@ func competitionRecapWeeks(
     }
 }
 
-/// Every month once it has ended and every year from its 31 December, with
-/// a finished week in it. Newest first, a year before its December. Built
-/// from the weeks on the phone, so past months stay.
 func competitionRecapPeriods(
     _ competitions: [LocalCompetitionPresentation],
     today: CompetitionDay
@@ -857,8 +792,6 @@ func competitionRecapPeriods(
     return periods.sorted { ($0.year, $0.month ?? 13) > ($1.year, $1.month ?? 13) }
 }
 
-/// Home's one row: last month from the 1st to the 3rd, the year from
-/// 31 December to 3 January (it holds December). Nil without a finished week.
 func competitionRecapOffer(
     _ competitions: [LocalCompetitionPresentation],
     today: CompetitionDay
@@ -887,7 +820,6 @@ private func competitionRecapTally(
     )
 }
 
-/// "won 3, lost 1", leaving out what didn't happen.
 private func competitionRecapTallyWords(_ tally: (won: Int, lost: Int, tied: Int)) -> String {
     [(tally.won, "won"), (tally.lost, "lost"), (tally.tied, "tied")]
         .filter { $0.0 > 0 }
@@ -899,7 +831,6 @@ private func competitionSentenceCase(_ text: String) -> String {
     text.prefix(1).uppercased() + text.dropFirst()
 }
 
-/// "4 weeks · won 3, lost 1": the Home and History rows.
 func competitionRecapSummaryLine(
     _ competitions: [LocalCompetitionPresentation],
     period: CompetitionRecapPeriod
@@ -908,16 +839,13 @@ func competitionRecapSummaryLine(
     return "\(competitionWeeksText(weeks.count)) · \(competitionRecapTallyWords(competitionRecapTally(weeks)))"
 }
 
-/// One card of the deck. Rows link to History instead of repeating it.
 struct CompetitionRecapPeriodCard: Equatable, Identifiable {
     enum Kind: String { case weeks, record, belt, bestDay, rings, rival }
-    /// Amber you, ink them, grey even.
     enum Side: Equatable { case you, them, even }
     enum Value: Equatable {
         case text(String, side: Side?)
         case record(won: Int, lost: Int, tied: Int)
     }
-    /// A week or a person, each opened from History.
     enum Link: Hashable {
         case week(CompetitionID)
         case person(String)
@@ -943,8 +871,6 @@ struct CompetitionRecapPeriodCard: Equatable, Identifiable {
     var rows: [Row] = []
     var id: Kind { kind }
 
-    /// "Your record: won 3, lost 1 across 4 weeks, 2 rivals": a detail that
-    /// starts with the value carries on from it instead of repeating it.
     var accessibilityText: String {
         let spoken = switch value {
         case let .text(text, _): text
@@ -957,10 +883,6 @@ struct CompetitionRecapPeriodCard: Equatable, Identifiable {
     }
 }
 
-/// Weeks played, your record, belt moves, your best day, rings you closed
-/// (your own values) and, with two or more rivals, the closest one. Each
-/// appears only once it's true; nothing without a finished week. Opponents
-/// show only as points, wins and the belt. `hidesNames` is the shared image.
 func competitionRecapCards(
     _ competitions: [LocalCompetitionPresentation],
     period: CompetitionRecapPeriod,
@@ -987,7 +909,6 @@ func competitionRecapCards(
         return Card.Row(title: range(week), detail: result.detail, side: result.side, link: .week(week.id))
     }
 
-    // Newest played first, named as in their newest week.
     var rivals: [(identity: String, name: String, weeks: [LocalCompetitionPresentation])] = []
     for week in weeks.reversed() {
         if let index = rivals.firstIndex(where: { $0.identity == week.opponentIdentity }) {
@@ -1019,7 +940,6 @@ func competitionRecapCards(
         label: "Weeks played",
         value: .text(String(weeks.count), side: nil),
         detail: "Against \(against)",
-        // ponytail: five rows, so a year doesn't become a second History.
         rows: rivals.prefix(5).map(personRow)
     ))
 
@@ -1054,7 +974,6 @@ func competitionRecapCards(
             link: .week(week.id)
         ))
     }
-    // Yours only: their defenses and their first win list below but don't count.
     func count(_ matches: (CompetitionBeltEvent) -> Bool) -> Int { events.filter(matches).count }
     let took = count { if case .took(.you, _, _) = $0 { true } else { false } }
     let defended = count { if case .defended(.you, _, _) = $0 { true } else { false } }
@@ -1074,7 +993,6 @@ func competitionRecapCards(
         ))
     }
 
-    // max(by:) keeps the first of equal values: the earliest day.
     let scored = weeks.flatMap { week in
         week.days.compactMap { day in day.ownerAcceptedPoints.map { (week: week, day: day, points: $0) } }
     }
@@ -1105,7 +1023,6 @@ func competitionRecapCards(
         ))
     }
 
-    // The smallest average gap a week; on a tie the one played most recently.
     func gap(_ weeks: [LocalCompetitionPresentation]) -> Double {
         weeks.reduce(0) { total, week in
             total + abs((week.terminalResult?.userPoints ?? 0) - (week.terminalResult?.opponentPoints ?? 0))
@@ -1130,8 +1047,6 @@ func competitionRecapCards(
     return cards
 }
 
-/// Move, Exercise and Stand closed from your own values: the Health reading
-/// against its goal, else the ring's share of its goal (100 is closed).
 func competitionClosedRings(_ day: LocalCompetitionDayPresentation) -> [Bool]? {
     if let snapshot = day.ownerAcceptedSnapshot {
         return [snapshot.move, snapshot.exercise, snapshot.standOrRoll].map { reading in
@@ -1159,9 +1074,7 @@ private func competitionRecapValueText(_ value: CompetitionRecapPeriodCard.Value
     }
 }
 
-/// One card as the shared image: the recap card's size and frame, no rows.
 struct CompetitionRecapPeriodShareCard: View {
-    /// "October 2026".
     let title: String
     let card: CompetitionRecapPeriodCard
 
@@ -1215,7 +1128,6 @@ struct CompetitionRecapPeriodShareCard: View {
     }
 }
 
-/// A swipeable stack of a month's or a year's cards, each with its own Share.
 @MainActor
 struct CompetitionRecapDeck: View {
     let publication: LocalCompetitionPublication
@@ -1334,7 +1246,6 @@ struct CompetitionRecapDeck: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // At accessibility sizes the detail sits under the title.
     private func rowLabel(_ row: CompetitionRecapPeriodCard.Row) -> some View {
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
@@ -1365,7 +1276,6 @@ struct CompetitionRecapDeck: View {
         .contentShape(Rectangle())
     }
 
-    /// The image uses the Share Result sheet's Show / Hide name choice.
     private func share(_ card: CompetitionRecapPeriodCard) -> some View {
         Button {
             let shared = competitionRecapCards(
@@ -1397,8 +1307,6 @@ struct CompetitionRecapDeck: View {
 }
 
 extension View {
-    /// The month or year deck over everything. A row closes it and opens
-    /// History at that week or person.
     func competitionRecapDeck(
         _ period: Binding<CompetitionRecapPeriod?>,
         publication: LocalCompetitionPublication?,
@@ -1415,12 +1323,10 @@ extension View {
     }
 }
 
-/// The Home row and each History row: "Your October", "4 weeks · won 3, lost 1".
 struct CompetitionRecapRow: View {
     let title: String
     let period: CompetitionRecapPeriod
     let competitions: [LocalCompetitionPresentation]
-    /// Home's row is its own panel; History's sit in one.
     var isPanel = false
     let open: () -> Void
 

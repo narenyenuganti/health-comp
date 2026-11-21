@@ -2,8 +2,6 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
-/// The final-day Live Activity on the Lock Screen and in the Dynamic Island.
-/// All data arrives as `ContentState`: no network, HealthKit or App Group.
 struct MatchLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: MatchActivityAttributes.self) { context in
@@ -20,7 +18,6 @@ struct MatchLiveActivityWidget: Widget {
             .widgetURL(context.attributes.url)
         } dynamicIsland: { context in
             let state = context.state.resolved(isStale: context.isStale)
-            // Dark in every region, so amber stays you on black.
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     MatchActivityScoreColumn(side: .you, attributes: context.attributes, state: state, size: matchActivityIslandScoreSize)
@@ -59,8 +56,6 @@ struct MatchLiveActivityWidget: Widget {
     }
 }
 
-/// The Smart Stack and CarPlay card, or the Lock Screen card. `activityFamily`
-/// stays here: MatchActivityViews.swift has no WidgetKit context.
 @available(iOS 18.0, *)
 private struct MatchActivityFamilyView: View {
     let attributes: MatchActivityAttributes
@@ -70,7 +65,6 @@ private struct MatchActivityFamilyView: View {
 
     var body: some View {
         if family == .small {
-            // Dark like the island, so amber stays you on black.
             MatchActivitySmallView(attributes: attributes, state: state)
                 .matchActivityIsland()
                 .activityBackgroundTint(.black)

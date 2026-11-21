@@ -4,19 +4,12 @@ import XCTest
 
 @testable import HealthComp
 
-/// `Fixtures/group-matches-list.json` is the real `list_group_matches` body
-/// for player 1, captured from a local stack with the 040 pgTAP setup: a
-/// finished three-way with a leaver, a live doubles with a Pacer bot, and a
-/// pending three-way.
 final class RemoteGroupMatchClientTests: XCTestCase {
     private let viewer = UUID(uuidString: "69e5d45f-d72b-2738-b230-1af2557f7b92")!
     private let finishedID = UUID(uuidString: "0ec6385c-ab1a-496b-b0a2-84b01fa75c16")!
     private let doublesID = UUID(uuidString: "3656997c-2f73-47b5-ba2c-8288f5a7ecfe")!
     private let pendingID = UUID(uuidString: "57bb50d9-30f0-4a8f-afc1-9978cf9c52e8")!
-    /// Day 3 of the doubles week (it starts Sun Nov 8, UTC).
     private let dayThreeNoon = Date(timeIntervalSince1970: 1_794_312_000)
-
-    // MARK: Decoding
 
     func testDecodesTheServersOwnListExactly() throws {
         let matches = try GroupMatchWire.decodeList(fixture(), viewer: viewer)
@@ -113,8 +106,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertThrowsError(try GroupMatchWire.decodeList(withSeats(version: 1, numeric), viewer: viewer), "numeric total")
     }
 
-    // MARK: Presentation
-
     func testProjectsLiveDoublesWithTheBotRevealedAndFinishedAsFrozen() throws {
         let matches = try GroupMatchWire.decodeList(fixture(), viewer: viewer)
         let doubles = try XCTUnwrap(matches.first { $0.id == doublesID }?.presentation(viewer: viewer, now: dayThreeNoon))
@@ -145,9 +136,7 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         let model = try XCTUnwrap(GroupMatchWire.decodeList(fixture(), viewer: viewer).first { $0.id == doublesID })
         let doubles = try XCTUnwrap(model.presentation(viewer: viewer, now: dayThreeNoon))
         let ids = doubles.seats.map(\.id)
-        // Seat 2 (your partner) fired at your Day 1.
         XCTAssertEqual(doubles.reactions, [GroupMatchReaction(authorSeatID: ids[1], targetSeatID: ids[0], ordinal: 1, kind: .fire)])
-        // Your partner uploaded at 08:41, under 12 hours before noon; by 21:00 the server takes a nudge.
         XCTAssertFalse(doubles.canNudgePartner)
         let evening = try XCTUnwrap(model.presentation(viewer: viewer, now: dayThreeNoon.addingTimeInterval(9 * 3_600)))
         XCTAssertTrue(evening.canNudgePartner)
@@ -167,7 +156,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
                 ["seat_index": 2, "total_centi_points": "210000", "days": days([20_000, 40_000] + Array(repeating: 30_000, count: 5))],
                 ["seat_index": 3, "total_centi_points": "0", "days": { () -> [[String: Any]] in
                     var seatDays = days(Array(repeating: 0, count: 7))
-                    // Never uploaded: still a scored zero, so day 3 has winners.
                     seatDays[2] = ["ordinal": 3, "status": "unavailable", "centi_points": NSNull(), "reason": "missing"]
                     return seatDays
                 }()],
@@ -181,7 +169,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         let ids = finished.seats.map(\.id)
         XCTAssertEqual(finished.frozenSeatTotals, [ids[0]: 210_000, ids[1]: 210_000, ids[2]: 0])
         XCTAssertEqual(finished.frozenDays?.count, 21)
-        // Day 1 to seat 1, day 2 to seat 2, days 3-7 shared.
         XCTAssertEqual(ids.map { finished.frozenDaysWon(by: .seat($0)) }, [6, 6, 0])
 
         let withoutSeats = try XCTUnwrap(
@@ -204,14 +191,11 @@ final class RemoteGroupMatchClientTests: XCTestCase {
                     .presentation(viewer: viewer, now: dayThreeNoon)
             )
         }
-        // Seat 2 had accepted, so closing it is a withdrawal; seat 3 never answered.
         let withdrawn = try closed(by: "4000ca96-a5d0-db44-3b89-bbfb6bc44e19")
         XCTAssertEqual(withdrawn.seats.map(\.invite), [.accepted, .withdrew, .invited])
         let declined = try closed(by: "758901eb-c557-7975-e585-97488b2a907e")
         XCTAssertEqual(declined.seats.map(\.invite), [.accepted, .accepted, .declined])
     }
-
-    // MARK: Read model cache
 
     func testStaleRefreshKeepsTheNewerCachedMatchAndOfflineUsesTheCache() async throws {
         let harness = try Harness()
@@ -243,8 +227,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(foreign, [])
     }
 
-    // MARK: Own uploads
-
     func testUploadsChangedDaysOnceAndRetriesResendIdenticalBytes() async throws {
         let harness = try Harness()
         let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
@@ -255,8 +237,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         )
 
         _ = await sync.run()
-        // sync-02: days 2 and 3 wait in the outbox behind day 1's failure, so
-        // revisions reach the server in order.
         let failed = await server.attemptedRequests()
         XCTAssertEqual(failed.map(\.dayOrdinal), [1])
         XCTAssertEqual(failed.map(\.clientRevision), [4])
@@ -339,8 +319,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         }
     }
 
-    // MARK: Final window
-
     func testFinalAttestationWaitsForUploadsThenUsesRefreshedHeads() async throws {
         let harness = try Harness()
         let server = try FakeGroupServer(
@@ -362,8 +340,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         clock.now = dayThreeNoon.addingTimeInterval(5)
         _ = await sync.run()
         log = await server.log
-        // The wake-up drain may start before the first list; what matters is
-        // every upload, then a fresh list, then the attestation.
         XCTAssertEqual(log.filter { $0 == "append" }.count, 7)
         XCTAssertEqual(Array(log.suffix(2)), ["list", "attest"])
         let attestation = try await XCTUnwrapAsync(await server.attestations.first)
@@ -371,7 +347,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(attestation.acceptedRevisions, [4, 5, 6, 7, 8, 9, 10])
         XCTAssertEqual(attestation.attestationVersion, 1)
 
-        // The acknowledgment stays until the read model shows it, then leaves.
         await server.clearLog()
         clock.now = dayThreeNoon.addingTimeInterval(60)
         _ = await sync.run()
@@ -381,9 +356,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(outbox, [])
     }
 
-    /// sync-08: a rejected attestation (here a 401 during an auth blip) is
-    /// not "already queued"; the next pass sends it again and drops the
-    /// rejection.
     func testARejectedAttestationIsSentAgainOnTheNextPass() async throws {
         let harness = try Harness()
         let server = try FakeGroupServer(
@@ -434,8 +406,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         }
     }
 
-    // MARK: Isolation from duels
-
     func testGroupUploadsSurviveTheDuelInventoryAndABadGroupListLeavesDuelsAlone() async throws {
         let harness = try Harness()
         _ = try await harness.store.allocateRevision(doublesID, atLeast: 3)
@@ -475,8 +445,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         for directory in paths.fixedDirectories {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
-        // Only the matches with nothing left to upload, so the real clock
-        // the client runs on doesn't matter.
         let body = try listBody(fixtureMatches().filter { ($0["competition_id"] as? String) != doublesID.uuidString.lowercased() })
         let client = CompetitionClient.remote(
             remoteAPI: groupTestAPI(listGroupMatches: { body }),
@@ -499,11 +467,9 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         )
         XCTAssertTrue(notifications.competitions.isEmpty)
 
-        // An added issue keeps the group matches (`publication(adding:)`).
         let rejected = await client.rematch(CompetitionID(finishedID))
         XCTAssertEqual(rejected.dashboard.groupMatches.map(\.id), publication.dashboard.groupMatches.map(\.id))
 
-        // Offline after a relaunch: shown from the disk cache.
         await client.stop()
         let relaunched = CompetitionClient.remote(
             remoteAPI: groupTestAPI(listGroupMatches: { throw CompetitionRemoteFailure.retryableTransport }),
@@ -518,18 +484,13 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         await relaunched.stop()
     }
 
-    // MARK: Review findings (PR #243)
-
-    /// Finding 1: the read finished at 23:59:59 on day 7 and the uploads
-    /// crossed midnight. The week may only be sealed on a read started after
-    /// it ended, so a late Watch sync for day 7 still counts.
     func testAReadBeforeMidnightNeverSealsTheWeek() async throws {
         let harness = try Harness()
         let server = try FakeGroupServer(
             fixture: fixture(), matchID: doublesID, viewer: viewer,
             startDay: "2026-11-03", deadline: "2026-11-12T00:00:00+00:00"
         )
-        let midnight = Date(timeIntervalSince1970: 1_794_268_800)  // 2026-11-10T00:00Z
+        let midnight = Date(timeIntervalSince1970: 1_794_268_800)
         let clock = TestClock(midnight.addingTimeInterval(-1))
         let source = FixtureActivitySource(fixture: try weekFixture(
             startDay: (2026, 11, 3), at: clock.now,
@@ -550,9 +511,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(attestation.acceptedRevisions, [4, 5, 6, 7, 8, 9, 11], "day 7 from the read after midnight")
     }
 
-    /// Finding 2: this device queued revisions 4-10, another device moved the
-    /// high-water to 20, and the server rejected them as a regression. The
-    /// same readings go out again above 20 and the week still seals.
     func testARejectedUploadIsReplacedAboveTheNewHighWater() async throws {
         let harness = try Harness()
         let server = try FakeGroupServer(
@@ -595,9 +553,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(outbox, [], "nothing can settle it once the result is in")
     }
 
-    /// Finding 3: day 7 was accepted as A (revision 10), B (revision 11) is
-    /// still queued, and the final read says A again. A goes out above B, so
-    /// the sealed week matches the last read.
     func testAnInFlightValueNeverOutlivesTheFinalReading() async throws {
         let harness = try Harness()
         let server = try FakeGroupServer(
@@ -614,15 +569,12 @@ final class RemoteGroupMatchClientTests: XCTestCase {
             )
         }
         _ = try await sync(daySevenMove: 420).run()
-        // B never lands while the final read is compared.
         await server.setFailingRevisions([11])
         clock.now = daySevenNoon.addingTimeInterval(60)
         _ = try await sync(daySevenMove: 500).run()
         clock.now = dayThreeNoon
         _ = try await sync(daySevenMove: 420).run()
         var accepted = await server.acceptedRequests()
-        // sync-02: A is queued above B (revision 12) and waits for B, so the
-        // server takes them in order; nothing is attested meanwhile.
         XCTAssertEqual(accepted.map(\.clientRevision), [4, 5, 6, 7, 8, 9, 10])
         let queued = try await harness.outbox.entries().compactMap { entry -> CompetitionScoreRevisionRequest? in
             guard case let .scoreRevision(request) = entry.payload else { return nil }
@@ -633,7 +585,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         let early = await server.attestations
         XCTAssertTrue(early.isEmpty)
 
-        // B finally reaches the server, then A lands above it.
         await server.setFailingRevisions([])
         clock.now = dayThreeNoon.addingTimeInterval(3_600)
         _ = try await sync(daySevenMove: 420).run()
@@ -645,8 +596,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(attestation.acceptedRevisions, [4, 5, 6, 7, 8, 9, 12])
     }
 
-    /// Finding 4: a group upload stuck on the network comes first in the
-    /// outbox. The duel upload behind it still goes out.
     func testAStalledGroupUploadNeverHoldsUpADuelUpload() async throws {
         let harness = try Harness()
         _ = try await harness.store.allocateRevision(doublesID, atLeast: 3)
@@ -690,8 +639,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         await runtime.stop()
     }
 
-    /// Finding 4: the group list hangs. The duel publication still goes out,
-    /// and the groups follow once the list answers.
     func testASlowGroupListNeverHoldsUpTheDuelPublication() async throws {
         let root = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -726,9 +673,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         await client.stop()
     }
 
-    /// Finding 5: revision 4 was accepted and left the outbox, then a power
-    /// cut lost the owner document's update. Offline, nothing is queued on
-    /// the old high-water; online, the next revision is 5.
     func testALostOwnerWriteNeverReusesAnAcceptedRevision() async throws {
         let harness = try Harness()
         let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
@@ -740,7 +684,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(first.map(\.clientRevision), [4, 5, 6])
         let cachedHighWater = await harness.store.readModel().first { $0.id == doublesID }?.ownerRevisionHighWater
         XCTAssertEqual(cachedHighWater, 3)
-        // The power cut: the owner document's updates are gone.
         try FileManager.default.removeItem(at: harness.groupDirectory.appendingPathComponent(
             "owner-\(doublesID.uuidString.lowercased()).json"
         ))
@@ -765,10 +708,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(second.map(\.clientRevision), [4, 5, 6, 7], "day 2 goes out as 7")
     }
 
-    /// Re-review 1: through the production App Attest wrapper, a group's
-    /// challenge request hangs while a duel upload waits on the key's gate.
-    /// When the group request times out the duel goes out, and every
-    /// challenge issued is used.
     func testADuelBehindAHeldGroupGoesOutWhenTheGroupRequestTimesOut() async throws {
         let setup = try await AppAttestSetup(test: self, holds: .group, groupHold: .timesOut(after: .seconds(1)))
         await fulfillment(of: [setup.held], timeout: 10)
@@ -781,9 +720,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(challenges.used, challenges.issued, "no challenge is left unused")
     }
 
-    /// Re-review 1: stopping with the group holding the gate and the duel
-    /// waiting, and the other way round, finishes; nothing cancelled issues
-    /// a challenge it then abandons.
     func testStoppingFinishesWhicheverFamilyHoldsAppAttest() async throws {
         for holder in [AppAttestSetup.Family.group, .duel] {
             let setup = try await AppAttestSetup(test: self, holds: holder, groupHold: .forever)
@@ -810,9 +746,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         }
     }
 
-    /// Re-review note 2: the server accepted revision 4 but the response was
-    /// lost. After a relaunch the unchanged request goes again, the server
-    /// answers duplicate with the original points, and the owner row returns.
     func testAnAcceptedUploadWhoseResponseWasLostIsRecoveredAfterARelaunch() async throws {
         let harness = try Harness()
         let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
@@ -822,7 +755,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
             api: server.api(), environment: try health(startDay: (2026, 11, 8), days: 1), now: { clock.now }
         ).run()
         let lost = try await harness.outbox.entries()
-        // sync-02: revisions 5 and 6 wait behind the unanswered 4.
         XCTAssertEqual(lost.map(\.payload.competitionID), [doublesID, doublesID, doublesID], "revision 4 is still queued")
 
         let relaunched = try Harness(root: harness.root)
@@ -839,9 +771,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(outbox, [])
     }
 
-    /// Non-blocking 7: the list still shows revision 10 for day 7 after this
-    /// device saw 11 accepted. Nothing is attested over the stale heads, not
-    /// even best-available after the deadline.
     func testHeadsOlderThanALocalReceiptAreNotAttested() async throws {
         let harness = try Harness()
         let server = try FakeGroupServer(
@@ -870,8 +799,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertTrue(sent.isEmpty)
     }
 
-    /// Non-blocking 8: rows whose fields don't hash to their digest, an
-    /// unknown reason or mode, or a seat twice are rejected whole.
     func testRejectsRowsTheWireValidatorsRefuse() throws {
         func viewerDay(_ edit: @escaping (inout [String: Any]) -> Void) throws -> Data {
             try editedFixture(doublesID) { match in
@@ -899,8 +826,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         }
     }
 
-    // MARK: Helpers
-
     private struct Harness {
         let root: URL
         let groupDirectory: URL
@@ -909,7 +834,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         let events: JSONCompetitionEventStore
         let viewer = UUID(uuidString: "69e5d45f-d72b-2738-b230-1af2557f7b92")!
 
-        /// A fresh directory, or `root` again as after a relaunch.
         init(root existing: URL? = nil) throws {
             root = existing ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
             let noProtection = JSONCompetitionEventStoreFileProtection { _, _ in }
@@ -1003,7 +927,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         )
     }
 
-    /// Health with a reading on the first `days` days of a UTC week.
     private func health(
         startDay: (Int, Int, Int), days count: Int, readFails: Bool = false, lastDayMove: Double = 420
     ) throws -> CompetitionEnvironmentClient {
@@ -1049,7 +972,6 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         )
     }
 
-    /// The first publication matching `predicate`, or nil after 10 seconds.
     private func firstPublication(
         _ updates: AsyncStream<CompetitionPublication>,
         where predicate: @escaping @Sendable (CompetitionPublication) -> Bool
@@ -1119,7 +1041,6 @@ private final class TestClock: @unchecked Sendable {
     }
 }
 
-/// Holds callers until opened.
 private actor Gate {
     private var isOpen = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -1141,8 +1062,6 @@ private actor PresenceProbe {
     func record(_ id: UUID) { ids.append(id) }
 }
 
-/// The group RPCs for one match, holding the viewer's accepted rows the
-/// way `group_match_projection` returns them.
 private actor FakeGroupServer {
     private var match: [String: Any]
     private var rows: [[String: Any]]
@@ -1184,12 +1103,9 @@ private actor FakeGroupServer {
     }
 
     func setFailingAppends(_ value: Bool) { failsAppends = value }
-    /// The next `count` attestations are refused with a 401.
     func rejectAttestations(_ count: Int) { rejectedAttestations = count }
-    /// Another device's upload moved the participant's high-water.
     func setHighWater(_ value: Int64) { highWater = value }
     func setFailingRevisions(_ value: Set<Int64>) { failingRevisions = value }
-    /// The server accepts this revision but the response never arrives.
     func loseResponse(to revision: Int64) { lostResponses.insert(revision) }
     func onFirstAppend(_ action: @escaping @Sendable () async -> Void) { firstAppend = action }
     func clearLog() { log = [] }
@@ -1225,8 +1141,6 @@ private actor FakeGroupServer {
         if failsAppends || failingRevisions.contains(request.clientRevision) {
             throw CompetitionRemoteFailure.retryableTransport
         }
-        // The SQL's rules: an exact retry is a duplicate, anything else at or
-        // below the high-water is refused.
         if let prior = acceptedDigests[request.clientRevision] {
             guard prior.digest == request.wireContentSHA256 else {
                 return try .rejected(.divergentDuplicate, cursor: sequence)
@@ -1308,9 +1222,6 @@ private extension CompetitionScoreRevisionResponse {
     }
 }
 
-/// A runtime behind the production App Attest wrapper, with a group upload
-/// and a duel upload queued. The holder's challenge request hangs the way a
-/// stuck URLSession request does: until it times out or is cancelled.
 private struct AppAttestSetup {
     enum Family: String { case group, duel }
     enum Hold { case forever, timesOut(after: Duration) }
@@ -1345,7 +1256,6 @@ private struct AppAttestSetup {
             competitionExists: { _ in true }
         )
         raw.issueAppAttestChallenge = { request in
-            // The production send refuses a cancelled task before sending.
             guard !Task.isCancelled else { throw CompetitionRemoteFailure.cancelled }
             let isHolder = await server.isFirstChallenge()
             if isHolder {
@@ -1393,7 +1303,6 @@ private struct AppAttestSetup {
         self.server = server
         self.held = held
         self.duelSent = duelSent
-        // The holder's drain takes the gate first.
         if holder == .group {
             _ = await runtime.synchronizeGroupMatches()
         } else {
@@ -1403,7 +1312,6 @@ private struct AppAttestSetup {
     }
 }
 
-/// Challenges the fake server issued, and which of them a proof used.
 private actor ChallengeServer {
     private var requests = 0
     private var issuedIDs: Set<UUID> = []
@@ -1427,13 +1335,11 @@ private actor ChallengeServer {
         submittedIDs.insert(envelope.appAttest.challengeID)
     }
 
-    /// Challenges issued, and how many of them a submission used.
     func counts() -> (issued: Int, used: Int) {
         (issuedIDs.count, issuedIDs.intersection(submittedIDs).count)
     }
 }
 
-/// The stores the App Attest tests share (the test class's Harness is private to it).
 private struct RemoteGroupMatchClientTestsHarnessBox {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     let viewer = UUID(uuidString: "69e5d45f-d72b-2738-b230-1af2557f7b92")!
@@ -1482,8 +1388,6 @@ private actor GroupAppAttestService: AppAttestServiceProtocol {
     func generateAssertion(_ keyID: String, clientDataHash: Data) -> Data { Data("assertion".utf8) }
 }
 
-// MARK: - Commands (I3)
-
 extension RemoteGroupMatchClientTests {
     private static let sam = UUID(uuidString: "4000ca96-a5d0-db44-3b89-bbfb6bc44e19")!
     private static let leo = UUID(uuidString: "758901eb-c557-7975-e585-97488b2a907e")!
@@ -1495,8 +1399,6 @@ extension RemoteGroupMatchClientTests {
             .person(profileID: Self.sam, team: 1), .person(profileID: Self.leo, team: 2), .bot(.beast, team: 2),
         ])
         let echo: [String: Any] = ["competition_id": id.uuidString.lowercased()]
-        // As `participant_projection_v2` builds it: day 1 points, day 2 an
-        // accepted unavailable day, the rest never sent.
         let digest = String(repeating: "ab", count: 32)
         let bankDays: [[String: Any]] = (1...7).map { ordinal in
             var day: [String: Any] = [
@@ -1558,7 +1460,6 @@ extension RemoteGroupMatchClientTests {
             "competition_id": wire(pendingID), "day_ordinal": 2, "reaction": "fire", "target_profile_id": wire(Self.leo),
         ] as NSDictionary)
 
-        // Free-for-all seats carry no team_number key at all.
         let ffa = try GroupMatchRemoteCommand.create(
             creator: viewer, GroupMatchDraft(format: .threeWay, seats: [.person(profileID: Self.sam, team: nil), .bot(.chill, team: nil)]),
             timeZoneIdentifier: "UTC", idempotencyKey: key
@@ -1567,7 +1468,6 @@ extension RemoteGroupMatchClientTests {
         XCTAssertEqual((ffa.parameters["seats"] as? [[String: Any]])?.map { Set($0.keys) }, [
             ["kind", "profile_id"], ["kind", "profile_id"], ["kind", "bot_mode"],
         ])
-        // A pasted challenge link names the person by its code; the server resolves it.
         let linked = try GroupMatchRemoteCommand.create(
             creator: viewer,
             GroupMatchDraft(format: .threeWay, seats: [
@@ -1584,7 +1484,6 @@ extension RemoteGroupMatchClientTests {
             timeZoneIdentifier: "UTC", idempotencyKey: key
         ).rpc(), "a seat count the format can't hold")
 
-        // Anything but the exact answer is a contract mismatch.
         let wrong: [(GroupMatchRemoteCommand, [String: Any])] = [
             (.accept(id), echo.merging(["state": "active"]) { $1 }),
             (.decline(id), ["competition_id": wire(UUID())]),
@@ -1603,7 +1502,6 @@ extension RemoteGroupMatchClientTests {
             let failure = await failure(of: command, answering: .success(body))
             XCTAssertEqual(failure, .serverContractMismatch, "\(command)")
         }
-        // A lapsed invite answers 200 with state expired before cleanup.
         let expired = await failure(of: .accept(id), answering: .success(echo.merging(["state": "expired"]) { $1 }))
         XCTAssertEqual(expired, .inviteUnavailable)
     }
@@ -1628,7 +1526,6 @@ extension RemoteGroupMatchClientTests {
             XCTAssertEqual(failure, expected, message)
             XCTAssertEqual(failure.flatMap { GroupMatchFailure($0) }, reason, message)
         }
-        // A pasted link has no local profile ID; both transports keep the name in the hint.
         let hint = "Sam needs to update HealthComp first."
         let body = try JSONSerialization.data(withJSONObject: [
             "code": "P0001", "message": "group_update_required", "details": Self.sam.uuidString.lowercased(),
@@ -1677,7 +1574,6 @@ extension RemoteGroupMatchClientTests {
         XCTAssertEqual(sent[1].body as NSDictionary, sent[0].body as NSDictionary)
         XCTAssertEqual(sent[2].body as NSDictionary, current as NSDictionary, "a server without the group overload")
 
-        // Gate off: never advertised.
         let off = StubTransport([.response(200, active)])
         _ = try await SupabaseCompetitionRemoteAPI.make(transport: off.transport, supportsGroupMatches: false)
             .registerInstallation(request)
@@ -1728,7 +1624,6 @@ extension RemoteGroupMatchClientTests {
         XCTAssertEqual(creator, viewer)
         XCTAssertEqual(sentDraft, draft)
 
-        // Rematch never sends; it opens Create prefilled.
         do {
             _ = try await client.groupMatchCommand(.rematch(CompetitionID(finishedID)))
             XCTFail("rematch is not a server command")
@@ -1774,8 +1669,6 @@ extension RemoteGroupMatchClientTests {
         await client.stop()
     }
 
-    /// Leave sends this phone's days first and only then banks: the RPC waits
-    /// for a held upload.
     func testLeaveWaitsForTheUploadPassBeforeBanking() async throws {
         let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
         let order = OrderLog()
@@ -1800,8 +1693,6 @@ extension RemoteGroupMatchClientTests {
         await client.stop()
     }
 
-    /// The uploads fail but the server answers: Leave goes ahead and banks
-    /// what the server has (the confirmation said unsent points won't count).
     func testLeaveAfterAFailedUploadStillBanksOnline() async throws {
         let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
         await server.setFailingAppends(true)
@@ -1818,7 +1709,6 @@ extension RemoteGroupMatchClientTests {
         await client.stop()
     }
 
-    /// Offline: Leave fails out loud and nothing is queued to bank later.
     func testLeaveOfflineFailsAndDoesNotQueue() async throws {
         let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
         await server.setFailingAppends(true)
@@ -1884,7 +1774,6 @@ extension RemoteGroupMatchClientTests {
     }
 }
 
-/// Answers RPCs in order and records what was sent.
 private actor StubTransport {
     enum Answer {
         case success([String: Any])
@@ -1917,8 +1806,6 @@ private actor StubTransport {
     }
 }
 
-/// `list_group_matches` bodies in turn (the last repeats once a command has
-/// succeeded), and the group commands it was sent.
 private actor FakeCommandServer {
     private let lists: [Data]
     private var failuresLeft: Int

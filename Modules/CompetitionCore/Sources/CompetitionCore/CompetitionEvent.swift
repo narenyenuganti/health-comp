@@ -110,8 +110,6 @@ public struct CompetitionEvent: Codable, Equatable, Sendable {
             competitionID: competitionID,
             eventKey: kind.semanticKey
         )
-        // This versioned ID validates replay/dedupe identity, not payload
-        // integrity; Task 5 defines trusted local persistence and recovery.
         guard persistedID == expectedID else {
             throw ValidationError.semanticIDMismatch(
                 expected: expectedID,

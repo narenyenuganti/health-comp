@@ -86,7 +86,6 @@ select is((select count(*) from public.competition_participants
     and state = 'accepted'), 2::bigint, 'claim produces exactly two accepted participants');
 reset role;
 
--- Synthetic time boundary; the same public claim and creation interfaces follow.
 update public.competition_invites set created_at = now() - interval '25 hours', expires_at = now()
 where competition_id = (select id from invitation_results where label = 'other');
 update public.competitions set created_at = now() - interval '25 hours', invitation_expires_at = now()

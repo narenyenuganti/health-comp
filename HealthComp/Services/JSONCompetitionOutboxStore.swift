@@ -342,9 +342,6 @@ actor JSONCompetitionOutboxStore: CompetitionOutboxStore {
         } catch {
             throw CompetitionOutboxStoreFailure.invalidDocument
         }
-        // Nested wire timestamps intentionally encode at whole-second
-        // precision, so validate their canonical bytes instead of requiring
-        // lossy in-memory Date values to remain exactly equal.
         let verifiedData: Data
         do {
             verifiedData = try Self.encoder.encode(verified)

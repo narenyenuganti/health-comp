@@ -1,10 +1,5 @@
 import SwiftUI
 
-// The Live Activity's views, compiled into the app and the widget extension.
-// No WidgetKit or ActivityKit context, so the Test Lab can draw them too.
-// Callers pass `state.resolved(isStale:)`.
-
-/// The Lock Screen card.
 struct MatchActivityLockScreenView: View {
     let attributes: MatchActivityAttributes
     let state: MatchActivityAttributes.ContentState
@@ -16,11 +11,8 @@ struct MatchActivityLockScreenView: View {
         VStack(alignment: .leading, spacing: isLarge ? 2 : 8) {
             MatchActivityHeader(state: state, showsTiming: !isLarge)
             HStack(alignment: .bottom, spacing: 8) {
-                // At accessibility sizes the card has no room for a name row,
-                // so "YOU" and the name sit beside the scores.
                 MatchActivityScoreColumn(side: .you, attributes: attributes, state: state, size: 40, namesInline: isLarge)
                 if !isLarge {
-                    // Home's HeroScoreboard divider.
                     Rectangle()
                         .fill(Theme.outline)
                         .frame(width: 2, height: 40)
@@ -32,14 +24,11 @@ struct MatchActivityLockScreenView: View {
             MatchActivityBottomRows(state: state, showsFreshness: !isLarge)
         }
         .padding(isLarge ? 12 : 16)
-        // ponytail: the Lock Screen card is at most 160 pt tall; past AX2 the
-        // text can't fit without truncating, so the card stops growing there.
         .dynamicTypeSize(...DynamicTypeSize.accessibility2)
         .accessibilityElement(children: .combine)
     }
 }
 
-/// Dot, "LAST DAY · SAM" and, on the right, "ENDS AT MIDNIGHT".
 struct MatchActivityHeader: View {
     let state: MatchActivityAttributes.ContentState
     var showsTiming = true
@@ -54,9 +43,6 @@ struct MatchActivityHeader: View {
                     .frame(width: dotSize, height: dotSize)
                     .accessibilityHidden(true)
             }
-            // The timing shows only when the whole title fits beside it, so
-            // "Former competitor" is never cut short for "Ends at midnight".
-            // A longer name shrinks a little, then truncates.
             ViewThatFits(in: .horizontal) {
                 if showsTiming, let timing = state.timing {
                     HStack(spacing: 0) {
@@ -96,8 +82,6 @@ enum MatchActivitySide {
     }
 }
 
-/// "YOU" over the score, or the other person's name over theirs. Inline,
-/// "YOU 2,190" and "2,171 SAM", where the name gives way to the score.
 struct MatchActivityScoreColumn: View {
     let side: MatchActivitySide
     let attributes: MatchActivityAttributes
@@ -123,7 +107,6 @@ struct MatchActivityScoreColumn: View {
         .accessibilityLabel(side.accessibilityLabel(state))
     }
 
-    // Shrinks a little, then truncates, like the header.
     private var name: some View {
         Text(side.name(state).uppercased(with: .current))
             .themeLabel(tracking: 1.4)
@@ -139,7 +122,6 @@ struct MatchActivityScoreColumn: View {
     }
 }
 
-/// The lead sentence, then each side's Updated time.
 struct MatchActivityBottomRows: View {
     let state: MatchActivityAttributes.ContentState
     var showsFreshness = true
@@ -153,10 +135,6 @@ struct MatchActivityBottomRows: View {
                 .font(.footnote)
                 .foregroundStyle(Theme.ink)
                 .lineLimit(isLarge ? 2 : 1)
-                // A long name shrinks a little, then loses its middle, so the
-                // margin at the end ("leads by 15.") always shows. At
-                // accessibility sizes the text is large enough to shrink
-                // further into its two lines, which keeps the whole sentence.
                 .minimumScaleFactor(isLarge ? 0.5 : 0.8)
                 .truncationMode(.middle)
             if showsFreshness, let freshness = state.freshness {
@@ -165,7 +143,7 @@ struct MatchActivityBottomRows: View {
                     .foregroundStyle(Theme.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .truncationMode(.middle)  // keeps "updated 6:02 PM"
+                    .truncationMode(.middle)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -181,9 +159,6 @@ struct MatchActivityBottomRows: View {
     }
 }
 
-/// The expanded Dynamic Island's bottom. The island's height is fixed, so
-/// above the default text size the Updated line goes, as it does on the Lock
-/// Screen at accessibility sizes; it was cut in half at AX5.
 struct MatchActivityIslandBottom: View {
     let state: MatchActivityAttributes.ContentState
 
@@ -194,7 +169,6 @@ struct MatchActivityIslandBottom: View {
     }
 }
 
-/// One side's score in the compact Dynamic Island.
 struct MatchActivityCompactScore: View {
     let side: MatchActivitySide
     let attributes: MatchActivityAttributes
@@ -210,7 +184,6 @@ struct MatchActivityCompactScore: View {
     }
 }
 
-/// "+19" in amber, "−5" in ink or "0", for the minimal Dynamic Island.
 struct MatchActivityMinimalLead: View {
     let attributes: MatchActivityAttributes
     let state: MatchActivityAttributes.ContentState
@@ -235,7 +208,6 @@ struct MatchActivityMinimalLead: View {
     }
 }
 
-/// Apple Watch Smart Stack and CarPlay: the title, then both scores.
 struct MatchActivitySmallView: View {
     let attributes: MatchActivityAttributes
     let state: MatchActivityAttributes.ContentState
@@ -257,26 +229,17 @@ struct MatchActivitySmallView: View {
     }
 }
 
-/// The expanded Dynamic Island's score size. The island's height is fixed, so
-/// at 34 the scores shrank whenever the Updated line showed; 29 fits with it,
-/// and the scores keep one size in every state.
 let matchActivityIslandScoreSize: CGFloat = 29
 
-/// The expanded Dynamic Island's center: "LAST DAY  5 hr, 45 min left", which
-/// iOS counts down with no app work. Pending drops the countdown. One line,
-/// so the scores below keep their size: the island's height is fixed, and a
-/// second line here shrank them.
 struct MatchActivityIslandHeader: View {
     let attributes: MatchActivityAttributes
     let state: MatchActivityAttributes.ContentState
 
     var body: some View {
-        // `textCase` skips a date's text, so only the title is uppercased.
         let title = Text(state.title.uppercased(with: .current))
             .tracking(1.2)
             .foregroundStyle(Theme.ink)
         let countdown = Text(attributes.endsAt, style: .relative) + Text(" left")
-        // Plain footnote, so the countdown reads apart from the tracked title.
         let shownCountdown = countdown.font(.footnote).foregroundStyle(Theme.secondary)
         Group {
             if state.phase == .live {
@@ -294,9 +257,6 @@ struct MatchActivityIslandHeader: View {
 }
 
 extension View {
-    /// Every Dynamic Island region: dark, so amber stays you on black, and
-    /// no larger than xxxLarge, where iOS 18.5 stops growing the island's
-    /// text even at AX5. The Test Lab's island mocks use it too.
     func matchActivityIsland() -> some View {
         environment(\.colorScheme, .dark)
             .dynamicTypeSize(...DynamicTypeSize.xxxLarge)

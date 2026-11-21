@@ -11,8 +11,6 @@ extension CompetitionClient {
         let remoteAPI = SupabaseCompetitionRemoteAPI.live(provider: provider)
         let pushRegistrationClient: CompetitionPushRegistrationClient? =
             installationEnvironment == nil ? nil : .liveValue
-        // An alert is for whoever is signed in as it posts; its reactions are
-        // sent only as them (CompetitionReactionAlert.send).
         var notificationClient = CompetitionNotificationClient.liveValue
         let postNow = notificationClient.postNow
         notificationClient.postNow = { request in
@@ -327,10 +325,8 @@ private struct RemoteCompetitionStoppedTasks {
     let signal: Task<Void, Never>?
     let realtime: Task<Void, Never>?
     var reconcileDrain: Task<Void, Never>? = nil
-    /// Joined too, so teardown can't remove storage while a group pass writes.
     var groupSync: Task<Void, Never>? = nil
 
-    /// Outside the operation gate: these tasks take it.
     func join() async {
         await signal?.value
         await realtime?.value
@@ -374,9 +370,6 @@ enum ProfileScopedAppAttestRemoteAPI {
     }
 }
 
-/// The create requests of this profile's recent challenges, so a pending
-/// challenge's link survives relaunch. Holds no secret: a key is useless
-/// without the sender's session and the server's secret.
 actor RemoteInviteRequestStore {
     private struct Entry: Codable {
         let request: CompetitionInviteCreationRequest
@@ -388,7 +381,6 @@ actor RemoteInviteRequestStore {
         var entries: [String: Entry]
     }
 
-    /// A challenge expires after 24 hours; an hour of slack covers clock skew.
     static let retention: TimeInterval = 25 * 3_600
 
     private let fileURL: URL
@@ -412,7 +404,6 @@ actor RemoteInviteRequestStore {
         )
         guard let data = try? JSONEncoder().encode(Document(entries: entries))
         else { return }
-        // ponytail: errors are swallowed; losing the file only shows "isn't on this iPhone"
         try? FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -433,7 +424,6 @@ actor RemoteInviteRequestStore {
         return entry.request
     }
 
-    // An unreadable or corrupt file counts as empty.
     private func load() -> [String: Entry] {
         guard let data = try? Data(contentsOf: fileURL),
               let document = try? JSONDecoder().decode(Document.self, from: data),
@@ -444,7 +434,6 @@ actor RemoteInviteRequestStore {
 }
 
 private actor RemoteCompetitionClientCoordinator {
-    /// How long a failed sync waits before its one retry.
     static let refreshRetryDelay: Duration = .seconds(1)
 
     private struct OperationWaiter {
@@ -505,13 +494,9 @@ private actor RemoteCompetitionClientCoordinator {
     private var latestPublication: CompetitionPublication?
     private var signalTask: Task<Void, Never>?
     private var realtimeTask: Task<Void, Never>?
-    /// One reconciliation for a burst of HealthKit callbacks and realtime
-    /// wake-ups; `reconcileRequested` asks it for one more pass.
     private var reconcileDrainTask: Task<Void, Never>?
     private var reconcileRequested = false
-    /// `reconcileAll` calls currently waiting on `withOperationGate`.
     private var pendingExplicitReconciliations = 0
-    /// Republishes the last inputs when Home's grouping changes on its own.
     private var boundaryTask: Task<Void, Never>?
     private var lastPublishInputs: (
         materializations: [RemoteCompetitionMaterialization],
@@ -537,27 +522,15 @@ private actor RemoteCompetitionClientCoordinator {
     private var inviteRequests: RemoteInviteRequestStore?
     private var photoCache: ProfilePhotoCache?
     private var mountedCompetitionIDs: Set<CompetitionID> = []
-    /// The last good materialization of each match, shown again when its
-    /// next sync is only cancelled.
     private var lastMaterializations: [CompetitionID: RemoteCompetitionMaterialization] = [:]
-    /// The last challenge list; kept when a refresh can't load it.
     private var latestChallenges = CompetitionChallengeList.empty
-    /// The last reaction list; kept when a refresh can't load it.
     private var latestReactions: [CompetitionReactionRecord] = []
-    /// Sleep beta: your Rings + Sleep duels, and what this phone last read
-    /// for your nights in each.
     private var latestSleep: [CompetitionSleepMatch] = []
     private var ownSleepReadings: [UUID: [Int: CompetitionSleepReading]] = [:]
-    /// The group read model: the last good server list, or the disk cache.
     private var latestGroupMatches: [GroupMatchReadModel] = []
-    /// The group pass in flight and whether another was asked for meanwhile.
     private var groupSync: (runtime: RemoteCompetitionRuntime, again: Bool)?
     private var groupSyncTask: Task<Void, Never>?
-    /// Bumped once a new own photo is cached, so a photo list that was
-    /// already in flight can't evict it.
     private var ownPhotoSaves: UInt64 = 0
-    /// A create that failed keeps its key, so tapping again can't make two.
-    /// ponytail: memory only; a relaunch between tries mints a new key (persist like `inviteRequests` if that bites).
     private var groupCreationKeys: [GroupMatchDraft: (key: UUID, zone: String)] = [:]
     private var hasStarted = false
     private var isStopped = false
@@ -565,8 +538,6 @@ private actor RemoteCompetitionClientCoordinator {
     private var runtimeGeneration: UInt64 = 0
     private var operationIsInProgress = false
     private var operationWaiters: [OperationWaiter] = []
-    /// The practice match: a local runtime that only reads (never
-    /// `handle`/`handleAll`), so the remote runtime keeps signal ownership.
     private var practiceRuntime: LocalCompetitionRuntime?
     private var practiceJournals: [LoadedCompetitionJournal] = []
     private var practiceIssues: [CompetitionClientIssue] = []
@@ -623,9 +594,6 @@ private actor RemoteCompetitionClientCoordinator {
             guard terminalTeardown == nil else {
                 throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
             }
-            // Source activation is the atomic ownership reservation. It must
-            // succeed before the mounted runtime is disturbed, so a rejected
-            // cross-profile mount leaves the origin profile retryable.
             let signalOwnershipActivation = try await environment
                 .activateSignalOwnership(for: profile.id)
             var stoppedPriorRuntime = false
@@ -787,11 +755,6 @@ private actor RemoteCompetitionClientCoordinator {
                     isStopped = true
                     router.finishCurrent()
                     if signalOwnershipActivation.reservationID == nil {
-                        // The source still belongs to the same profile. Keep
-                        // a takeover token so an explicit terminal teardown
-                        // can atomically claim and retire it, including when
-                        // cancellation arrived just after the new lease was
-                        // committed.
                         self.profile = profile
                         recoverableSignalOwnershipActivation =
                             committedSignalOwnership
@@ -933,11 +896,6 @@ private actor RemoteCompetitionClientCoordinator {
         _ runtime: RemoteCompetitionRuntime
     ) async -> RemoteCompetitionRuntimeOutcome {
         var outcome = await runtime.synchronizeAll()
-        // The first requests after the app comes back often fail once while
-        // the network wakes or an expired token refreshes, and the next
-        // refresh succeeds a moment later. Sync once more before publishing,
-        // so "Couldn't update scores" only shows for a failure that holds,
-        // never as a flash. A cancelled refresh skips the retry.
         if outcome.hasRetryableFailure,
            (try? await Task.sleep(for: Self.refreshRetryDelay)) != nil {
             outcome = await runtime.synchronizeAll()
@@ -964,9 +922,6 @@ private actor RemoteCompetitionClientCoordinator {
         }
         startGroupSync(runtime)
         var outcome = await synchronizeWithRetry(runtime)
-        // A callback or realtime wake-up that landed while this pass was
-        // failing asks for another pass anyway; run it before publishing so a
-        // recovery right behind this failure never flashes an error line.
         if outcome.hasSyncFailure, reconcileRequested, !Task.isCancelled {
             reconcileRequested = false
             outcome = await synchronizeWithRetry(runtime)
@@ -1025,7 +980,6 @@ private actor RemoteCompetitionClientCoordinator {
             knownCompetitionIDs: outcome.discoveryFailure == nil
                 ? Set(outcome.outcomes.map(\.competitionID))
                 : nil,
-            // Synced and read this pass; the rest are last-good copies.
             freshCompetitionIDs: Set(reconciled.materializations.map {
                 CompetitionID($0.descriptor.competitionID)
             }).subtracting(failedIDs).subtracting(activityFailedIDs)
@@ -1034,8 +988,6 @@ private actor RemoteCompetitionClientCoordinator {
         return publication
     }
 
-    /// Group matches sync beside the duels and republish when they land, so
-    /// a slow group list or Health read never holds up a duel publication.
     private func startGroupSync(_ runtime: RemoteCompetitionRuntime) {
         if let current = groupSync, current.runtime === runtime {
             groupSync = (runtime, true)
@@ -1051,10 +1003,8 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
-    /// Publishes a finished group pass; true when another pass was asked for.
     private func applyGroupMatches(_ matches: [GroupMatchReadModel], from runtime: RemoteCompetitionRuntime) async -> Bool {
         await withOperationGate {
-            // A pass from a torn-down runtime publishes nothing.
             guard self.runtime === runtime, let current = groupSync, current.runtime === runtime else { return false }
             guard terminalTeardown == nil, !isStopped else {
                 groupSync = nil
@@ -1069,15 +1019,12 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
-    /// One group pass (list, own uploads), published when it lands.
     private func syncGroupMatchesNow() async {
         guard let runtime else { return }
         startGroupSync(runtime)
         await groupSyncTask?.value
     }
 
-    /// The server command, then a fresh group list. Leave first sends what
-    /// this phone has: the server banks only what it accepted.
     func groupMatchCommand(_ command: GroupMatchCommand) async throws -> CompetitionPublication {
         if case .leave = command { await syncGroupMatchesNow() }
         try await withCancellableOperationGate {
@@ -1089,7 +1036,6 @@ private actor RemoteCompetitionClientCoordinator {
                 try await remoteAPI.blockChallenger(id.rawValue)
                 return
             }
-            // Rematch opens Create prefilled; only its Create Match sends.
             if case .rematch = command { throw CompetitionRemoteFailure.operationFailed }
             var draft: GroupMatchDraft?
             if case let .create(created) = command { draft = created }
@@ -1143,7 +1089,6 @@ private actor RemoteCompetitionClientCoordinator {
             guard terminalTeardown == nil else { return }
             await notificationCoordinator.reconcileLatest()
             await liveActivities?.reconcileLatest()
-            // Re-registers only when the token or switched-off push kinds changed.
             await installationCoordinator?.reconcile()
         }
     }
@@ -1196,10 +1141,6 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
-    // MARK: Practice
-
-    /// Reads Health for the practice match and deletes a finished one once
-    /// its result leaves Home. No network.
     private func refreshPractice(_ trigger: ActivityRefreshTrigger) async {
         guard let practiceRuntime else { return }
         let outcome = await practiceRuntime.reconcileAll(trigger: trigger)
@@ -1237,7 +1178,6 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
-    /// End Practice. Real matches can't be deleted, as before.
     func endPractice(_ id: CompetitionID) async -> CompetitionPublication {
         await withOperationGate {
             guard terminalTeardown == nil else {
@@ -1250,7 +1190,6 @@ private actor RemoteCompetitionClientCoordinator {
                 return publication(adding: .commandRejected(id))
             }
             practiceJournals = await practiceRuntime.loadAll().successfulJournals
-            // A stale failure for this id would keep the deleted practice on Home.
             practiceIssues = practiceIssues.compactMap { issue in
                 guard case .competitionFailures(let ids) = issue else { return issue }
                 let rest = ids.filter { $0 != id }
@@ -1260,8 +1199,6 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
-    /// The last server inputs again, with fresh practice; a full
-    /// reconciliation when nothing was published yet.
     private func republishLastInputs() async -> CompetitionPublication {
         guard let profile, let inputs = lastPublishInputs else {
             return await performReconciliation()
@@ -1305,8 +1242,6 @@ private actor RemoteCompetitionClientCoordinator {
         return publication
     }
 
-    /// Accept, decline or cancel: the server command, then a refresh. A
-    /// failure marks the match `commandRejected`.
     func respond(
         _ id: CompetitionID,
         inviteUnavailableIsDone: Bool = false,
@@ -1320,13 +1255,9 @@ private actor RemoteCompetitionClientCoordinator {
             do {
                 try await command(remoteAPI, id.rawValue)
             } catch CompetitionRemoteFailure.inviteUnavailable where inviteUnavailableIsDone {
-                // No longer pending (cancelled or expired): nothing to decline.
             } catch {
                 return rejection(id)
             }
-            // A challenge link's Decline can run before Health is set up.
-            // Nothing is refreshed (a refresh reads Health) or published
-            // until it starts.
             guard hasStarted else { return unpublishedPublication(issues: []) }
             return await performReconciliation()
         }) else {
@@ -1335,14 +1266,12 @@ private actor RemoteCompetitionClientCoordinator {
         return publication
     }
 
-    /// A rejected command; before start it isn't published.
     private func rejection(_ id: CompetitionID) -> CompetitionPublication {
         hasStarted
             ? publication(adding: .commandRejected(id))
             : unpublishedPublication(issues: [.commandRejected(id)])
     }
 
-    /// A read-only server call that needs a signed-in, running profile.
     func remote<Value: Sendable>(
         _ operation: @escaping @Sendable (CompetitionRemoteAPI) async throws -> Value
     ) async throws -> Value {
@@ -1355,7 +1284,6 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
-    /// Your id and this account's photo cache, for a signed-in, running profile.
     private func photoAccount() throws -> (id: UUID, cache: ProfilePhotoCache) {
         guard terminalTeardown == nil else {
             throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
@@ -1366,20 +1294,16 @@ private actor RemoteCompetitionClientCoordinator {
         return (profile.id, photoCache)
     }
 
-    /// Whether `cache` is still the mounted account's, after an await.
     private func isMountedPhotoCache(_ cache: ProfilePhotoCache) -> Bool {
         runtime != nil && terminalTeardown == nil && photoCache?.directory == cache.directory
     }
 
-    /// Reads run outside the operation gate, so avatars never hold up a
-    /// sync; a result that lands after sign-out or a switch isn't cached.
     func loadProfilePhotos(_ profileIDs: [UUID]) async throws -> [ProfilePhotoReference] {
         let account = try photoAccount()
         let owners = Array(Set(profileIDs))
         let ownPhotoSaves = self.ownPhotoSaves
         let references = try await remoteAPI.listProfilePhotos(owners)
         if isMountedPhotoCache(account.cache) {
-            // A list from before your new photo was saved would delete it.
             account.cache.retain(
                 references,
                 among: ownPhotoSaves == self.ownPhotoSaves ? owners : owners.filter { $0 != account.id }
@@ -1413,8 +1337,6 @@ private actor RemoteCompetitionClientCoordinator {
         return photoCache?.latest(owner: owner)
     }
 
-    /// Revalidate visibility before baking a cached avatar into a local alert.
-    /// Never download a photo for a notification, and fail closed when offline.
     private func notificationSender(_ sender: CompetitionNotificationSender?, accountID: UUID) async -> CompetitionNotificationSender? {
         guard let sender, let account = try? photoAccount(), account.id == accountID,
               sender.profileID != account.id, !account.cache.isReported(owner: sender.profileID),
@@ -1428,8 +1350,6 @@ private actor RemoteCompetitionClientCoordinator {
                                 isVisible: reference != nil)
     }
 
-    /// Clears leftovers first (the folder holds three objects at most), then
-    /// uploads a new version and deletes the old one.
     func setProfilePhoto(_ jpeg: Data) async throws -> ProfilePhotoReference {
         try await withCancellableOperationGate {
             let account = try photoAccount()
@@ -1467,8 +1387,6 @@ private actor RemoteCompetitionClientCoordinator {
         return photoCache?.isReported(owner: owner) ?? false
     }
 
-    /// Turns sleep on for a challenge you just created and republishes it as
-    /// Rings + Sleep.
     func enableSleep(_ id: CompetitionID) async throws -> CompetitionPublication {
         try await withCancellableOperationGate {
             guard terminalTeardown == nil else {
@@ -1490,8 +1408,6 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
-    /// Reads your nights for each live sleep duel and saves any that changed.
-    /// A night with nothing in Health is left unsaved, which scores 0.
     private func syncOwnSleep(
         materializations: [RemoteCompetitionMaterialization],
         profile: AuthenticatedProfile
@@ -1513,7 +1429,6 @@ private actor RemoteCompetitionClientCoordinator {
                   let first = days.first.flatMap(SleepScore.window(for:)),
                   let last = days.last.flatMap(SleepScore.window(for:)),
                   now > first.start,
-                  // The 13 nights before Day 1 set your usual bedtime.
                   let samples = try? await environment.readSleepSamples(
                       DateInterval(
                           start: first.start.addingTimeInterval(-Double(SleepScore.historyNights) * 86_400),
@@ -1548,9 +1463,6 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
-    /// Saves your reaction, then republishes the last inputs with it (no
-    /// network beyond the RPC). The realtime wakeup that follows reconciles
-    /// and replaces this row with the server's.
     func setReaction(
         _ id: CompetitionID,
         _ target: CompetitionReactionTarget,
@@ -1598,7 +1510,6 @@ private actor RemoteCompetitionClientCoordinator {
         guard let latestPublication else {
             return publish(materializations: [], issues: [issue])
         }
-        // Kept for republishes; the next full reconciliation starts over.
         if var inputs = lastPublishInputs {
             inputs.issues = Self.deduplicated(inputs.issues + [issue])
             lastPublishInputs = inputs
@@ -1640,7 +1551,6 @@ private actor RemoteCompetitionClientCoordinator {
                 throw CompetitionRemoteFailure.unauthenticated
             }
             let invite = try await remoteAPI.createInvite(request)
-            // Replaying this request later returns the same link.
             await inviteRequests?.save(
                 request,
                 for: CompetitionID(invite.competitionID),
@@ -1654,8 +1564,6 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
-    /// Gets a pending challenge's link back by replaying its create request:
-    /// the server answers the same key with the same challenge and token.
     func restoreInvite(
         _ id: CompetitionID
     ) async throws -> CompetitionInviteCreationOutcome {
@@ -1694,10 +1602,6 @@ private actor RemoteCompetitionClientCoordinator {
     func stop() async {
         if terminalTeardown == nil,
            recoverableSignalOwnershipActivation == nil {
-            // A signal reconciliation can be suspended in profile-scoped
-            // receipt persistence while holding the operation gate. Cancel
-            // the runtime tasks before joining that gate so their cancellation
-            // handlers can release external work and make stop bounded.
             signalTask?.cancel()
             realtimeTask?.cancel()
             reconcileDrainTask?.cancel()
@@ -1707,20 +1611,13 @@ private actor RemoteCompetitionClientCoordinator {
             await withOperationGate {
             if let terminalTeardown,
                case .quiescing = terminalTeardown.stage {
-                // A failed terminal drain must remain mounted and retryable.
-                // App lifecycle stop is not allowed to erase that context.
                 return nil
             }
             if recoverableSignalOwnershipActivation != nil {
-                // A failed same-profile takeover still carries the only
-                // authenticated path to terminally retire the process-rooted
-                // source. Ordinary stop must not discard that capability.
                 return nil
             }
             isStopped = true
             let stoppedTasks = await stopRuntime()
-            // Not in stopRuntime(): mount calls it, and would end the card
-            // the previous process left at every launch.
             await liveActivities?.endAll()
             profile = nil
             hub = nil
@@ -1747,10 +1644,6 @@ private actor RemoteCompetitionClientCoordinator {
     ) async throws {
         try Task.checkCancellation()
         if terminalTeardown == nil {
-            // Terminal preparation must be able to join the operation gate
-            // even when signal or realtime work is suspended in an external
-            // dependency. Cancellation preserves completion-bearing signals
-            // in the process-rooted source for the quiesce/drain phase below.
             signalTask?.cancel()
             realtimeTask?.cancel()
             reconcileDrainTask?.cancel()
@@ -1768,9 +1661,6 @@ private actor RemoteCompetitionClientCoordinator {
                 else {
                     throw CompetitionRemoteFailure.unauthenticated
                 }
-                // A cancelled bootstrap may have been invalidated before it
-                // committed any profile-owned runtime. That is already a
-                // terminally clean state, so teardown remains idempotent.
                 return nil
             }
             if let activation = recoverableSignalOwnershipActivation {
@@ -2029,7 +1919,6 @@ private actor RemoteCompetitionClientCoordinator {
         latestPublication ?? unpublishedPublication(issues: [.storageUnavailable])
     }
 
-    /// An empty answer that isn't sent to subscribers.
     private func unpublishedPublication(
         issues: [CompetitionClientIssue]
     ) -> CompetitionPublication {
@@ -2077,8 +1966,6 @@ private actor RemoteCompetitionClientCoordinator {
         if stoppedTasks.realtime != nil {
             await realtimeClient.stop()
         }
-        // Group matches and unmaterialized duels aren't in
-        // mountedCompetitionIDs, so clear the whole namespace.
         await notificationCoordinator.removeAll()
         mountedCompetitionIDs = []
         inviteRequests = nil
@@ -2179,12 +2066,10 @@ private actor RemoteCompetitionClientCoordinator {
                         )
                 }
             }
-            // Recorded under the gate, so the next pass reads after it.
             requestReconciliation(generation: generation)
         }
     }
 
-    /// Callbacks that land while a pass runs share the next one.
     private func requestReconciliation(generation: UInt64) {
         reconcileRequested = true
         guard reconcileDrainTask == nil else { return }
@@ -2207,7 +2092,6 @@ private actor RemoteCompetitionClientCoordinator {
                 _ = await performReconciliation()
             }
         }
-        // No suspension since the loop's check, so no request is lost.
         if generation == runtimeGeneration { reconcileDrainTask = nil }
     }
 
@@ -2255,8 +2139,6 @@ private actor RemoteCompetitionClientCoordinator {
                 }
             } catch {
                 HealthKitDeliveryDiagnostic.receiptPersistenceFailed.record()
-                // HealthKit retains the callback until a later canonical
-                // reconciliation commits the same privacy-safe receipt.
             }
         }
     }
@@ -2281,15 +2163,11 @@ private actor RemoteCompetitionClientCoordinator {
         _ wakeUp: CompetitionRealtimeWakeUp,
         generation: UInt64
     ) async {
-        // No gate: a wake-up records nothing, so one landing mid-pass just
-        // asks for the next pass instead of queuing a pass of its own.
         guard terminalTeardown == nil,
               generation == runtimeGeneration,
               !Task.isCancelled else {
             return
         }
-        // The reason and cursor are diagnostic hints only. Durable state is
-        // always authoritative, including duplicate and out-of-order hints.
         _ = wakeUp
         requestReconciliation(generation: generation)
     }
@@ -2414,7 +2292,6 @@ private actor RemoteCompetitionClientCoordinator {
         profile: AuthenticatedProfile,
         issues: [CompetitionClientIssue],
         knownCompetitionIDs: Set<CompetitionID>?,
-        /// Matches whose totals this pass read; a republish has none.
         freshCompetitionIDs: Set<CompetitionID> = []
     ) async -> CompetitionPublication {
         let context = await environment.context()
@@ -2447,7 +2324,6 @@ private actor RemoteCompetitionClientCoordinator {
             timeZoneIdentifier: context.timeZoneIdentifier
         )
         lastPublishInputs = (materializations, issues, knownCompetitionIDs)
-        // A floor, so a wake the runtime asks for "now" can't spin.
         let practiceWake = await practiceRuntime?.nextWake(
             in: practiceJournals,
             context: context
@@ -2481,8 +2357,6 @@ private actor RemoteCompetitionClientCoordinator {
             )
         )
         await liveActivities?.submit(publication, knownCompetitionIDs: knownCompetitionIDs)
-        // Without discovery the full set of matches is unknown: keep the
-        // last good file. Matches that didn't sync this round carry forward.
         if let knownCompetitionIDs {
             let unsynced = Set(knownCompetitionIDs.subtracting(materializedIDs).map(\.rawValue))
             await widgetSnapshots.write(
@@ -2492,7 +2366,6 @@ private actor RemoteCompetitionClientCoordinator {
         return publication
     }
 
-    // ponytail: one republish at the next boundary, rescheduled by every publish; no network.
     private func scheduleBoundaryRepublish(at wake: Date?) {
         boundaryTask?.cancel()
         boundaryTask = nil
@@ -2519,7 +2392,6 @@ private actor RemoteCompetitionClientCoordinator {
             else {
                 return
             }
-            // Also a pacer checkpoint: one local read, at most every 5 min.
             await refreshPractice(.dayBoundary)
             _ = await republishLastInputs()
         }
@@ -2564,9 +2436,6 @@ private actor RemoteCompetitionClientCoordinator {
 }
 
 extension RemoteCompetitionRuntimeOutcome {
-    /// A network or mid-refresh token failure, worth one more try before
-    /// it is shown. Storage, contract and permission failures won't clear a
-    /// second later, so they show at once.
     var hasRetryableFailure: Bool {
         failures.contains {
             $0.failure == .discoveryUnavailable || $0.failure == .unauthenticated
@@ -2575,17 +2444,11 @@ extension RemoteCompetitionRuntimeOutcome {
             || discoveryFailure == .unauthenticated
     }
 
-    /// Any non-cancelled discovery or per-match sync failure.
     var hasSyncFailure: Bool {
         discoveryFailure != nil
             || failures.contains { $0.failure != .cancelled }
     }
 
-    /// A match whose sync was only cancelled (the person left the screen
-    /// mid-refresh) is not a failure: it keeps its last good materialization
-    /// and raises no issue. A failed match stays on screen with its last
-    /// presentation, so it keeps its last good materialization for a later
-    /// cancelled sync too.
     func reconciled(
         previous: [CompetitionID: RemoteCompetitionMaterialization]
     ) -> (
@@ -2682,8 +2545,6 @@ enum RemoteCompetitionProjector {
         )
     }
 
-    /// Incoming challenges and the last day's declines and cancels. They have
-    /// no local journal, so they never schedule notifications.
     static func challengePresentations(
         _ challenges: CompetitionChallengeList,
         excluding materializedIDs: Set<CompetitionID>,
@@ -2745,7 +2606,6 @@ enum RemoteCompetitionProjector {
         profile: AuthenticatedProfile,
         context: CompetitionEnvironmentContext,
         knownCompetitionIDs: Set<CompetitionID>?,
-        /// Nil: every match was read just now.
         freshCompetitionIDs: Set<CompetitionID>? = nil
     ) -> CompetitionNotificationPlanningSnapshot {
         let competitions = materializations.compactMap { materialization in
@@ -2763,7 +2623,6 @@ enum RemoteCompetitionProjector {
             evaluatedAt: context.instant.wallDate,
             timeZoneIdentifier: context.timeZoneIdentifier,
             competitions: competitions,
-            // Group matches are known too, so orphan cleanup keeps their banter.
             knownCompetitionIDs: knownCompetitionIDs.map {
                 $0.union(publication.dashboard.groupMatches.map(\.id))
             },
@@ -2801,7 +2660,6 @@ enum RemoteCompetitionProjector {
             },
             currentDayOrdinal: projected.currentDayOrdinal,
             latestRefresh: .completed,
-            // A republish or a last-good copy: score alerts wait for a read.
             evaluationFreshness: isFresh
                 ? .freshCompletedRefresh(
                     attemptID: "remote-reconciliation-v1:\(materialization.descriptor.serverCursor)",
@@ -2823,10 +2681,6 @@ enum RemoteCompetitionProjector {
         )
     }
 
-    /// Rebuilds every journal-derived notification field after a commit CAS
-    /// conflict. Presentation-only names and evaluation freshness remain bound
-    /// to the submitted publication because neither is persisted in the Core
-    /// journal.
     static func notificationCompetition(
         reloading loaded: LoadedCompetitionJournal,
         profileID: UUID,
@@ -2891,15 +2745,10 @@ enum RemoteCompetitionProjector {
             evaluatedAt: baseline.evaluatedAt,
             timeZoneIdentifier: schedule?.calendar.timeZoneIdentifier
                 ?? baseline.timeZoneIdentifier,
-            // No owner activity here; currentDayOrdinal comes from the same
-            // evaluatedAt, so the reminder's day check still holds.
             whatItTakes: baseline.whatItTakes
         )
     }
 
-    /// `closesLapsedChallenges` shows a pending challenge past its expiry as
-    /// expired. The server only flips it lazily, so the dashboard does it;
-    /// notifications keep the stored lifecycle.
     private static func presentation(
         from materialization: RemoteCompetitionMaterialization,
         profile: AuthenticatedProfile,
@@ -2965,7 +2814,6 @@ enum RemoteCompetitionProjector {
                 schedule: schedule,
                 now: context.instant.wallDate
             ),
-            // Remote reads don't record a trigger and no screen shows one.
             lastRefresh: activity.map {
                 CompetitionRefreshPresentation(
                     trigger: .reconciliationProbe,
@@ -3024,8 +2872,6 @@ enum RemoteCompetitionProjector {
                     try? $0.visibleEntry(forActiveDayOrdinal: ordinal)
                 }
             }
-            // "sourceDataUnavailable" is the runtime's row for a day Health
-            // had no summary for, so it reads as missing (or not synced yet).
             let availability: CompetitionOwnerAvailability
             if future {
                 availability = .notYetOccurred
@@ -3043,7 +2889,6 @@ enum RemoteCompetitionProjector {
             } else {
                 availability = .missing
             }
-            // An older reading never labels a newer row.
             let acceptedSnapshot = activityDay?.acceptedClientRevision != nil
                 && activityDay?.acceptedClientRevision == owner?.clientRevision
                 ? activityDay?.acceptedSnapshot : nil
@@ -3080,10 +2925,6 @@ enum RemoteCompetitionProjector {
         guard case .tallying = competition.lifecycle,
               let configuration = competition.remoteConfiguration
         else { return nil }
-        // A row that carries an unavailable reason is in: the iPhone attests
-        // stable once all seven rows exist, so it never blocks the result.
-        // Your "sourceDataUnavailable" row means Health had no summary, so
-        // it reads as missing, like the day states.
         func missingDays(_ id: UUID?) -> Set<Int> {
             let ledger = id.flatMap { projection.remoteScoreLedgers[$0] }
             return Set((1...7).filter { day in
@@ -3107,11 +2948,6 @@ enum RemoteCompetitionProjector {
         )
     }
 
-    /// Waits on whoever has missing day rows: you first, then them. Your
-    /// stable check locks your window (later rows get `window_stable`), so
-    /// your missing days stop counting and the wait is theirs: the server
-    /// finalizes in the same transaction as the second stable check
-    /// (`attest_final_window`), so a still-tallying match hasn't got it.
     static func remoteTallyAttention(
         ownerMissing: Set<Int>,
         opponentMissing: Set<Int>,
@@ -3141,8 +2977,6 @@ enum RemoteCompetitionProjector {
     }
 }
 
-/// A row's Move, Exercise and Stand points: its own, or the backfill's for a
-/// row journaled before rows kept them.
 func competitionRingPoints(
     _ row: RemoteAcceptedScoreRow?,
     backfill: [Int64: [Int]]
@@ -3151,9 +2985,6 @@ func competitionRingPoints(
     return (row.ringBasisPoints ?? backfill[row.serverSequence])?.map { Double($0) / 100 }
 }
 
-/// What one processed HealthKit observer callback produced. Signal IDs embed
-/// a per-process UUID, so no later launch can match one: the receipts only
-/// need to live as long as the process (sync-10).
 struct HealthKitObserverDeliveryReceipt: Equatable, Sendable {
     let signalID: String
     let trigger: ActivityRefreshTrigger
@@ -3180,7 +3011,6 @@ struct HealthKitObserverDeliveryReceiptClient: Sendable {
         self.commit = commit
     }
 
-    /// Remembers committed signal IDs for this process only.
     static func processLifetime() -> Self {
         let committed = CommittedSignalIDs()
         return Self(

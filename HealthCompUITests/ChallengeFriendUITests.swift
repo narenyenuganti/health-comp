@@ -1,11 +1,5 @@
 import XCTest
 
-/// The Challenge sheet's friends, and Remove Friend, Block and Report on a
-/// person page, through the app's own root view. `FriendsTestLabServer`
-/// scripts the server: every call takes 0.3 s; Jordan has asked to be
-/// friends; your friends are Priya (your challenge is waiting), Maya (live),
-/// Sam (starts soon), Dev (one finished week) and Kai (nothing yet, and the
-/// server refuses a challenge to Kai); Sam's challenge link finds Sam Okafor.
 final class ChallengeFriendUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -23,8 +17,6 @@ final class ChallengeFriendUITests: XCTestCase {
         case empty = "friends-empty"
     }
 
-    /// Wrapped text the clipping audit flags anyway, seen whole in the
-    /// attached screenshots.
     private static let readsClippedToTheAudit: Set<String> = [
         "Friends can challenge each other without a link.",
         "Confirm this is the person you intended before creating the challenge.",
@@ -40,8 +32,6 @@ final class ChallengeFriendUITests: XCTestCase {
         app = nil
     }
 
-    // MARK: Challenge sheet
-
     func testPickAFriendConfirmAndSend() {
         launch(.challengeFriend)
         openSheet()
@@ -51,14 +41,12 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(dev.label.contains("You lead 1–0"), dev.label)
         XCTAssertTrue(friendRow(Person.kai).label.contains("No matches yet"))
         XCTAssertTrue(element("competition.create.someone-else").exists)
-        // Nothing to confirm yet, so no Create button.
         XCTAssertFalse(app.buttons["competition.create.button"].exists)
 
         dev.tap()
         let name = app.staticTexts["competition.create.recipient-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 3))
         XCTAssertEqual(name.label, "Challenge Dev Patel")
-        // A friend needs no link: the field never shows.
         XCTAssertFalse(element("competition.create.recipient-code").exists)
         XCTAssertFalse(app.buttons["competition.create.find-recipient"].exists)
         XCTAssertTrue(app.staticTexts["competition.create.time-zone"].exists)
@@ -122,7 +110,6 @@ final class ChallengeFriendUITests: XCTestCase {
         launch(.challengeFriend)
         openSheet()
 
-        // Paste Their Challenge Link -> Back returns one step to the Challenge sheet.
         app.buttons["competition.create.paste-link"].tap()
         XCTAssertTrue(recipientCodeField.waitForExistence(timeout: 3))
         let drawerBack = app.buttons["competition.create.back"]
@@ -131,8 +118,6 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(app.buttons["competition.create.search-people"].waitForExistence(timeout: 3))
         XCTAssertTrue(element("competition.create.friends").exists)
 
-        // Search People -> Friends -> person profile -> Back -> Friends -> Back returns one step to the Challenge sheet,
-        // using the exact same drawer Back button geometry at every step.
         app.buttons["competition.create.search-people"].tap()
         XCTAssertTrue(element("friends.screen").waitForExistence(timeout: 5))
         XCTAssertFalse(app.navigationBars["Friends"].exists)
@@ -159,7 +144,6 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(app.buttons["competition.create.search-people"].exists)
         XCTAssertTrue(element("competition.create.friends").exists)
 
-        // Re-opening Search People starts with a clean search field, and challenging from a profile lands in the sheet.
         app.buttons["competition.create.search-people"].tap()
         XCTAssertTrue(element("friends.screen").waitForExistence(timeout: 5))
         XCTAssertEqual(fieldText(search), "")
@@ -191,7 +175,6 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertFalse(element("competition.create.friends").exists, "The link replaces the groups")
         field.tap()
         type("healthcomp://challenge/SamSamSamSamSamSamSam1", into: field)
-        // Return runs Find.
         field.typeText("\n")
         let name = app.staticTexts["competition.create.recipient-name"]
         expect(name, field: field)
@@ -348,8 +331,6 @@ final class ChallengeFriendUITests: XCTestCase {
         try audit("pick-bot bottom dark-ax5")
     }
 
-    // MARK: Person pages
-
     func testRemoveFriend() {
         launch(.challengeFriend)
         openFriend(Person.dev)
@@ -364,7 +345,6 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["You can still play each other with a link."].exists)
         confirm("Remove Friend", menuID: "friends.menu.remove")
         reopenMenu { menuItem("friends.menu.add").exists }
-        // Played but no longer friends: they can be added again.
         XCTAssertTrue(menuItem("friends.menu.add").exists)
         XCTAssertFalse(menuItem("friends.menu.remove").exists)
         closeMenu()
@@ -372,8 +352,6 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(app.buttons["friends.friend.\(Person.dev)"].waitForNonExistence(timeout: 5))
     }
 
-    /// The small page: Cancel Request for someone you asked, and Add Friend
-    /// for someone you're playing but haven't finished a week with.
     func testThePersonMenuOffersCancelRequestAndAddFriend() {
         launch(.challengeFriend)
         let friends = app.buttons["friends.open"]
@@ -393,13 +371,11 @@ final class ChallengeFriendUITests: XCTestCase {
         menuItem("friends.menu.cancel-request").tap()
         confirm("Cancel Request", menuID: "friends.menu.cancel-request")
         reopenMenu { !menuItem("friends.menu.cancel-request").exists }
-        // Never played: the page's own button adds them.
         XCTAssertFalse(menuItem("friends.menu.cancel-request").exists)
         XCTAssertFalse(menuItem("friends.menu.add").exists)
         closeMenu()
         back()
 
-        // Priya: a friend with a challenge waiting, no finished week.
         element("friends.search.clear").tap()
         let priya = app.buttons["friends.friend.\(Person.priya)"]
         XCTAssertTrue(priya.waitForExistence(timeout: 5))
@@ -425,7 +401,6 @@ final class ChallengeFriendUITests: XCTestCase {
             "Kai Ito can’t challenge you or find you in search, and you’ll no longer be friends. They aren’t notified."
         ].exists)
         confirm("Block Kai Ito", menuID: "friends.menu.block")
-        // Back where they were found, and gone from it.
         XCTAssertTrue(element("friends.person").waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.navigationBars["Friends"].exists)
         XCTAssertTrue(app.buttons["friends.friend.\(Person.kai)"].waitForNonExistence(timeout: 5))
@@ -471,9 +446,6 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(unblock.exists)
     }
 
-    // MARK: Appearances
-
-    /// Named `<screen>-<light|dark>-<default|ax5>`, for review.
     func testAppearancesAndLargestTextSize() throws {
         let sizes = [("default", "UICTContentSizeCategoryL"), ("ax5", "UICTContentSizeCategoryAccessibilityXXXL")]
         for appearance in ["Light", "Dark"] {
@@ -526,13 +498,10 @@ final class ChallengeFriendUITests: XCTestCase {
                 dismissDialog()
 
                 if sizeName == "ax5" {
-                    // The sheet's last rows, which only scrolling shows.
                     launch(.challengeFriend, arguments: arguments)
                     openSheet()
                     let share = app.buttons["competition.create.share-own-link"]
                     XCTAssertTrue(share.waitForExistence(timeout: 5))
-                    // Swipes, not scrollTo: at ax5 the share row never
-                    // reported hittable, though the sheet scrolls to it.
                     for _ in 0..<4 { app.swipeUp() }
                     shot("sheet-friends-\(suffix)-bottom")
                     try audit("sheet bottom \(suffix)")
@@ -546,8 +515,6 @@ final class ChallengeFriendUITests: XCTestCase {
             }
         }
     }
-
-    // MARK: Helpers
 
     private var recipientCodeField: XCUIElement {
         let field = app.textFields["competition.create.recipient-code"]
@@ -564,7 +531,6 @@ final class ChallengeFriendUITests: XCTestCase {
         return row
     }
 
-    // iOS 18 exposes Menu's identified wrapper, not its nested button, as hittable.
     private func openMenu() {
         let more = element("competition.more")
         XCTAssertTrue(more.waitForExistence(timeout: 3))
@@ -572,8 +538,6 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(menuItem("friends.menu.block").waitForExistence(timeout: 3))
     }
 
-    /// The menu only changes when it opens again, after the scripted 0.3 s
-    /// call: reopen it until `ready` holds, for up to 5 s.
     private func reopenMenu(until ready: () -> Bool) {
         let deadline = Date().addingTimeInterval(5)
         openMenu()
@@ -584,7 +548,6 @@ final class ChallengeFriendUITests: XCTestCase {
     }
 
     private func closeMenu() {
-        // A tap above the menu, on the navigation bar's title.
         app.navigationBars.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         _ = menuItem("friends.menu.block").waitForNonExistence(timeout: 2)
     }
@@ -593,7 +556,6 @@ final class ChallengeFriendUITests: XCTestCase {
         app.buttons[identifier]
     }
 
-    /// The dialog's button, not the menu item of the same name.
     private func confirm(_ label: String, menuID: String) {
         let button = app.buttons.matching(
             NSPredicate(format: "label == %@ AND identifier != %@", label, menuID)
@@ -602,7 +564,6 @@ final class ChallengeFriendUITests: XCTestCase {
         button.tap()
     }
 
-    /// Cancel, or a tap outside where iOS shows the dialog as a popover.
     private func dismissDialog() {
         let cancel = app.buttons["Cancel"].firstMatch
         if cancel.exists, cancel.isHittable {
@@ -630,13 +591,11 @@ final class ChallengeFriendUITests: XCTestCase {
 
     private func openSheet(waitForFriends: Bool = true) {
         if waitForFriends {
-            // The badge shows once the Friends list has loaded.
             XCTAssertTrue(waitUntil(5) { self.app.buttons["friends.open"].label == "Friends, 1 request" })
         }
         let open = app.buttons["competition.create.open"]
         XCTAssertTrue(open.waitForExistence(timeout: 5))
         open.tap()
-        // + opens New Match on Duel; Choose Players opens the Challenge sheet.
         let duel = app.buttons["competition.group.choose-players"]
         XCTAssertTrue(duel.waitForExistence(timeout: 3))
         duel.tap()
@@ -667,10 +626,6 @@ final class ChallengeFriendUITests: XCTestCase {
 
     private func scrollTo(_ target: XCUIElement) {
         let window = app.windows.firstMatch
-        // Fully on screen: a row cut by the bottom edge reports hittable,
-        // but a tap there lands on the home indicator.
-        // A swipe, not a press-and-drag: at the largest text size the press
-        // lands on a friend row and the sheet takes it as a tap.
         for _ in 0..<16 {
             if target.exists, target.isHittable,
                target.frame.minY >= app.frame.minY + 60,
@@ -694,8 +649,6 @@ final class ChallengeFriendUITests: XCTestCase {
         if requireHittable { XCTAssertTrue(target.isHittable, "\(target)") }
     }
 
-    /// A slow runner can drop keys: type, read the field back, and retype
-    /// once from empty if it doesn't hold the text.
     private func type(_ text: String, into field: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(field.waitForExistence(timeout: 5), file: file, line: line)
         for attempt in 1...2 where fieldText(field) != text {
@@ -711,15 +664,12 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertEqual(fieldText(field), text, "The field's text", file: file, line: line)
     }
 
-    /// What was typed; empty, not the placeholder, when there's nothing.
     private func fieldText(_ field: XCUIElement) -> String {
         guard field.exists else { return "<no field>" }
         let value = field.value as? String ?? ""
         return value == field.placeholderValue ? "" : value
     }
 
-    /// Waits for `target`, and on failure says what the field held and
-    /// what was on screen.
     private func expect(_ target: XCUIElement, field: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         guard !target.waitForExistence(timeout: 5) else { return }
         shot("missing-result")
@@ -757,7 +707,6 @@ final class ChallengeFriendUITests: XCTestCase {
                     return true
                 }
                 guard let element = issue.element, !screen.contains(element.frame) else {
-                    // iOS 18 reports some clipping with no element; skip only that.
                     guard issue.element != nil || issue.auditType != .textClipped else {
                         skipped.append(issue.detailedDescription)
                         return true

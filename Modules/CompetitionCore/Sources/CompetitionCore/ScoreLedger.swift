@@ -456,9 +456,6 @@ public struct ScoreLedger: Codable, Equatable, Sendable {
         if let candidate = AcceptedDayScore(evidence: evidence) {
             switch downwardRevisionPolicy {
             case .maximumObserved:
-                // A Move goal type or wheelchair status change mid-day starts
-                // the day's maximum over in the new mode, so the accepted
-                // score always matches the mode of the evidence it came from.
                 if let previousAccepted,
                    previousAccepted.moveMode == candidate.moveMode,
                    previousAccepted.standMode == candidate.standMode,

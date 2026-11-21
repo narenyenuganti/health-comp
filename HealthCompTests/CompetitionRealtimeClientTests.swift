@@ -368,7 +368,6 @@ private actor LateRealtimeOpeningProbe {
             continuation = $0
             opening.fulfill()
         }
-        // Model an asynchronous driver completion that does not honor cancellation.
         isActive = true
         switch outcome {
         case .success: return

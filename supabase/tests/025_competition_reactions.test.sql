@@ -4,7 +4,6 @@ set local search_path = extensions, public, pg_catalog;
 set local timezone = 'UTC';
 select no_plan();
 
--- Table and functions
 select ok((select relrowsecurity and relforcerowsecurity from pg_class
     where oid = 'private.competition_reactions'::regclass),
   'reactions have RLS enabled and forced');
@@ -30,7 +29,6 @@ select ok(not has_function_privilege('authenticated',
     'private.enqueue_reaction_notification(uuid, uuid, uuid)', 'execute'),
   'the reaction enqueue is not an API function');
 
--- Ana and Ben play; Cal is an outsider.
 insert into auth.users (id) values
   ('f8000000-0000-4000-8000-000000000001'), ('f8000000-0000-4000-8000-000000000002'),
   ('f8000000-0000-4000-8000-000000000003');
@@ -46,8 +44,6 @@ select vault.create_secret(
   'healthcomp_notification_worker_url');
 select vault.create_secret(repeat('w', 43), 'healthcomp_notification_worker_token');
 
--- Matches, 'scheduled' on the server, phase by date in UTC:
---   …01 Day 3 today    …02 starts tomorrow    …03 Day 3 today (mute check)
 create function pg_temp.match(suffix text, first_day date)
 returns uuid language plpgsql as $$
 declare
@@ -107,7 +103,6 @@ create function pg_temp.since(label text) returns bigint[] language sql as $$
   from marks m where m.label = since.label;
 $$;
 
--- Registration
 set local role authenticated;
 select pg_temp.as_profile(2);
 select lives_ok($$select public.register_current_device_installation(
@@ -158,7 +153,6 @@ select ok(not pg_temp.supports('f8300000-0000-4000-8000-000000000031')
       where installation_id = 'f8300000-0000-4000-8000-000000000031'),
   'the three-argument call clears both capabilities');
 
--- Day reactions
 create temporary table earlier_messages as select id from realtime.messages;
 select pg_temp.mark('first');
 set local role authenticated;
@@ -206,8 +200,6 @@ reset role;
 select is(pg_temp.reaction_work('01'), 1::bigint,
   'a second reaction within the hour queues no push');
 
--- The hour, not the work identity, is what keeps it silent: Ben's rename adds
--- a change-log row, so the next reaction lands at a new server_seq.
 update public.profiles set display_name = 'Benjamin', updated_at = now()
 where id = 'f8100000-0000-4000-8000-000000000002';
 set local role authenticated;
@@ -230,12 +222,10 @@ select is((
     where w.competition_id = 'f8200000-0000-4000-8000-000000000001' and w.kind = 'reaction'),
   array[array['pending', 'false'], array['pending', 'true']],
   'once the last reaction push is over an hour old, the next one queues at the new change');
--- Drop the aged row so the lease check below sees one reaction item.
 delete from private.competition_notification_work
 where competition_id = 'f8200000-0000-4000-8000-000000000001' and kind = 'reaction'
   and created_at < statement_timestamp() - interval '1 hour';
 
--- Refusals
 set local role authenticated;
 select pg_temp.as_profile(3);
 select throws_ok($$select public.set_competition_reaction('f8200000-0000-4000-8000-000000000001', 2, 'fire')$$,
@@ -252,7 +242,6 @@ select throws_ok($$select public.set_competition_reaction('f8200000-0000-4000-80
 select throws_ok($$select public.set_competition_reaction(null, 2, 'fire')$$,
   '22023', 'invalid_reaction', 'a null match is invalid');
 
--- Writes
 reset role;
 select pg_temp.mark('same');
 set local role authenticated;
@@ -299,7 +288,6 @@ reset role;
 select is(pg_temp.since('remove-again'), array[0, 0, 0, 0, 0]::bigint[],
   'removing a missing reaction is a no-op');
 
--- Ben reacts to Ana: Ana has only a current-build install.
 set local role authenticated;
 select pg_temp.as_profile(2);
 select public.set_competition_reaction('f8200000-0000-4000-8000-000000000001', 1, 'huffing');
@@ -308,7 +296,6 @@ select is((select count(*) from private.competition_notification_work
     where kind = 'reaction' and recipient_profile_id = 'f8100000-0000-4000-8000-000000000001'), 0::bigint,
   'no push to an install registered with the four-argument call');
 
--- Older builds: the change feed never sees reactions.
 set local role authenticated;
 select pg_temp.as_profile(2);
 select ok((
@@ -317,7 +304,6 @@ select ok((
       'f8200000-0000-4000-8000-000000000001', 0, 200)->'changes') c),
   'Ben''s change feed still reads the whole match');
 
--- List
 select pg_temp.as_profile(1);
 insert into r values ('ana-list', public.list_competition_reactions());
 select pg_temp.as_profile(2);
@@ -346,7 +332,6 @@ select ok((
 select is((select v from r where label = 'cal-list'), '{"reactions": []}'::jsonb,
   'an outsider lists nothing');
 
--- Mute and lease
 insert into private.competition_notification_mutes (profile_id, opponent_profile_id)
 values ('f8100000-0000-4000-8000-000000000002', 'f8100000-0000-4000-8000-000000000001');
 set local role authenticated;
@@ -373,7 +358,6 @@ select ok((
     where r.label = 'lease' and item->>'kind' = 'reaction'),
   'the lease sends the reaction item with the seven keys and kind reaction');
 
--- Result reaction
 set local role authenticated;
 select pg_temp.as_profile(1);
 select throws_ok($$select public.set_competition_reaction('f8200000-0000-4000-8000-000000000001', null, 'fire')$$,
@@ -415,7 +399,6 @@ select is((select v from r where label = 'result'), jsonb_build_object(
     'competition_id', 'f8200000-0000-4000-8000-000000000001', 'day_ordinal', null, 'reaction', 'fire'),
   'a result reaction echoes a null day');
 
--- Anonymized: Ben deletes his account.
 update public.profiles set state = 'deleting' where id = 'f8100000-0000-4000-8000-000000000002';
 update public.competition_participants set state = 'anonymized'
 where profile_id = 'f8100000-0000-4000-8000-000000000002';

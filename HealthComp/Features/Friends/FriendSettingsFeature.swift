@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import Foundation
 
-/// Account → Privacy's server-held rows and the username sheet.
 @Reducer
 struct FriendSettingsFeature {
     enum Field: Equatable, Sendable { case showInSearch, challengePolicy }
@@ -12,29 +11,20 @@ struct FriendSettingsFeature {
 
     struct UsernameSheet: Equatable, Sendable {
         var draft = ""
-        /// Counts edits, so a wait or answer from an earlier edit is dropped
-        /// even when you've typed your way back to the same name.
         var edit = 0
         var availability = UsernameAvailability.unknown
         var isSaving = false
         var failure: UsernameFailure?
 
-        /// A name the check found taken can't be sent; an unanswered check
-        /// doesn't hold you up, because saving asks the server anyway.
         var canContinue: Bool {
             FriendSettings.isValidUsername(draft) && availability != .taken && !isSaving
         }
     }
 
-    /// Not `@ObservableState`: Account takes this by value, so a change has
-    /// to reach it through the parent's `friendSettings`.
     struct State: Equatable {
-        /// Nil until the server answers, which hides the rows.
         var saved: FriendSettings?
-        /// The change being saved.
         var saving: FriendSettings?
         var failedField: Field?
-        /// Non-nil while the username sheet is open.
         var sheet: UsernameSheet?
 
         var shown: FriendSettings? { saving ?? saved }
@@ -75,7 +65,6 @@ struct FriendSettingsFeature {
                 .cancellable(id: CancelID.load, cancelInFlight: true)
 
             case let .loaded(settings):
-                // A failed refresh keeps whatever was shown.
                 if let settings { state.saved = settings }
                 return .none
 
@@ -90,7 +79,6 @@ struct FriendSettingsFeature {
                 return save(next, &state)
 
             case let .saveFinished(settings):
-                // stop clears `saving`, so a late result never marks the next account.
                 guard let attempted = state.saving else { return .none }
                 state.saving = nil
                 if let settings {
@@ -122,16 +110,9 @@ struct FriendSettingsFeature {
                 sheet.availability = .unknown
                 sheet.failure = nil
                 state.sheet = sheet
-                // Your own name needs no check, and checks count against
-                // the search limit.
                 guard FriendSettings.isValidUsername(draft), draft != state.saved?.username else {
                     return .none
                 }
-                // No cancelInFlight: it cancels when the new effect starts,
-                // and on a busy main thread an older edit's effect can start
-                // later and cancel the newest one, so no check would ever
-                // answer the name shown. Every edit waits; only the latest
-                // edit, if nothing followed it, asks.
                 let edit: Int = sheet.edit
                 return .run { send in
                     try await clock.sleep(for: Self.availabilityDebounce)
@@ -161,7 +142,6 @@ struct FriendSettingsFeature {
                 sheet.failure = nil
                 state.sheet = sheet
                 let username = sheet.draft
-                // A load already running may have read before this save.
                 return .merge(
                     .cancel(id: CancelID.load),
                     .cancel(id: CancelID.availability),
@@ -197,7 +177,6 @@ struct FriendSettingsFeature {
         }
     }
 
-    /// Sends the whole row: the server takes both values together.
     private func save(_ next: FriendSettings, _ state: inout State) -> Effect<Action> {
         guard !state.isSaving, state.sheet == nil else { return .none }
         state.saving = next

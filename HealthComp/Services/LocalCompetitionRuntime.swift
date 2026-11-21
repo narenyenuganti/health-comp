@@ -403,8 +403,6 @@ actor LocalCompetitionRuntime {
                     }
                 }
 
-            // Home regroups when a closed challenge has been shown a day and
-            // when a result moves to History.
             case let .declined(at), let .expired(at):
                 let leaves = at.addingTimeInterval(
                     competitionClosedChallengeRetention
@@ -541,10 +539,6 @@ actor LocalCompetitionRuntime {
         }
     }
 
-    /// Creates the one deterministic successor used to recover after a local
-    /// invitation was declined or expired. The source journal is immutable;
-    /// retries and cross-process races converge on a compatible existing
-    /// genesis, while tombstones and mismatched identities fail closed.
     @discardableResult
     func createReinvite(
         from sourceID: CompetitionID,
@@ -855,9 +849,6 @@ actor LocalCompetitionRuntime {
             if loaded.projection.activityRefresh.nextAttemptOrdinal
                 != initialAttemptOrdinal {
                 guard let preparedRead else { return loaded }
-                // Append order is not read recency: a slower writer can commit
-                // an older HealthKit result first. Suppress only when that
-                // winning read is at least as recent as our prepared evidence.
                 if latestRefreshIsAtLeastAsRecent(
                     in: loaded,
                     as: preparedRead
@@ -906,9 +897,6 @@ actor LocalCompetitionRuntime {
         }
         if preparedRead.failureReason == nil,
            case .failed = latest.readStatus {
-            // A query failure has no source-day evidence. Compare against the
-            // newest durable completed read hidden behind that failure: only
-            // completed evidence at least as new may suppress this read.
             return loaded.projection.activityRefresh
                 .lastSuccessfulFullWindowRefreshAt
                 .map { $0 >= preparedRead.readInstant.wallDate }
@@ -917,8 +905,6 @@ actor LocalCompetitionRuntime {
         let latestMonotonic = latest.monotonicInstant
         let preparedMonotonic = preparedRead.readInstant.monotonic
         guard latestMonotonic.epochID == preparedMonotonic.epochID else {
-            // A reboot/clock-uncertainty boundary makes uptime incomparable;
-            // wall time is the only persisted ordering evidence available.
             return latest.readAt >= preparedRead.readInstant.wallDate
         }
         if latestMonotonic.nanoseconds != preparedMonotonic.nanoseconds {
@@ -1135,10 +1121,6 @@ actor LocalCompetitionRuntime {
         competitionID: CompetitionID,
         initialAttemptOrdinal: UInt64
     ) -> String {
-        // The durable attempt identity represents one logical refresh ordinal.
-        // Epoch and uptime remain persisted on `monotonicInstant` as transport
-        // evidence, but must not make semantic event identity execution-speed
-        // or process-epoch dependent.
         return [
             "runtime",
             competitionID.rawValue.uuidString.lowercased(),

@@ -12,7 +12,6 @@ final class CompetitionRecapTests: XCTestCase {
             .replacingOccurrences(of: "\u{202F}", with: " ")
     }
 
-    /// Nov 2 2026 is a Monday; ordinal 1...7 → Nov 2...8, UTC.
     private func day(_ ordinal: Int, _ you: Double?, _ them: Double?) throws -> LocalCompetitionDayPresentation {
         LocalCompetitionDayPresentation(
             day: try CompetitionDay(era: 1, year: 2026, month: 11, day: 1 + ordinal, timeZoneIdentifier: "UTC"),
@@ -24,8 +23,6 @@ final class CompetitionRecapTests: XCTestCase {
         )
     }
 
-    /// Mon 330/300, Tue 260/330, Wed 284/330, Thu 512/300, Fri 400/350,
-    /// Sat 300/344, Sun 326/314: 2,412–2,268, won 4, lost 3, down 86 after Wed.
     private func days(_ changes: [Int: (Double, Double)] = [:]) throws -> [LocalCompetitionDayPresentation] {
         let base: [(Double, Double)] = [
             (330, 300), (260, 330), (284, 330), (512, 300), (400, 350), (300, 344), (326, 314),
@@ -36,7 +33,6 @@ final class CompetitionRecapTests: XCTestCase {
         }
     }
 
-    /// Totals default to the day sums; outcome defaults to the totals.
     private func match(
         _ days: [LocalCompetitionDayPresentation],
         user: Double? = nil,
@@ -151,7 +147,6 @@ final class CompetitionRecapTests: XCTestCase {
 
     func testRecapWeekAlwaysShowsTheYear() throws {
         XCTAssertEqual(recap(try match(days())).weekText.map(normalized), "Nov 2 – 8, 2026")
-        // No days: the week comes from the schedule.
         let empty = recap(try match([], user: 2_412, opponent: 2_268))
         XCTAssertEqual(empty.weekText.map(normalized), "Nov 2 – 8, 2026")
         XCTAssertTrue(empty.days.isEmpty)
@@ -165,11 +160,9 @@ final class CompetitionRecapTests: XCTestCase {
             highlights(try match(days())),
             [["Comeback", "Down 86 after Wed"], ["Best day", "Thu · 512"]]
         )
-        // Down 46 at worst.
         XCTAssertFalse(highlights(try match(days([3: (324, 330)]))).contains { $0[0] == "Comeback" })
         let loss = try match(days(), user: 2_268, opponent: 2_412, outcome: .loss)
         XCTAssertFalse(highlights(loss).contains { $0[0] == "Comeback" })
-        // Down 86 after Wed and the day sums agree (2,000–2,268): still a loss.
         let consistentLoss = try match(days([4: (100, 300)]))
         XCTAssertEqual(competitionResultOutcome(consistentLoss), .loss)
         XCTAssertFalse(highlights(consistentLoss).contains { $0[0] == "Comeback" })
@@ -261,7 +254,6 @@ final class CompetitionRecapTests: XCTestCase {
         XCTAssertEqual(image.size, CGSize(width: 360, height: 450))
         XCTAssertEqual(image.scale, 3)
 
-        // Pixel (3, 3) from the top left is the card's light ground, 0xFAFAF7.
         let cgImage = try XCTUnwrap(image.cgImage)
         var pixel = [UInt8](repeating: 0, count: 4)
         let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
@@ -282,7 +274,6 @@ final class CompetitionRecapTests: XCTestCase {
         XCTAssertEqual(png.scale, 1)
 
         #if DEBUG
-        // Cards for the preview artifact; not asserted.
         let cards: [(String, CompetitionRecap)] = [
             ("recap-card-win-took-belt", shown),
             ("recap-card-loss-hidden", recap(
@@ -334,7 +325,6 @@ final class CompetitionRecapTests: XCTestCase {
             competitionRecapStickerLine(recap(try match(days()))),
             "Won by 144 points · The lead changed hands twice"
         )
-        // No headline: the margin alone.
         XCTAssertEqual(
             competitionRecapStickerLine(recap(
                 try match(ledger(Array(repeating: (300, 300), count: 6) + [(350, 300)]))
@@ -352,7 +342,6 @@ final class CompetitionRecapTests: XCTestCase {
             XCTAssertEqual(image.size, CGSize(width: 360, height: 450))
             XCTAssertEqual(image.scale, 3)
 
-            // Pixel (3, 3) from the top left is clear.
             let cgImage = try XCTUnwrap(image.cgImage)
             var pixel = [UInt8](repeating: 0xFF, count: 4)
             let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
@@ -368,7 +357,6 @@ final class CompetitionRecapTests: XCTestCase {
             XCTAssertEqual(pixel[3], 0, "\(pixel)")
 
             #if DEBUG
-            // Stickers for the preview artifact; not asserted.
             let attachment = XCTAttachment(image: image)
             attachment.name = lightInk ? "recap-sticker-light-ink" : "recap-sticker-dark-ink"
             attachment.lifetime = .keepAlways
@@ -396,21 +384,16 @@ final class CompetitionRecapTests: XCTestCase {
     }
 
     func testResultOutcomeUsesTerminalThenShownTotals() throws {
-        // The terminal result wins over the shown totals.
         XCTAssertEqual(competitionResultOutcome(try match(days(), outcome: .loss)), .loss)
         XCTAssertEqual(competitionResultOutcome(try match(days(), terminal: false)), .win)
         XCTAssertEqual(competitionResultOutcome(try match(days(), user: 1, opponent: 2, terminal: false)), .loss)
         XCTAssertEqual(competitionResultOutcome(try match(days(), user: 2, opponent: 2, terminal: false)), .tie)
     }
 
-    // MARK: One headline per card
-
-    /// Ledger days from (you, them) pairs, Monday first.
     private func ledger(_ pairs: [(Double, Double)]) throws -> [LocalCompetitionDayPresentation] {
         try pairs.enumerated().map { try day($0.offset + 1, $0.element.0, $0.element.1) }
     }
 
-    /// Every day with its ring split: you take Move, Exercise and Stand.
     private func sweptDays() throws -> [LocalCompetitionDayPresentation] {
         try (1...7).map { ordinal in
             var presentation = try day(ordinal, 350, 300)
@@ -432,27 +415,22 @@ final class CompetitionRecapTests: XCTestCase {
 
     func testHeadlineTakesTheFirstTrueLineInTheFixedOrder() throws {
         let best = "50 points above your average week"
-        // The belt changing hands beats everything.
         XCTAssertEqual(
             headline(belt: .theyTook, personalBest: best, days: try sweptDays()),
             ["tookBelt", "Sam took the belt"]
         )
-        // Then your personal best, over all three rings and a defense.
         XCTAssertEqual(
             headline(belt: .theyDefended(defenses: 2), personalBest: best, days: try sweptDays()),
             ["personalBest", best]
         )
-        // All three rings over a title defense (the card's Oct 11–17).
         XCTAssertEqual(
             headline(belt: .youDefended(defenses: 1), days: try sweptDays()),
             ["allThreeRings", "Took all three rings"]
         )
-        // No ring split: the defense.
         XCTAssertEqual(
             headline(belt: .youDefended(defenses: 2), days: try days()),
             ["titleDefense", "2nd title defense"]
         )
-        // Then the lead: 30, −40, −86, 126, 176, 132, 144 changes hands twice.
         XCTAssertEqual(headline(days: try days()), ["lead", "The lead changed hands twice"])
         XCTAssertEqual(
             headline(days: try ledger([(350, 300), (300, 400), (400, 300), (300, 400)])),
@@ -462,13 +440,11 @@ final class CompetitionRecapTests: XCTestCase {
             headline(days: try ledger(Array(repeating: (250, 300), count: 7)), name: nil),
             ["lead", "They led after every day"]
         )
-        // Sam took Stand, so no sweep, and led after every day.
         var split = try sweptDays()
         split[0] = try day(1, 350, 660)
         split[0].ownerRingPoints = [200, 100, 50]
         split[0].opponentRingPoints = [180, 80, 400]
         XCTAssertEqual(headline(days: split), ["lead", "Sam led after every day"])
-        // Nothing true, nothing shown.
         XCTAssertNil(headline(days: try ledger(Array(repeating: (300, 300), count: 7))))
         XCTAssertNil(headline(days: []))
     }
@@ -480,18 +456,14 @@ final class CompetitionRecapTests: XCTestCase {
             loss, belt: .theyDefended(defenses: 2), hidesName: false, personalBest: best, locale: en
         )
         XCTAssertEqual(shown.line?.text, best)
-        // The belt fact stays on the recap for anything else that reads it.
         XCTAssertEqual(shown.beltText, "Sam’s 2nd title defense")
         XCTAssertTrue(shown.accessibilityText.hasSuffix("\(best)."))
         XCTAssertFalse(shown.accessibilityText.contains("title defense"))
-        // Hidden name: "They".
         let hidden = recap(loss, belt: .theyTook, hidesName: true)
         XCTAssertEqual(hidden.line?.text, "They took the belt")
     }
 }
 
-/// Your month, your year, against the proposals page's October
-/// (`CompetitionMonthFixture`, the Test Lab's `month` scenario).
 final class CompetitionMonthRecapTests: XCTestCase {
     private let en = Locale(identifier: "en_US")
     private let october = CompetitionMonthFixture.october
@@ -546,7 +518,6 @@ final class CompetitionMonthRecapTests: XCTestCase {
             competitionRecapOffer(weeks, today: try day(2026, 10, 2)),
             CompetitionRecapPeriod(year: 2026, month: 9)
         )
-        // August has no finished week.
         XCTAssertNil(competitionRecapOffer(weeks, today: try day(2026, 9, 1)))
         XCTAssertNil(competitionRecapOffer(weeks, today: try day(2026, 12, 30)))
         XCTAssertEqual(competitionRecapOffer(weeks, today: try day(2026, 12, 31)), CompetitionRecapPeriod(year: 2026))
@@ -614,7 +585,6 @@ final class CompetitionMonthRecapTests: XCTestCase {
     }
 
     func testAThinMonthShowsOnlyWhatsTrue() {
-        // Sam took a vacant belt: no move of yours, and one rival has no closest.
         let september = cards(CompetitionRecapPeriod(year: 2026, month: 9))
         XCTAssertEqual(september.map(\.kind), [.weeks, .record, .bestDay, .rings])
         XCTAssertEqual(september[0].detail, "Against Sam")

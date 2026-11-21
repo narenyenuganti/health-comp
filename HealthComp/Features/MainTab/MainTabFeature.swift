@@ -11,29 +11,22 @@ struct MainTabFeature {
 
     enum InviteClaimStatus: Equatable, Sendable {
         case idle
-        /// Asking the server who sent it.
         case loadingPreview
         case ready
-        /// The server is recording a decline.
         case declining
         case claiming
         case waitingForCompetition
         case confirmationTimedOut
         case unavailable
-        /// You opened your own challenge's link.
         case ownChallenge
-        /// You already have a match with the sender that hasn't ended.
         case activeMatchExists
         case retryable
-        /// The link arrived before this account existed, so it can't be for it.
         case wrongAccount
     }
 
-    /// Someone's challenge link, opened on this iPhone.
     struct ChallengeFromLink: Equatable, Sendable, Identifiable {
         enum Status: Hashable, Sendable {
             case resolving
-            /// The link owner's display name; Send uses the link's code.
             case ready(displayName: String)
             case ownLink
             case unavailable
@@ -60,8 +53,6 @@ struct MainTabFeature {
         var step: PermissionOnboardingStep { steps[index] }
     }
 
-    /// The one-time notifications prompt, shown once a match with a person
-    /// exists.
     enum NotificationPromptPhase: Equatable, Sendable {
         case unscheduled
         case scheduled
@@ -80,39 +71,23 @@ struct MainTabFeature {
         var claimRouteSequenceInFlight: UInt64?
         var pendingClaimNavigation: PendingClaimNavigation?
         var inviteClaimStatus: InviteClaimStatus
-        /// Shown instead of Home; the competition starts once it finishes.
         var onboarding: PermissionOnboarding?
         var showsHistory: Bool
-        /// Friends, at the bottom of the stack as History is.
         var showsFriends = false
         var isAccountPresented: Bool
-        /// A route to a match that isn't loaded yet: it refreshed once and
-        /// waits for the match, without moving the current screens.
         var heldRouteSequence: UInt64?
-        /// Accept was tapped before the competition started; the claim is
-        /// sent on its first publication.
         var acceptsClaimOnStart = false
-        /// The open person page, by opponent identity: under History, a
-        /// match, or both, as `personPlace` says.
         var historyPersonIdentity: String?
         var personPlace = CompetitionPersonPlace()
         var healthAccess: HealthAccessStatus?
         var notificationPrompt: NotificationPromptPhase = .unscheduled
-        /// Mirrors MainTabView's Challenge and practice sheets.
         var isChallengeSheetOpen = false
-        /// Claim links up to this sequence arrived before this account
-        /// existed, so they can't be for it.
         var claimLinksBeforeAccountThrough: UInt64 = 0
-        /// Who sent the open challenge link, from the server.
         var inviteClaimPreview: CompetitionInvitePreview?
-        /// The `now` the preview's dates are written against.
         var inviteClaimPreviewEvaluatedAt: Date?
-        /// A second challenge link that opens when the current one is done.
         var queuedClaimRoute: CompetitionRouteEnvelope?
         var claimDeclineFailed = false
         var challengeFromLink: ChallengeFromLink?
-        /// Counts Friends pushes that opened Friends; MainTabView closes its
-        /// own sheets (Challenge, practice, recap) when it changes.
         var friendsRouteCount = 0
 
         init(
@@ -169,11 +144,8 @@ struct MainTabFeature {
             Result<CompetitionInvitePreview, CompetitionRemoteFailure>
         )
         case acceptClaimTapped
-        /// Not Now or swipe: forget the link on this iPhone, tell no one.
         case notNowClaimTapped
-        /// Decline, after its confirmation: the sender is told.
         case declineClaimConfirmed
-        /// Decline and Block, after its confirmation.
         case blockClaimConfirmed
         case declineClaimFinished(sequence: UInt64, succeeded: Bool)
         case retryClaimTapped
@@ -223,8 +195,6 @@ struct MainTabFeature {
 
     private static let claimConfirmationTimeout: Duration = .seconds(15)
     private static let routeHoldTimeout: Duration = .seconds(15)
-    /// Lets the claim sheet finish dismissing; SwiftUI drops a sheet
-    /// presented mid-dismissal.
     private static let notificationPromptDelay: Duration = .milliseconds(600)
 
     var body: some ReducerOf<Self> {
@@ -234,8 +204,6 @@ struct MainTabFeature {
         Reduce { state, action in
             switch action {
             case .task:
-                // The competition starts after onboarding: starting it asks
-                // iOS for Health access, which the Health screen explains.
                 return .merge(
                     state.onboarding == nil
                         ? .run { send in
@@ -258,11 +226,8 @@ struct MainTabFeature {
                     .cancellable(id: CancelID.routes, cancelInFlight: true)
                 )
 
-            // iOS permission prompts make the scene inactive and active
-            // again before the competition has started.
             case .scenePhaseChanged(.active):
                 guard state.onboarding == nil else { return .none }
-                // Coming back from Settings updates Account → Health.
                 return .merge(
                     .send(.competition(.sceneBecameActive)),
                     state.healthAccess == nil
@@ -283,7 +248,6 @@ struct MainTabFeature {
                     return .send(.competition(.task))
                 }
                 state.onboarding = PermissionOnboarding(steps: steps)
-                // A challenge link shows its challenge before Health.
                 guard state.inviteClaimStatus == .idle else { return .none }
                 return startPreview(state: &state)
 
@@ -300,7 +264,6 @@ struct MainTabFeature {
                     case .health:
                         await permissionOnboardingClient.requestHealthAccess()
                     case .notifications:
-                        // Notifications are asked in context, never here.
                         break
                     }
                     await send(.onboardingStepCompleted)
@@ -349,8 +312,6 @@ struct MainTabFeature {
                     else {
                         return .none
                     }
-                    // Decided on the device from the order of events; no
-                    // claim request, so nothing about the link is revealed.
                     if envelope.sequence <= state.claimLinksBeforeAccountThrough,
                        state.claimRouteSequenceInFlight == nil {
                         state.lastHandledClaimRouteSequence = envelope.sequence
@@ -363,9 +324,6 @@ struct MainTabFeature {
                             competitionRoutingClient.consume(envelope.sequence)
                         }
                     }
-                    // The same link again is ignored. A replay of the held
-                    // envelope itself (after re-subscribing) stays in the hub
-                    // until that link is answered.
                     if let held = [state.pendingClaimRoute, state.queuedClaimRoute]
                         .compactMap({ $0 })
                         .first(where: { $0.route == envelope.route }) {
@@ -374,16 +332,11 @@ struct MainTabFeature {
                             competitionRoutingClient.consume(envelope.sequence)
                         }
                     }
-                    // A second link waits while another is open, still
-                    // waiting for the first publication, or just accepted
-                    // and waiting for its match. Only the newest waiting
-                    // one is kept.
                     if state.pendingClaimRoute != nil
                         || state.pendingClaimNavigation != nil {
                         state.queuedClaimRoute = envelope
                         return .none
                     }
-                    // Accept always applies to the link on screen.
                     if state.pendingClaimRoute != envelope {
                         state.acceptsClaimOnStart = false
                     }
@@ -399,7 +352,6 @@ struct MainTabFeature {
                         >= (state.pendingRoute?.sequence ?? 0) {
                         let replaced = state.pendingRoute?.sequence
                         state.pendingRoute = envelope
-                        // The older one is dropped: release it from the hub.
                         if let replaced, replaced != envelope.sequence {
                             return .run { _ in competitionRoutingClient.consume(replaced) }
                         }
@@ -438,7 +390,6 @@ struct MainTabFeature {
 
             case let .accountPresentationChanged(isPresented):
                 state.isAccountPresented = isPresented
-                // Account covers Home, so the notifications prompt waits.
                 return notificationPromptBlockerChanged(
                     isOpen: isPresented, state: &state
                 )
@@ -519,11 +470,6 @@ struct MainTabFeature {
                     state.inviteClaimStatus = .ready
                     return .none
                 case let .success(preview):
-                    // Already accepted by you (the link was tapped twice):
-                    // no sheet, go to the match. Over the Health step nothing
-                    // has started; it shows on Home once Health is set up.
-                    // Once Health is done, the match is awaited even before
-                    // the first publication.
                     guard state.onboarding == nil else {
                         state.inviteClaimStatus = .idle
                         return .merge(
@@ -559,8 +505,6 @@ struct MainTabFeature {
                     return .none
                 }
                 state.claimDeclineFailed = false
-                // Claiming needs the started competition, which starts after
-                // Health.
                 if state.competition.publication == nil {
                     state.acceptsClaimOnStart = true
                     state.inviteClaimStatus = .idle
@@ -615,7 +559,6 @@ struct MainTabFeature {
                 case let .success(displayName):
                     guard let code = state.challengeFromLink?.code else { return .none }
                     state.challengeFromLink?.status = .ready(displayName: displayName)
-                    // The + sheet's slot sends by the link's code.
                     return .send(.competition(.challengeRecipientChosen(
                         .init(link: code, displayName: displayName)
                     )))
@@ -742,7 +685,6 @@ struct MainTabFeature {
                 switch state.inviteClaimStatus {
                 case .unavailable, .wrongAccount, .ownChallenge, .activeMatchExists:
                     state.inviteClaimStatus = .idle
-                    // A wrong-account notice can cover a newer, valid link.
                     if state.pendingClaimRoute != nil,
                        state.claimRouteSequenceInFlight == nil {
                         return startPreview(state: &state)
@@ -781,8 +723,6 @@ struct MainTabFeature {
                 if acceptedBeforeStart,
                    state.pendingClaimRoute != nil,
                    state.claimRouteSequenceInFlight == nil {
-                    // The claim sheet is about to show; the publication that
-                    // resolves the claim schedules the prompt.
                     effects.append(.send(.processPendingClaim))
                     return .merge(effects)
                 }
@@ -843,7 +783,6 @@ struct MainTabFeature {
                       state.competition.notificationAuthorizationState
                         == .notDetermined
                 else {
-                    // The next publication tries again.
                     state.notificationPrompt = .unscheduled
                     return .none
                 }
@@ -870,7 +809,6 @@ struct MainTabFeature {
                 }
 
             case .competition(.createInviteResponse):
-                // The link was reset, or its owner left, after it opened.
                 if case .ready? = state.challengeFromLink?.status,
                    state.competition.inviteRecipient == nil,
                    state.competition.inviteRecipientStatus == .notFound {
@@ -884,8 +822,6 @@ struct MainTabFeature {
         }
     }
 
-    /// Schedules the notifications prompt once a match with a person (not a
-    /// practice) exists.
     private func scheduleNotificationPromptIfDue(
         state: inout State
     ) -> Effect<Action> {
@@ -913,9 +849,6 @@ struct MainTabFeature {
         .cancellable(id: CancelID.notificationPrompt, cancelInFlight: true)
     }
 
-    /// Another sheet opening while the prompt is `.presented` means SwiftUI
-    /// dropped the prompt (a showing prompt covers the controls that open
-    /// them), so it goes back to unscheduled and retries when they close.
     private func notificationPromptBlockerChanged(
         isOpen: Bool,
         state: inout State
@@ -929,8 +862,6 @@ struct MainTabFeature {
         return scheduleNotificationPromptIfDue(state: &state)
     }
 
-    /// A pending challenge (either direction) or a match that hasn't
-    /// finished. Expired, declined and cancelled ones don't count.
     private static func hasPerson(
         _ lifecycle: LocalCompetitionLifecyclePresentation
     ) -> Bool {
@@ -950,8 +881,6 @@ struct MainTabFeature {
             state.pendingRoute = nil
             return .none
         }
-        // A newer route of any kind supersedes a held one: release the held
-        // one from the hub, or it replays to the next Home.
         if let held = state.pendingRoute, held.sequence < envelope.sequence {
             state.pendingRoute = nil
             return .merge(
@@ -962,7 +891,6 @@ struct MainTabFeature {
         switch envelope.route {
         case let .competition(id):
             guard visibleCompetitionIDs(in: state).contains(id) else {
-                // Keep the stack as it is; refresh and time out once per route.
                 state.pendingRoute = envelope
                 guard state.heldRouteSequence != envelope.sequence else {
                     return .none
@@ -1007,14 +935,9 @@ struct MainTabFeature {
                     competitionRoutingClient.consume(envelope.sequence)
                 }
             )
-            // No Friends without a remote account (practice, simulated):
-            // the push just opened the app.
             guard state.competition.publication?.source == .remoteParticipants else {
                 return consumes
             }
-            // Like a match route: close what covers Home, the link and claim
-            // sheets and the view's own sheets too, then Friends on its own
-            // and a fresh list, open or not.
             state.showsHistory = false
             state.historyPersonIdentity = nil
             state.personPlace = CompetitionPersonPlace()
@@ -1034,13 +957,10 @@ struct MainTabFeature {
                     : .none
             )
         case .claimInvite:
-            // Claim routes remain pending in the process-rooted hub until the
-            // authenticated claim flow explicitly accepts or rejects them.
             state.pendingRoute = nil
             state.lastHandledRouteSequence = envelope.sequence
             return .none
         case let .challengeLink(code):
-            // Newest link wins.
             state.pendingRoute = nil
             state.lastHandledRouteSequence = envelope.sequence
             state.challengeFromLink = ChallengeFromLink(
@@ -1073,8 +993,6 @@ struct MainTabFeature {
         .cancellable(id: CancelID.challengeLink, cancelInFlight: true)
     }
 
-    /// The challenge sent from someone's link: close the link sheet, free
-    /// the + sheet's slot and open the challenge once Home shows it.
     private func followSentChallengeFromLink(state: inout State) -> Effect<Action> {
         guard case .ready? = state.challengeFromLink?.status,
               case let .sent(id, _, _) = state.competition.challengeSheetStatus,
@@ -1091,9 +1009,6 @@ struct MainTabFeature {
         return .merge(closesFriends, .send(.competition(.challengeSheetDismissed)))
     }
 
-    /// Closes the challenge-link and claim sheets as Close and Not now do,
-    /// and drops their queued and in-flight work, so nothing reopens or
-    /// navigates over Friends later.
     private func closeLinkAndClaim(state: inout State) -> Effect<Action> {
         var effects: [Effect<Action>] = [
             .cancel(id: CancelID.inviteClaim),
@@ -1117,17 +1032,12 @@ struct MainTabFeature {
         return .merge(effects)
     }
 
-    /// Friends leaving the stack stops its search, load and changes.
     private func closeFriends(state: inout State) -> Effect<Action> {
         guard state.showsFriends else { return .none }
         state.showsFriends = false
         return .send(.competition(.friends(.closed)))
     }
 
-    /// Asks the server who sent the pending link before showing the sheet.
-    /// The signed-in session answers before Health is set up, so the sheet
-    /// over Health names the sender too. Only a cold start, before Health
-    /// is checked, waits for the first publication.
     private func startPreview(state: inout State) -> Effect<Action> {
         guard state.competition.publication != nil || state.onboarding != nil,
               state.claimRouteSequenceInFlight == nil,
@@ -1157,7 +1067,6 @@ struct MainTabFeature {
         .cancellable(id: CancelID.inviteClaim, cancelInFlight: true)
     }
 
-    /// Decline, or Decline and Block; both finish through declineClaimFinished.
     private func declineClaim(_ state: inout State, block: Bool) -> Effect<Action> {
         guard state.inviteClaimStatus == .ready,
               let preview = state.inviteClaimPreview,
@@ -1180,7 +1089,6 @@ struct MainTabFeature {
         .cancellable(id: CancelID.inviteClaim, cancelInFlight: true)
     }
 
-    /// Forgets the pending link on this iPhone.
     private func consumeClaimRoute(
         _ sequence: UInt64,
         state: inout State
@@ -1197,7 +1105,6 @@ struct MainTabFeature {
         return .run { _ in competitionRoutingClient.consume(sequence) }
     }
 
-    /// Opens the waiting link once the current one is done.
     private func advanceClaimQueue(state: inout State) -> Effect<Action> {
         guard state.inviteClaimStatus == .idle,
               state.pendingClaimRoute == nil,

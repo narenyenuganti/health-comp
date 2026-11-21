@@ -3,15 +3,12 @@ import UserNotifications
 import WatchConnectivity
 import WidgetKit
 
-/// The last snapshot from the iPhone, kept in this watch's App Group so the
-/// complication can read it. The group is per device, not shared with the phone.
 @MainActor
 final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, UNUserNotificationCenterDelegate {
     static let shared = WatchSnapshotModel()
 
     @Published private(set) var snapshot: CompetitionWidgetSnapshot?
     @Published private(set) var seen = CompetitionWatchSeen()
-    /// The match of the alert just tapped on this watch, until the root opens it.
     @Published var tappedAlert: UUID?
 
     private let fileURL = CompetitionWidgetSnapshot.fileURL()
@@ -20,7 +17,6 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, U
 
     override init() {
         super.init()
-        // Here, at launch, so a tap that launches the app isn't missed.
         UNUserNotificationCenter.current().delegate = self
         snapshot = .load(from: fileURL)
         if let data = try? Data(contentsOf: seenURL),
@@ -28,11 +24,9 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, U
             self.seen = seen
         }
 #if DEBUG
-        // Deterministic UI tests and captures: no phone, no WatchConnectivity.
         let arguments = ProcessInfo.processInfo.arguments
         if let scenario = zip(arguments, arguments.dropFirst()).first(where: { $0.0 == "--watch-scenario" })?.1 {
             isFixture = true
-            // An alert tap, as the delegate would report it.
             if let id = zip(arguments, arguments.dropFirst()).first(where: { $0.0 == "--watch-alert" })?.1 {
                 tappedAlert = UUID(uuidString: id)
             }
@@ -54,7 +48,6 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, U
         WCSession.default.activate()
     }
 
-    /// Delivery to a suspended app stalled in the spike, so a look re-checks.
     func refresh() {
         guard !isFixture, WCSession.default.activationState == .activated else { return }
         if let payload = CompetitionWatchPayload(WCSession.default.receivedApplicationContext) {
@@ -62,9 +55,6 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, U
         }
     }
 
-    /// The system's wake for pending data. `hasContentPending` going false
-    /// doesn't prove a delegate's hop to this actor ran, so this applies the
-    /// context itself before the app can suspend.
     func finishDelivery() async {
         let deadline = Date().addingTimeInterval(5)
         while WCSession.default.hasContentPending, Date() < deadline {
@@ -89,7 +79,6 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, U
             saveSeen()
             WidgetCenter.shared.reloadAllTimelines()
         case let .store(next):
-            // `sentAt` waits for the write, so a failed one retries.
             guard let data = payload.snapshot, write(data) else { return }
             let material = next.ignoringUpdatedAt != snapshot?.ignoringUpdatedAt
             snapshot = next
@@ -128,14 +117,9 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, U
             values.isExcludedFromBackup = true
             try url.setResourceValues(values)
         } catch {
-            // ponytail: a failed save replays a reveal once; nothing is lost
         }
     }
 
-    // MARK: UNUserNotificationCenterDelegate
-
-    /// A mirrored iPhone alert tapped on the watch launches this app and lands
-    /// here. No `willPresent`: alerts stay silent while the app is in front.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
@@ -145,8 +129,6 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, U
         else { return }
         await MainActor.run { tappedAlert = id }
     }
-
-    // MARK: WCSessionDelegate
 
     nonisolated func session(
         _ session: WCSession,

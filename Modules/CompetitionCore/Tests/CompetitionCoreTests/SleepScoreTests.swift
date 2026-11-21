@@ -40,11 +40,10 @@ final class SleepScoreTests: XCTestCase {
     func testANightScoresItsMainSleepAndIgnoresTheNap() throws {
         let window = try XCTUnwrap(SleepScore.window(for: day))
         let samples = [
-            sample(at(23, dayOffset: -1), at(2), .watch),   // 3 h
-            sample(at(2, 30), at(7), .watch),                // 30 min awake, then 4.5 h
-            sample(at(14), at(15), .watch),                  // afternoon nap
+            sample(at(23, dayOffset: -1), at(2), .watch),
+            sample(at(2, 30), at(7), .watch),
+            sample(at(14), at(15), .watch),
         ]
-        // Fell asleep 11 pm, 300 minutes after 6 pm; usual bedtime 11:30 pm.
         let night = SleepScore.night(samples, in: window, preference: .watch, usualOnsetMinutes: 330)
         XCTAssertEqual(night.minutesAsleep, 510, "the nap counts as time asleep")
         XCTAssertEqual(night.onsetMinutes, 300)
@@ -65,11 +64,10 @@ final class SleepScoreTests: XCTestCase {
     func testOverlapsCountOnceAndSamplesAreClippedToTheWindow() throws {
         let window = try XCTUnwrap(SleepScore.window(for: day))
         let samples = [
-            sample(at(17, dayOffset: -1), at(19, dayOffset: -1), .watch), // 1h inside
+            sample(at(17, dayOffset: -1), at(19, dayOffset: -1), .watch),
             sample(at(23, dayOffset: -1), at(3), .watch),
-            sample(at(2), at(6), .watch), // overlaps 2-3
+            sample(at(2), at(6), .watch),
         ]
-        // 60 + (23:00→06:00 = 420) minutes.
         XCTAssertEqual(SleepScore.minutesAsleep(samples, in: window, preference: .watch), 480)
     }
 

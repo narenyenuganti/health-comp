@@ -1,12 +1,5 @@
 import XCTest
 
-/// Account → Notifications: ten switches in three sections. `account` is the
-/// standalone Account fixture (iOS notifications and Live Activities off).
-/// `notification-choices` is the real app root with notifications on, the
-/// long-named challenger muted, and the real installation coordinator
-/// registering against a stand-in server whose state shows under Home
-/// ("Muted push kinds: …"): each
-/// registration takes 2.5 s, and the first that turns Reactions off fails.
 final class NotificationChoicesUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -32,8 +25,6 @@ final class NotificationChoicesUITests: XCTestCase {
         app = nil
     }
 
-    // MARK: Page
-
     func testPageListsSwitchesInOrderWithLiveActivitiesOffInIOS() {
         launch(.account)
         openNotificationsFromAccount()
@@ -44,7 +35,6 @@ final class NotificationChoicesUITests: XCTestCase {
         ).firstMatch.exists)
         XCTAssertTrue(app.staticTexts["DURING A MATCH"].exists)
 
-        // Read both frames after the scroll: a scroll between rows moves both.
         var previous: XCUIElement = app.staticTexts["DURING A MATCH"]
         for row in Self.rows {
             if row.id == "reaction" {
@@ -66,7 +56,6 @@ final class NotificationChoicesUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(toggle.frame.height, 43.5, row.id)
             XCTAssertEqual(toggle.isEnabled, row.id != "live-activity", row.id)
             if row.id == "live-activity" {
-                // The saved choice is still on; iOS having Live Activities off must show Off.
                 XCTAssertEqual(toggle.value as? String, "0", row.id)
             }
             if row.id == "reaction" { previous = app.staticTexts["FROM THE OTHER PERSON"] }
@@ -75,7 +64,6 @@ final class NotificationChoicesUITests: XCTestCase {
             XCTAssertGreaterThan(toggle.frame.minY, previous.frame.minY, "\(row.id) is out of order")
             previous = toggle
             if row.id == "live-activity" {
-                // iOS-off: caption and Open Settings directly under the row.
                 let caption = liveActivityCaption()
                 XCTAssertTrue(caption.exists)
                 XCTAssertGreaterThan(caption.frame.minY, toggle.frame.maxY - 1)
@@ -87,14 +75,12 @@ final class NotificationChoicesUITests: XCTestCase {
             }
         }
 
-        // A disabled switch doesn't move.
         let liveActivity = choice("live-activity")
         scrollToElement(liveActivity)
         let before = liveActivity.value as? String
         flip(liveActivity)
         XCTAssertEqual(liveActivity.value as? String, before)
 
-        // MUTED stays last.
         let muted = app.staticTexts["MUTED"]
         scrollToElement(muted)
         XCTAssertGreaterThan(muted.frame.minY, choice("friend_accepted").frame.maxY)
@@ -102,7 +88,6 @@ final class NotificationChoicesUITests: XCTestCase {
         scrollToElement(mutedHelp)
         XCTAssertTrue(mutedHelp.exists)
 
-        // The Live Activity Open Settings opens this app's settings page.
         let settings = app.buttons["account.notifications.live-activity.settings"]
         scrollToElement(settings)
         settings.tap()
@@ -113,7 +98,6 @@ final class NotificationChoicesUITests: XCTestCase {
         let switchable = Self.rows.filter { $0.id != "live-activity" }
         launch(.account)
         openNotificationsFromAccount()
-        // Earlier interrupted runs may have left some off.
         setAll(switchable, on: true)
 
         for row in switchable {
@@ -123,13 +107,11 @@ final class NotificationChoicesUITests: XCTestCase {
             XCTAssertEqual(toggle.value as? String, "0", row.id)
         }
 
-        // Back to Account and in again.
         app.navigationBars["Notifications"].buttons["Account"].tap()
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
         openNotifications()
         assertAll(switchable, on: false)
 
-        // Stored on this iPhone: a relaunch keeps them.
         launch(.account)
         openNotificationsFromAccount()
         assertAll(switchable, on: false)
@@ -140,15 +122,12 @@ final class NotificationChoicesUITests: XCTestCase {
         assertAll(switchable, on: true)
     }
 
-    // MARK: Server-held kinds
-
     func testSwitchesRegisterServerHeldKindsAndRetryAfterAFailure() {
         launch(.notificationChoices)
         XCTAssertTrue(waitForServer("none", registrations: 1, failures: 0))
 
         openAccount()
         openNotifications()
-        // Notifications are on here, and so are Live Activities.
         XCTAssertFalse(app.staticTexts["Turned off in iOS Settings"].exists)
         XCTAssertTrue(app.buttons["account.notifications.settings"].exists)
         XCTAssertTrue(text(Self.footer).exists)
@@ -166,7 +145,6 @@ final class NotificationChoicesUITests: XCTestCase {
         XCTAssertEqual(unmute.identifier, "account.notifications.unmute")
         XCTAssertTrue(app.staticTexts[Self.longName].exists)
 
-        // An on-iPhone switch never goes to the server.
         flip(choice("lead-change"))
         XCTAssertEqual(choice("lead-change").value as? String, "0")
         flip(choice("nudge"))
@@ -174,7 +152,6 @@ final class NotificationChoicesUITests: XCTestCase {
         closeNotificationsAndAccount()
         XCTAssertTrue(waitForServer("nudge", registrations: 2, failures: 0))
 
-        // Offline: the Reactions registration fails and the server keeps nudge only.
         openAccount()
         openNotifications()
         XCTAssertEqual(choice("lead-change").value as? String, "0")
@@ -184,13 +161,11 @@ final class NotificationChoicesUITests: XCTestCase {
         closeNotificationsAndAccount()
         XCTAssertTrue(waitForServer("nudge", registrations: 3, failures: 1))
 
-        // Coming back to the app retries.
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         XCTAssertTrue(waitForServer("nudge, reaction", registrations: 4, failures: 1))
 
-        // Back on, one at a time.
         openAccount()
         openNotifications()
         flip(choice("lead-change"))
@@ -204,7 +179,6 @@ final class NotificationChoicesUITests: XCTestCase {
         closeNotificationsAndAccount()
         XCTAssertTrue(waitForServer("none", registrations: 6, failures: 1))
 
-        // FRIENDS: both server-held, under their own header after the others.
         openAccount()
         openNotifications()
         let friendsHeader = app.staticTexts["FRIENDS"]
@@ -214,7 +188,6 @@ final class NotificationChoicesUITests: XCTestCase {
         XCTAssertGreaterThan(friendRequests.frame.minY, friendsHeader.frame.minY)
         flip(friendRequests)
         XCTAssertEqual(friendRequests.value as? String, "0")
-        // Each server-held switch registers on its own: two flips, two calls.
         flip(choice("friend_accepted"))
         XCTAssertEqual(choice("friend_accepted").value as? String, "0")
         closeNotificationsAndAccount()
@@ -227,7 +200,6 @@ final class NotificationChoicesUITests: XCTestCase {
         XCTAssertEqual(choice("friend_accepted").value as? String, "1")
         closeNotificationsAndAccount()
         XCTAssertTrue(waitForServer("none", registrations: 10, failures: 1))
-        // And nothing more follows.
         Thread.sleep(forTimeInterval: 3)
         XCTAssertEqual(serverLabel(), summary("none", registrations: 10, failures: 1))
     }
@@ -239,7 +211,6 @@ final class NotificationChoicesUITests: XCTestCase {
         openNotifications()
         let nudges = choice("nudge")
         scrollToElement(nudges)
-        // The second tap lands while the first registration is in flight.
         flip(nudges)
         flip(nudges)
         XCTAssertEqual(nudges.value as? String, "1")
@@ -249,10 +220,6 @@ final class NotificationChoicesUITests: XCTestCase {
         XCTAssertEqual(serverLabel(), summary("none", registrations: 3, failures: 0))
     }
 
-    // MARK: Captures
-
-    /// Not in CI: Account → Notifications light and dark, default and AX5,
-    /// top and bottom, from both fixtures. Close scores is off in each.
     func testNotificationChoicesScreenshotMatrix() throws {
         let configs: [(String, String, String)] = [
             ("light-xs", "Light", "UICTContentSizeCategoryXS"),
@@ -278,12 +245,10 @@ final class NotificationChoicesUITests: XCTestCase {
                 scrollToElement(closeScores)
                 if closeScores.value as? String != "0" { flip(closeScores) }
                 XCTAssertEqual(closeScores.value as? String, "0")
-                // A status bar tap scrolls to the top; a swipe could close the sheet.
                 app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).tap()
                 XCTAssertTrue(app.buttons["account.notifications.settings"].waitForExistence(timeout: 3))
                 shot("\(screen)-top-\(suffix)")
                 try audit("\(screen)-top-\(suffix)")
-                // iOS-off: the caption and its Open Settings, under Live Activity.
                 let middle = scenario == .account
                     ? app.buttons["account.notifications.live-activity.settings"]
                     : choice("live-activity")
@@ -294,7 +259,6 @@ final class NotificationChoicesUITests: XCTestCase {
                 scrollToElement(unmute)
                 shot("\(screen)-bottom-\(suffix)")
                 try audit("\(screen)-bottom-\(suffix)")
-                // Back to the top first: at AX5 Close scores has left the list's cells.
                 app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).tap()
                 XCTAssertTrue(app.buttons["account.notifications.settings"].waitForExistence(timeout: 3))
                 scrollToElement(closeScores)
@@ -304,7 +268,6 @@ final class NotificationChoicesUITests: XCTestCase {
         }
     }
 
-    /// Not in CI: the FRIENDS section, light, dark and the largest size.
     func testFriendsSectionScreenshots() throws {
         let configs: [(String, String, String)] = [
             ("light", "Light", "UICTContentSizeCategoryL"),
@@ -320,7 +283,6 @@ final class NotificationChoicesUITests: XCTestCase {
             let accepted = choice("friend_accepted")
             scrollToElement(accepted)
             XCTAssertTrue(app.staticTexts["FRIENDS"].exists, suffix)
-            // Earlier interrupted runs may have left it off.
             if accepted.value as? String != "1" { flip(accepted) }
             XCTAssertEqual(accepted.value as? String, "1", suffix)
             shot("notifications-friends-\(suffix)")
@@ -355,8 +317,6 @@ final class NotificationChoicesUITests: XCTestCase {
         try audit("muted-name-and-explanation-light-ax5")
     }
 
-    // MARK: Helpers
-
     private enum Scenario: String {
         case account
         case notificationChoices = "notification-choices"
@@ -367,8 +327,6 @@ final class NotificationChoicesUITests: XCTestCase {
         app = XCUIApplication()
         XCUIDevice.shared.appearance = arguments.contains("Dark") ? .dark : .light
         app.launchEnvironment["TZ"] = "America/Los_Angeles"
-        // Never pin `-healthcomp.notifications.*`: the argument domain
-        // would override the switches' own writes.
         app.launchArguments = [
             "--multi-user-competition-test-lab",
             "--multi-user-competition-scenario", scenario.rawValue,
@@ -449,8 +407,6 @@ final class NotificationChoicesUITests: XCTestCase {
         }
     }
 
-    /// A `Toggle` in a `List` exposes a row-wide switch; a tap at its center
-    /// can land on the label, so tap the inner switch or the trailing edge.
     private func flip(_ toggle: XCUIElement) {
         scrollToElement(toggle)
         let knob = toggle.switches.firstMatch
@@ -466,7 +422,6 @@ final class NotificationChoicesUITests: XCTestCase {
     }
 
     private func serverLabel() -> String {
-        // The Test Lab root's identifier covers this text's own.
         app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Muted push kinds:"))
             .firstMatch.label
     }
@@ -494,9 +449,6 @@ final class NotificationChoicesUITests: XCTestCase {
         add(attachment)
     }
 
-    /// Layout and labelling audits on elements fully on screen; an issue
-    /// XCTest can't tie to an element (iOS 18 reports one per enabled
-    /// `Toggle`) is attached and the screenshots are checked by eye.
     private func audit(_ name: String) throws {
         try XCTContext.runActivity(named: "audit \(name)") { activity in
             let screen = app.windows.firstMatch.frame

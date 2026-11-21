@@ -1069,7 +1069,6 @@ final class LocalCompetitionClientTests: XCTestCase {
         )
         _ = await nextPublication(from: setup.client.start())
         let declined = await setup.client.decline(sourceID)
-        // The closed challenge stays a day so its screen can say so.
         XCTAssertEqual(declined.dashboard.competitions.map(\.id), [sourceID])
         let independentClient = LocalCompetitionClient.make(
             environment: .accelerated(source: setup.source),
@@ -1299,7 +1298,6 @@ final class LocalCompetitionClientTests: XCTestCase {
         let declined = await client.decline(id)
         let hiddenSnapshot = await notifications.snapshot(at: 1)
 
-        // The closed challenge stays a day; Home keeps an incoming one off.
         XCTAssertEqual(declined.dashboard.competitions.map(\.id), [id])
         guard case .declined(_, .incoming)? = declined.dashboard.competitions.first?.lifecycle else {
             return XCTFail("Expected an incoming decline")
@@ -1328,7 +1326,6 @@ final class LocalCompetitionClientTests: XCTestCase {
         XCTAssertEqual(failed.dashboard.competitions, [shown])
         XCTAssertTrue(failed.dashboard.issues.contains(.competitionFailures([id])))
         XCTAssertEqual(competitionRowIssue(id, in: failed.dashboard.issues), .refresh)
-        // Home draws the match with its own line, so the banner stays away.
         let layout = competitionHomeLayout(failed.dashboard, now: failed.evaluatedAt)
         XCTAssertEqual(layout.needsYou.map(\.id), [id])
         XCTAssertNil(competitionIssueSummary(failed.dashboard.issues, attributedIDs: [id]))

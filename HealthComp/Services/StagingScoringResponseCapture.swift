@@ -1,7 +1,6 @@
 #if HEALTHCOMP_STAGING
 import Foundation
 
-/// Default-off, RAM-only diagnostic. It does not attribute a response to a UI action.
 final class StagingScoringResponseCapture: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private let scoringURL: URL
@@ -55,7 +54,6 @@ final class StagingScoringResponseCapture: NSObject, URLSessionTaskDelegate, @un
         let ambiguous = lock.withLock {
             guard isOpen else { return false }
             guard matchingTask == nil else {
-                // Multiple matching tasks before retrieval are ambiguous, not failed requests.
                 close()
                 return true
             }
@@ -109,7 +107,6 @@ final class StagingScoringResponseCapture: NSObject, URLSessionTaskDelegate, @un
         lock.withLock { if case .captured = state { return true }; return false }
     }
 
-    // Called only under lock. The owner timer clears idle RAM; access also checks expiry.
     private var isOpen: Bool {
         switch state {
         case .idle, .closed: return false

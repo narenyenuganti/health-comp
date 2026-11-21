@@ -45,8 +45,6 @@ const item = {
   environment: "sandbox" as const,
 };
 const workerAuthorization = `Bearer ${"w".repeat(43)}`;
-// A stand-in alert so the APNs send path stays covered now that score and
-// result work no longer alerts.
 const testAlertPayload = {
   aps: {
     alert: { title: "t", body: "b" },
@@ -576,7 +574,6 @@ Deno.test("APNs provider token is a verifiable ES256 JWT", async () => {
     true,
   );
 
-  // Reused across runs (Apple throttles token refreshes) for 40 minutes.
   const config = { ...configuration, privateKey };
   assertEquals(await createApnsProviderToken(config), token);
   const realNow = Date.now;

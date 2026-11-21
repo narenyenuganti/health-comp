@@ -3,7 +3,6 @@ import CompetitionCore
 import ComposableArchitecture
 import SwiftUI
 
-/// `-groupLab <setup>` in the `group-matches` Test Lab scenario.
 enum GroupMatchLabSetup: String, CaseIterable, Sendable {
     case formatPicker = "format-picker"
     case lineupFFA = "lineup-ffa"
@@ -34,7 +33,6 @@ enum GroupMatchLabSetup: String, CaseIterable, Sendable {
     case resultDoubles = "result-doubles"
     case resultDoublesTied = "result-doubles-tied"
     case history
-    /// The same History with no group match in it.
     case historyDuels = "history-duels"
 }
 
@@ -44,8 +42,6 @@ extension GroupMatchLabSetup {
     }
 }
 
-/// One match per mockup state. Now is Sun Aug 16, Day 4 of a week that began
-/// on Thursday.
 enum GroupMatchFixtures {
     enum Player: Int, CaseIterable {
         case you = 1, sam, priya, leo, erratic
@@ -68,11 +64,9 @@ enum GroupMatchFixtures {
         GroupMatchPlayer(profileID: player.profileID, name: player.name)
     }
 
-    /// Maya's challenge link finds her; this one belongs to someone you can't add.
     static let mayaLink = "Mx7kQ2pL9vR4tN8wB3cY6z"
     static let unavailableLink = "Ux0aB1cD2eF3gH4iJ5kL6m"
 
-    /// Takes a second, so the lookup shows that it's working.
     static let lookUpLink: @Sendable (CompetitionChallengeLinkCode) async -> GroupMatchLinkLookup = { code in
         try? await Task.sleep(for: .seconds(1))
         switch code.rawValue {
@@ -90,7 +84,6 @@ enum GroupMatchFixtures {
             startDay: try! CompetitionDay(era: 1, year: 2026, month: month, day: day, timeZoneIdentifier: zone)
         )
     }
-    /// Everyone accepted today, so Day 1 is Monday.
     private static let tomorrow = (month: 8, day: 17)
 
     private static let fourDays: [Player: [Int]] = [
@@ -107,7 +100,6 @@ enum GroupMatchFixtures {
         .leo: [310, 342, 288, 263, 300, 320, 331],
     ]
 
-    /// The tie is on exact points: you and Sam both finish on 2,941.
     private static var tiedWeek: [Player: [Int]] {
         week.merging([.sam: [448, 402, 451, 411, 395, 410, 424]]) { $1 }
     }
@@ -115,7 +107,6 @@ enum GroupMatchFixtures {
     private static let ffaLineup: [Player] = [.you, .sam, .priya, .leo]
     private static let doublesLineup: [(Player, Int)] = [(.you, 1), (.sam, 2), (.priya, 1), (.leo, 2)]
     private static let live = LocalCompetitionLifecyclePresentation.active(dayOrdinal: 4)
-    /// Answer by Sun 8 PM in Los Angeles.
     private static let waiting = LocalCompetitionLifecyclePresentation.pending(
         direction: .outgoing, createdAt: now, expiresAt: now.addingTimeInterval(19 * 3_600)
     )
@@ -126,12 +117,10 @@ enum GroupMatchFixtures {
         outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: now
     )
 
-    /// The match a setup opens through `MainTabView`, or nil for one drawn on its own.
     static func routed(_ setup: GroupMatchLabSetup) -> GroupMatchPresentation? {
         routed(setup, youLeft: false)
     }
 
-    /// `youLeft`: as after Leave Match on the live day.
     static func routed(_ setup: GroupMatchLabSetup, youLeft: Bool) -> GroupMatchPresentation? {
         let left: [Player: Int] = youLeft ? [.you: 4] : [:]
         return switch setup {
@@ -173,7 +162,6 @@ enum GroupMatchFixtures {
         case .liveFFA: match(4, .fourWay, live, ffaLineup, scores: fourDays, left: left)
         case .liveDoubles: doubles(5, live, scores: fourDays, left: left)
         case .liveBot: match(6, .fourWay, live, [.you, .sam, .erratic, .leo], scores: fourDays, left: left)
-        // Leo's slow week leaves Sam carrying their team.
         case .banter: doubles(7, live, scores: fourDays.merging([.leo: [150, 160, 140, 170]]) { $1 }, left: left)
         case .resultFFAWon: match(8, .fourWay, won, ffaLineup, scores: week, isFrozen: true)
         case .resultFFATied:
@@ -184,7 +172,6 @@ enum GroupMatchFixtures {
             )
         case .resultFFALost: history[3]
         case .resultFFATiedThird:
-            // Leo 1st, Sam 2nd, you and Priya both on 2,610.
             match(
                 18, .fourWay,
                 .completed(outcome: .loss, basis: .stableAcrossPostBoundaryReads, completedAt: now),
@@ -194,7 +181,6 @@ enum GroupMatchFixtures {
             )
         case .resultDoubles: doubles(10, won, scores: week, isFrozen: true)
         case .resultDoublesTied:
-            // Both teams on 5,551.
             doubles(
                 17,
                 .completed(outcome: .tie, basis: .stableAcrossPostBoundaryReads, completedAt: now),
@@ -209,9 +195,6 @@ enum GroupMatchFixtures {
         }
     }
 
-    /// Five finished weeks, newest first: a four-way you won, doubles won
-    /// with Priya, a four-way tied for 1st, a three-way in 2nd and doubles
-    /// lost with Sam.
     static var history: [GroupMatchPresentation] {
         let lost = LocalCompetitionLifecyclePresentation.completed(
             outcome: .loss, basis: .stableAcrossPostBoundaryReads, completedAt: now
@@ -239,7 +222,6 @@ enum GroupMatchFixtures {
         ]
     }
 
-    /// History with duel weeks, plus the group weeks unless `duelsOnly`.
     static func historyPublication(duelsOnly: Bool) -> LocalCompetitionPublication {
         let duels = CompetitionRivalryFixture.publication(weeks: 5)
         return LocalCompetitionPublication(
@@ -257,7 +239,6 @@ enum GroupMatchFixtures {
         )
     }
 
-    /// Home's cards: every state once, in the order Home lists them.
     static let homeSetups: [GroupMatchLabSetup] = [
         .inviteFFA, .lobbyHost, .liveFFA, .liveDoubles, .resultFFAWon, .resultDoubles, .lobbyDeclined, .lobbyWithdrew,
     ]
@@ -296,7 +277,6 @@ enum GroupMatchFixtures {
         )
     }
 
-    /// Fixtures are fixed values, so a validation failure is a bug in this file.
     private static func match(
         _ id: Int,
         _ format: GroupMatchFormat,
@@ -340,8 +320,6 @@ enum GroupMatchFixtures {
                 )
             }
         }
-        /// A finished fixture's server result: its places plus the seat
-        /// totals and day values it was decided on.
         func build(frozen: GroupMatchPresentation?) -> GroupMatchPresentation {
             try! GroupMatchPresentation(
                 id: CompetitionID(UUID(uuidString: "c3000000-0000-4000-8000-0000000000\(String(format: "%02d", id))")!),
@@ -418,7 +396,6 @@ struct GroupMatchTestLabView: View {
     }
 
     var body: some View {
-        // Fixture times read in the match's zone, whatever the simulator's.
         content.environment(\.timeZone, TimeZone(identifier: "America/Los_Angeles")!)
     }
 

@@ -1,10 +1,6 @@
 import CompetitionCore
 import SwiftUI
 
-// MARK: Badges
-
-/// Nine badges, worked out on this phone from your finished 1v1 weeks.
-/// Nothing here is sent anywhere.
 enum CompetitionBadgeKind: String, CaseIterable, Identifiable, Sendable {
     case sweep, comeback, photoFinish, tripleCrown, defender, fullWeek, hotStreak, collector, rival
 
@@ -52,7 +48,6 @@ enum CompetitionBadgeKind: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// What the ones you build toward need; nil for a single week's feat.
     var goal: Int? {
         switch self {
         case .defender, .collector: 3
@@ -66,22 +61,18 @@ enum CompetitionBadgeKind: String, CaseIterable, Identifiable, Sendable {
 struct CompetitionBadge: Equatable, Identifiable {
     let kind: CompetitionBadgeKind
     var count = 0
-    /// The newest week that earned it.
     var latest: CompetitionID?
-    /// The closest you have come to `kind.goal`.
     var progress = 0
 
     var id: String { kind.rawValue }
     var isEarned: Bool { count > 0 }
 
-    /// "×3" once earned; "2 OF 3", "BEST 4" or "NOT YET" before.
     var countText: String {
         if isEarned { return "×\(count)" }
         guard let goal = kind.goal else { return "NOT YET" }
         return kind == .hotStreak ? "BEST \(progress)" : "\(min(progress, goal)) OF \(goal)"
     }
 
-    /// "Sweep, earned 3 times. Win all seven days of a week."
     var accessibilityText: String {
         let state: String
         if isEarned {
@@ -104,9 +95,7 @@ func competitionTimesText(_ count: Int) -> String {
 }
 
 struct CompetitionBadgeBook: Equatable {
-    /// Every kind: the earned ones first, each group in its fixed order.
     var badges: [CompetitionBadge] = []
-    /// What each week earned, without Full week, which most weeks earn.
     var byWeek: [CompetitionID: [CompetitionBadgeKind]] = [:]
 }
 
@@ -161,7 +150,6 @@ func competitionBadgeBook(_ competitions: [LocalCompetitionPresentation]) -> Com
         pair.weeks += 1
         if pair.weeks == 10 { earn(.rival, week) }
         reach(.rival, pair.weeks)
-        // A deleted account's belt is retired, so it never counts as held.
         if week.opponentDisplayName != competitionFormerCompetitorName {
             switch result.outcome {
             case .win where pair.youHold:
@@ -190,8 +178,6 @@ func competitionBadgeBook(_ competitions: [LocalCompetitionPresentation]) -> Com
     return CompetitionBadgeBook(badges: all.filter(\.isEarned) + all.filter { !$0.isEarned }, byWeek: byWeek)
 }
 
-/// A week's seven days as you saw them, in order, by the same rule as the
-/// strip and the result (`competitionDayOutcome`); nil where a day has no data.
 func competitionDayOutcomes(_ week: LocalCompetitionPresentation) -> [CompetitionOutcome?] {
     week.days.sorted { $0.ordinal < $1.ordinal }.map { day in
         switch competitionDayOutcome(day, currentDayOrdinal: nil) {
@@ -203,7 +189,6 @@ func competitionDayOutcomes(_ week: LocalCompetitionPresentation) -> [Competitio
     }
 }
 
-/// "beat Sam", "lost to Sam" or "tied with Sam".
 func competitionWeekVersusText(_ week: LocalCompetitionPresentation) -> String {
     switch week.terminalResult?.outcome {
     case .win: "beat \(week.opponentDisplayName)"
@@ -211,8 +196,6 @@ func competitionWeekVersusText(_ week: LocalCompetitionPresentation) -> String {
     case .tie, nil: "tied with \(week.opponentDisplayName)"
     }
 }
-
-// MARK: History filter
 
 enum CompetitionWeekFilter: String, CaseIterable, Identifiable {
     case all, won, lost
@@ -228,7 +211,6 @@ enum CompetitionWeekFilter: String, CaseIterable, Identifiable {
     }
 }
 
-/// History's weeks under its filter and, with `person`, with that one person.
 func competitionFilteredWeeks(
     _ weeks: [LocalCompetitionPresentation],
     filter: CompetitionWeekFilter,
@@ -244,15 +226,11 @@ func competitionFilteredWeeks(
     }
 }
 
-// MARK: Your records
-
 struct CompetitionOwnRecord: Equatable, Identifiable {
     let label: String
     let value: String
     let detail: String
-    /// The week it happened in, which the row opens.
     var weekID: CompetitionID?
-    /// 0 Move, 1 Exercise, 2 Stand.
     var ring: Int?
 
     var id: String { label }
@@ -265,8 +243,6 @@ struct CompetitionOwnRecordSection: Equatable, Identifiable {
     var id: String { title }
 }
 
-/// Your bests across everyone: scoring, streaks, then each ring's best day.
-/// Weeks are finished and oldest first; a section with nothing to say is left out.
 func competitionOwnRecordSections(
     _ weeks: [LocalCompetitionPresentation],
     now: Date,
@@ -284,7 +260,6 @@ func competitionOwnRecordSections(
     func margin(_ week: LocalCompetitionPresentation) -> Double {
         (week.terminalResult?.userPoints ?? 0) - (week.terminalResult?.opponentPoints ?? 0)
     }
-    // >=: on a tie the later one holds it.
     func best<T>(_ items: [T], _ value: (T) -> Double) -> T? {
         items.reduce(T?.none) { held, item in
             held.map { value(item) >= value($0) ? item : $0 } ?? item
@@ -373,9 +348,6 @@ func competitionOwnRecordSections(
     ].filter { !$0.rows.isEmpty }
 }
 
-// MARK: Badge views
-
-/// Amber once earned, an outline until then.
 struct CompetitionBadgePlate: View {
     let kind: CompetitionBadgeKind
     let isEarned: Bool
@@ -397,7 +369,6 @@ struct CompetitionBadgePlate: View {
     }
 }
 
-/// A badge's name on a History row.
 struct CompetitionBadgeTag: View {
     let name: String
 
@@ -413,8 +384,6 @@ struct CompetitionBadgeTag: View {
     }
 }
 
-/// Seven marks, one per day, as the week strip draws them: amber a day you
-/// won, ink one you lost, grey a tie, the stripe for a day without data.
 struct CompetitionDayMarks: View {
     let outcomes: [CompetitionOutcome?]
 
@@ -434,7 +403,6 @@ struct CompetitionDayMarks: View {
     }
 }
 
-/// The profile's row: the first five badges, earned ones first.
 struct CompetitionBadgesRow: View {
     let badges: [CompetitionBadge]
 
@@ -486,7 +454,6 @@ struct CompetitionBadgesRow: View {
     }
 }
 
-/// "ALL ›" at the end of a section header that opens a page.
 struct CompetitionAllLabel: View {
     var body: some View {
         HStack(spacing: 4) {
@@ -499,11 +466,8 @@ struct CompetitionAllLabel: View {
     }
 }
 
-/// Every badge: what earns it, how often you have, and how close you are.
-/// A tap opens its sheet, and the sheet opens the latest week that earned it.
 struct CompetitionBadgesView: View {
     let publication: LocalCompetitionPublication
-    /// Pushes a finished week, once the sheet has closed.
     let openWeek: (CompetitionID) -> Void
 
     @State private var shown: CompetitionBadge?
@@ -594,10 +558,8 @@ struct CompetitionBadgesView: View {
     }
 }
 
-/// One badge: its rule, how often you earned it, and the latest week.
 struct CompetitionBadgeSheet: View {
     let badge: CompetitionBadge
-    /// The latest week that earned it, while that week is still on this phone.
     let week: LocalCompetitionPresentation?
     let now: Date
     let open: (CompetitionID) -> Void
@@ -663,11 +625,6 @@ struct CompetitionBadgeSheet: View {
     }
 }
 
-// MARK: Your records view
-
-/// One push from your profile: your bests across everyone. A row with a
-/// week behind it opens that week. With weeks from before this year, a
-/// year / All time picker filters them all.
 struct CompetitionOwnRecordsView: View {
     let publication: LocalCompetitionPublication
 

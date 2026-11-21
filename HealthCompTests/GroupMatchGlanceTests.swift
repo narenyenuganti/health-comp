@@ -3,13 +3,10 @@ import CompetitionCore
 import XCTest
 @testable import HealthComp
 
-/// Home, the versus intro and glance for group matches, from the lab fixtures.
 final class GroupMatchGlanceTests: XCTestCase {
     private func fixture(_ setup: GroupMatchLabSetup) -> GroupMatchPresentation {
         GroupMatchFixtures.routed(setup)!
     }
-
-    // MARK: Glance
 
     func testFreeForAllGlanceIsYourPlaceAndTheGapWithTheNextPlaceUpAsTheFallback() throws {
         let match = try XCTUnwrap(CompetitionWidgetSnapshot.Match(group: fixture(.liveFFA)))
@@ -20,7 +17,6 @@ final class GroupMatchGlanceTests: XCTestCase {
         XCTAssertEqual(group.yourPlace, 2)
         XCTAssertEqual(group.lead, "48 behind Sam")
         XCTAssertEqual(match.groupPlaceText, "2nd")
-        // What an older watch draws: you against Sam.
         XCTAssertEqual(match.name, "Sam")
         XCTAssertEqual(match.userPoints, 1_664)
         XCTAssertEqual(match.opponentPoints, 1_712)
@@ -56,7 +52,6 @@ final class GroupMatchGlanceTests: XCTestCase {
         XCTAssertEqual(snapshot.version, 2)
         let data = try JSONEncoder().encode(snapshot)
         XCTAssertEqual(try JSONDecoder().decode(CompetitionWidgetSnapshot.self, from: data), snapshot)
-        // A file written before the field existed.
         let old = try XCTUnwrap(CompetitionWidgetSnapshot.testLab("live", now: now, scheme: "healthcomp"))
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
         XCTAssertNil((json["matches"] as? [[String: Any]])?.first?["group"])
@@ -104,8 +99,6 @@ final class GroupMatchGlanceTests: XCTestCase {
         )
     }
 
-    // MARK: Versus intro
-
     func testIntroPutsYouFirstAndNamesTheDay() throws {
         let locale = Locale(identifier: "en_US")
         let ffa = try XCTUnwrap(groupMatchVersusIntroContent(
@@ -140,14 +133,11 @@ final class GroupMatchGlanceTests: XCTestCase {
         )
     }
 
-    // MARK: Home
-
     private let now = MultiUserCompetitionTestLabFixtures.labNow
 
     func testHomeShowsEveryStateInOrder() {
         let matches = GroupMatchFixtures.homeSetups.map(fixture)
         XCTAssertEqual(GroupMatchHomeCards.shown(matches, now: now).map(\.id), matches.map(\.id))
-        // Whatever order the dashboard brings.
         XCTAssertEqual(GroupMatchHomeCards.shown(matches.reversed(), now: now).map(\.id), [
             GroupMatchLabSetup.inviteFFA, .lobbyHost, .liveDoubles, .liveFFA, .resultDoubles, .resultFFAWon,
             .lobbyWithdrew, .lobbyDeclined,
@@ -190,11 +180,9 @@ final class GroupMatchGlanceTests: XCTestCase {
         XCTAssertNil(CompetitionWidgetSnapshot.Match(group: doubles))
     }
 
-    // MARK: Privacy
-
     func testOnlyALoneYouShowsOnALockedScreen() throws {
         let doubles = try XCTUnwrap(CompetitionWidgetSnapshot.Match(group: fixture(.liveDoubles))?.group)
-        XCTAssertEqual(doubles.rows.map(\.namesSomeone), [true, true])  // "You + Priya", "Sam + Leo"
+        XCTAssertEqual(doubles.rows.map(\.namesSomeone), [true, true])
         let ffa = try XCTUnwrap(CompetitionWidgetSnapshot.Match(group: fixture(.liveFFA))?.group)
         XCTAssertEqual(ffa.rows.map(\.namesSomeone), [true, false, true, true])
     }

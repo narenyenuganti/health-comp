@@ -1,6 +1,5 @@
 import XCTest
 
-/// These are also the recording scripts: actual app navigation and native views.
 final class JudgesDecisionUITests: XCTestCase {
     private var app: XCUIApplication!
     override func setUpWithError() throws { continueAfterFailure = false; app = XCUIApplication() }
@@ -48,7 +47,6 @@ final class JudgesDecisionUITests: XCTestCase {
             !self.element("competition.judges.reveal").exists && !self.element("competition.belt.ceremony").exists
         })
         XCTAssertTrue(element("competition.result").waitForExistence(timeout: 3))
-        // Leave a settled Verdict at the end of each recording.
         Thread.sleep(forTimeInterval: 2)
     }
 
@@ -93,7 +91,6 @@ final class JudgesDecisionUITests: XCTestCase {
         let deadline = Date().addingTimeInterval(seconds)
         repeat {
             if condition() { return true }
-            // Leave the display server time to render between accessibility snapshots.
             Thread.sleep(forTimeInterval: 0.1)
         } while Date() < deadline
         return false

@@ -17,8 +17,6 @@ select ok(coalesce((
     and p.proargtypes = '2950 25 25 16 16 1009'::oidvector
 ), false), 'the six-argument registration is a narrow authenticated definer RPC');
 
--- Ana sends. Ben switched Nudges off, Cal switched nothing off, Dee muted Ana,
--- Eve switched Reactions off.
 insert into auth.users (id) values
   ('e9000000-0000-4000-8000-000000000001'), ('e9000000-0000-4000-8000-000000000002'),
   ('e9000000-0000-4000-8000-000000000003'), ('e9000000-0000-4000-8000-000000000004'),
@@ -77,7 +75,6 @@ select throws_ok($$update public.device_installations set muted_push_kinds = arr
     where installation_id = 'e9300000-0000-4000-8000-000000000003'$$,
   '23514', null, 'the column only holds kinds the server can hold back');
 
--- One live match per recipient, then one work row per kind.
 create function pg_temp.match(suffix text, opponent uuid) returns uuid language plpgsql as $$
 declare
   target uuid := ('e9200000-0000-4000-8000-0000000000' || suffix)::uuid;
@@ -150,7 +147,6 @@ select is(pg_temp.state('05', 'nudge'), 'leased',
 select is(pg_temp.state('05', 'score_update'), 'leased',
   'score updates still lease when Reactions are off');
 
--- Registering through the previous call clears an earlier switch.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"role":"authenticated","sub":"e9000000-0000-4000-8000-000000000002"}', true);
 select lives_ok($$select public.register_current_device_installation(

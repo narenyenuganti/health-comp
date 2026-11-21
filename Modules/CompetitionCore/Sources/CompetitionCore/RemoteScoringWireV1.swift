@@ -3,8 +3,6 @@ import Foundation
 public enum RemoteScoringWireV1 {
     public static let policyIdentity = "healthcomp.activity-score.v1"
 
-    /// The closed set of reasons a day can be unavailable, matching the
-    /// server's submit_score_revision. Every Core and app check reads this one.
     public static let unavailableReasons: Set<String> = [
         "sourceDataUnavailable", "unsupportedActivityConfiguration",
         "invalidSourceData", "missingMoveValue", "missingMoveGoal",
@@ -25,8 +23,6 @@ public enum RemoteScoringWireV1 {
         case invalidRevision
     }
 
-    /// Trusted client conversion for the remote protocol. This intentionally
-    /// does not share the local Apple/simulator score calculator semantics.
     public static func quantizePercent(_ value: Double) throws -> Int {
         guard value.isFinite, value >= 0 else { throw ValidationError.invalidPercent }
         if value >= 200 { return 20_000 }

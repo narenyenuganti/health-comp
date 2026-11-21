@@ -1,5 +1,4 @@
 begin;
--- Sleep beta (20261115200000). Rolled back.
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
@@ -15,7 +14,6 @@ begin
   return public.create_competition_invite(extensions.digest(gen_random_uuid()::text, 'sha256'), 'UTC', null,
     pg_temp.uid(sender), gen_random_uuid(), 1::smallint, pg_temp.pid(recipient));
 end; $$;
--- Accept, then put Day 1 `days_ago` days back (UTC).
 create function pg_temp.start(b integer, cid uuid, days_ago integer) returns void language plpgsql as $$
 begin
   perform pg_temp.as_user(b); perform public.accept_competition_challenge(cid);
@@ -35,7 +33,6 @@ create temporary table m(label text primary key, id uuid);
 insert into m values ('sleep', pg_temp.invite(1, 2)), ('rings', pg_temp.invite(1, 3));
 grant select on m to authenticated;
 
--- Only the creator turns sleep on, and only while the challenge is pending.
 select pg_temp.as_user(2);
 select throws_ok($$select public.enable_sleep_scoring((select id from m where label = 'sleep'))$$,
   'P0001', 'sleep_not_allowed', 'the invitee cannot turn sleep on');
@@ -49,7 +46,6 @@ select is(public.enable_sleep_scoring((select id from m where label = 'sleep')),
 select lives_ok($$select public.enable_sleep_scoring((select id from m where label = 'sleep'))$$,
   'turning it on twice is fine');
 
--- A pending invitee sees the format, never nights.
 select is(jsonb_array_length(pg_temp.list(2)), 1, 'the invitee sees the pending sleep challenge');
 select is(pg_temp.list(4), '[]'::jsonb, 'a stranger sees nothing');
 
@@ -59,7 +55,6 @@ select pg_temp.as_user(1);
 select throws_ok($$select public.enable_sleep_scoring((select id from m where label = 'rings'))$$,
   'P0001', 'sleep_not_allowed', 'an accepted rings match stays rings');
 
--- Nights: your own, today or earlier, 0..10000.
 select is((pg_temp.night(1, (select id from m where label = 'sleep'), 3, 9125))->>'sleep_basis_points', '9125',
   'a player saves today''s night');
 select lives_ok($$select pg_temp.night(1, (select id from m where label = 'sleep'), 3, 9400)$$,
@@ -85,13 +80,11 @@ select set_eq($$select jsonb_object_keys(pg_temp.list(1)->0->'nights'->0)$$,
   array['profile_id','day_ordinal','sleep_basis_points','updated_at'],
   'a night has exactly four keys');
 
--- Frozen once the match has a result.
 update public.competitions set lifecycle = 'tallying',
   best_available_deadline = now() - interval '1 minute' where id = (select id from m where label = 'sleep');
 select throws_ok($$select pg_temp.night(1, (select id from m where label = 'sleep'), 2, 5000)$$,
   'P0001', 'sleep_not_allowed', 'nights stop at the best-available deadline');
 
--- The sleep tables are never readable directly.
 select pg_temp.as_user(1);
 set local role authenticated;
 select throws_ok($$select * from private.competition_sleep_nights$$, '42501', null,

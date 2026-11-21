@@ -42,15 +42,12 @@ final class ProfilePhotoImageTests: XCTestCase {
         XCTAssertNil(exif[kCGImagePropertyExifLensModel])
         let tags = CGImageSourceCopyMetadataAtIndex(source, 0, nil).flatMap { CGImageMetadataCopyTags($0) as? [CGImageMetadataTag] } ?? []
         XCTAssertEqual(tags.count, 0, "no XMP or other metadata tags")
-        // No APP1 (EXIF, XMP) or APP13 (IPTC) segment at all, and none of the
-        // original's strings.
         let markers = try Self.segmentMarkers(jpeg)
         XCTAssertFalse(markers.contains(0xE1), "APP1 present: \(markers)")
         XCTAssertFalse(markers.contains(0xED), "APP13 present: \(markers)")
         for secret in ["HealthCompTestCamera", "secret-comment", "Somewhere"] {
             XCTAssertNil(jpeg.range(of: Data(secret.utf8)), secret)
         }
-        // The original really carried them, so the checks above mean something.
         let input = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(
             try XCTUnwrap(CGImageSourceCreateWithData(original as CFData, nil)), 0, nil
         ) as? [CFString: Any])
@@ -86,7 +83,6 @@ final class ProfilePhotoImageTests: XCTestCase {
         ))
     }
 
-    /// A noisy test photo carrying EXIF, GPS, TIFF and IPTC metadata.
     static func photo(width: Int, height: Int, orientation: Int, type: UTType = .jpeg) throws -> Data {
         let context = try XCTUnwrap(CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
@@ -121,7 +117,6 @@ final class ProfilePhotoImageTests: XCTestCase {
         return output as Data
     }
 
-    /// The marker byte of every segment before the scan data.
     static func segmentMarkers(_ jpeg: Data) throws -> [UInt8] {
         let bytes = [UInt8](jpeg)
         XCTAssertEqual(Array(bytes.prefix(2)), [0xFF, 0xD8])
@@ -160,8 +155,6 @@ final class ProfilePhotoCacheTests: XCTestCase {
         XCTAssertNil(cache.data(for: first), "a new version replaces the old file")
         XCTAssertEqual(cache.latestData(owner: owner), Data("two".utf8))
 
-        // A lookup that no longer returns `other` (removed, blocked, reported)
-        // drops their file; an owner that wasn't looked up is left alone.
         cache.retain([second], among: [other])
         XCTAssertNil(cache.latestData(owner: other))
         XCTAssertEqual(cache.data(for: second), Data("two".utf8))
@@ -198,12 +191,10 @@ final class ProfilePhotoCacheTests: XCTestCase {
 
 final class ProfilePhotoCropTests: XCTestCase {
     func testCropGeometryFillsTheCircleAndKeepsItCovered() {
-        // A 1200×900 photo in a 300 pt circle: the short side fills it.
         let geometry = ProfilePhotoCropGeometry(imageSize: CGSize(width: 1200, height: 900), diameter: 300)
         XCTAssertEqual(geometry.fillScale, 1.0 / 3, accuracy: 1e-9)
         XCTAssertEqual(geometry.cropRect(offset: .zero, zoom: 1), CGRect(x: 150, y: 0, width: 900, height: 900))
 
-        // 400 × 300 pt on screen at 1×: 50 pt to spare sideways, none up or down.
         XCTAssertEqual(geometry.clamped(CGSize(width: 80, height: 40), zoom: 1), CGSize(width: 50, height: 0))
         XCTAssertEqual(
             geometry.cropRect(offset: CGSize(width: 50, height: 0), zoom: 1),
@@ -211,9 +202,7 @@ final class ProfilePhotoCropTests: XCTestCase {
             "dragged right as far as it goes: the photo's left edge"
         )
 
-        // 2× is half the pixels, still centred.
         XCTAssertEqual(geometry.cropRect(offset: .zero, zoom: 2), CGRect(x: 375, y: 225, width: 450, height: 450))
-        // Zooming around a point keeps that point under the finger.
         let anchor = CGPoint(x: 60, y: -30)
         let zoomed = geometry.zooming(.zero, from: 1, to: 2, around: anchor)
         XCTAssertEqual(zoomed, CGSize(width: -60, height: 30))
@@ -236,7 +225,6 @@ final class ProfilePhotoCropTests: XCTestCase {
         XCTAssertEqual(properties[kCGImagePropertyPixelWidth] as? Int, 512)
         XCTAssertEqual(properties[kCGImagePropertyPixelHeight] as? Int, 512)
         XCTAssertNil(properties[kCGImagePropertyGPSDictionary])
-        // EXIF lives in APP1; the encoder never writes one.
         XCTAssertFalse(try ProfilePhotoImageTests.segmentMarkers(jpeg).contains(0xE1))
         XCTAssertNotNil(ProfilePhoto(jpeg: jpeg, version: UUID()))
     }
@@ -265,7 +253,6 @@ final class ProfilePhotoFeatureTests: XCTestCase {
 
         await store.send(.profilePhotosNeeded([sam, jo]))
         await store.receive(\.profilePhotosListed) {
-            // Jo was reported here: back to the initial, and the menu knows.
             $0.profilePhotos[jo] = nil
             $0.reportedPhotoOwners = [jo]
         }

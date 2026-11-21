@@ -2,8 +2,6 @@ import Foundation
 import Security
 import Supabase
 
-// Preserve the SDK's namespace and writes, while giving the storage protocol
-// precise absence semantics without interpreting private SDK error strings.
 struct SupabaseAuthKeychainStorage: AuthLocalStorage {
     private let service: String
 

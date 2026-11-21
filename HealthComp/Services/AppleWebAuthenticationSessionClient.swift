@@ -52,8 +52,6 @@ struct AppleWebAuthenticationSessionClient: Sendable {
                     factory: factory
                 )
             } onCancel: {
-                // Mark synchronously: a callback can reach the MainActor before
-                // the separately enqueued cancellation work gets to run.
                 cancellation.request()
                 Task { @MainActor in operation.cancel() }
             }
@@ -138,7 +136,6 @@ private final class AppleWebAuthenticationSessionOperation {
         self.continuation = nil
         let completedSession = session
         session = nil
-        // Clear ownership before cancel(), which may synchronously call back.
         if cancelSession { completedSession?.cancel() }
         switch result {
         case let .success(url): continuation.resume(returning: url)
@@ -152,8 +149,6 @@ import AuthenticationServices
 import UIKit
 
 extension AppleWebAuthenticationSessionClient {
-    // Unwired presentation factory only. Callers must separately establish the
-    // staging configuration, operation-owned callback and Auth transaction.
     static let live = Self.make { request, completion in
         guard let window = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })

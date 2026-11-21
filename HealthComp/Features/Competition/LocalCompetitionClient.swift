@@ -3,8 +3,6 @@ import CryptoKit
 import Dependencies
 import Foundation
 
-// MARK: - Immutable presentation
-
 struct LocalCompetitionIdentity: Equatable, Sendable {
     static let version: UInt32 = 1
     static let ownerDisplayName = "Naren"
@@ -15,8 +13,6 @@ struct LocalCompetitionIdentity: Equatable, Sendable {
         UUID(uuidString: "6D33D624-2E0C-4C03-9D41-2A27E0D58E01")!
     )
 
-    /// Version 1 is FNV-1a 64 over a domain separator followed by the UUID's
-    /// 16 RFC-4122 bytes. It is stable across processes and Swift releases.
     static func opponentSeed(for id: CompetitionID) -> UInt64 {
         let domain = Array("healthcomp.local-opponent-seed.v1".utf8)
         let identifierBytes = withUnsafeBytes(of: id.rawValue.uuid) {
@@ -29,9 +25,6 @@ struct LocalCompetitionIdentity: Equatable, Sendable {
         }
     }
 
-    /// Version 1 hashes a domain separator followed by the source UUID's 16
-    /// RFC-4122 bytes, then pins the derived identity to UUID version 5 and
-    /// the RFC variant. The domain and byte encoding are persistence format.
     static func rematchID(for sourceID: CompetitionID) -> CompetitionID {
         var input = Data("healthcomp.local-rematch-id.v1".utf8)
         withUnsafeBytes(of: sourceID.rawValue.uuid) {
@@ -66,7 +59,6 @@ enum LocalCompetitionLifecyclePresentation: Equatable, Sendable {
     )
     case declined(at: Date, direction: InvitationDirection)
     case expired(at: Date, direction: InvitationDirection)
-    /// A scheduled match the other person cancelled before Day 1. Remote only.
     case cancelled(at: Date)
     case scheduled
     case active(dayOrdinal: Int)
@@ -87,7 +79,6 @@ enum LocalCompetitionLifecyclePresentation: Equatable, Sendable {
 
 enum LocalCompetitionOwnerAvailability: Equatable, Sendable {
     case notYetOccurred
-    /// Today, with no score and no Health summary on this phone yet.
     case notSyncedYet
     case observed
     case missing
@@ -99,31 +90,16 @@ struct LocalCompetitionDayPresentation: Equatable, Sendable {
     let ordinal: Int
     var ownerAcceptedPoints: Double?
     let ownerLatestAvailability: LocalCompetitionOwnerAvailability
-    /// Revealed opponent points; `nil` can mean future or unavailable remote data.
     var opponentRevealedPoints: Double?
-    /// The other person sent this day with no score (for example tracking
-    /// paused). Remote only.
     let opponentReportedNoData: Bool
-    /// The snapshot that produced the accepted score, never reconstructed from
-    /// points. It may differ from the most recent Health source evidence when
-    /// downward revisions are preserved by the score ledger.
     let ownerAcceptedSnapshot: ActivitySnapshot?
-    /// The snapshot in the latest completed source read for this day. `nil`
-    /// remains distinct from missing, unavailable, and future source states.
     let ownerLatestSnapshot: ActivitySnapshot?
-    /// How this day's snapshot turns into points; only used to split and preview them.
     let scoringPolicy: ActivityScoringPolicy
-    /// Move, Exercise and Stand points as the server accepted them, adding up
-    /// to each side's score. Remote only; nil when not kept for this day.
     var ownerRingPoints: [Double]? = nil
     var opponentRingPoints: [Double]? = nil
-    /// Rings + Sleep only: each night's points, already inside the accepted
-    /// and revealed points above. Nil is no night saved yet.
     var ownerSleepPoints: Double? = nil
     var opponentSleepPoints: Double? = nil
-    /// What this phone read for your night, when it has read it.
     var ownerSleepReading: CompetitionSleepReading? = nil
-    /// 600, or 700 in a Rings + Sleep match.
     var dailyMaximum: Double = ActivityScore.maximumDailyPoints
 
     init(
@@ -163,10 +139,7 @@ enum LocalCompetitionTallyAttention: Equatable, Sendable {
         unavailableOrdinals: Set<Int>
     )
     case unacceptedScores(ordinals: Set<Int>)
-    /// The other person's final days are not in yet: a non-final simulated
-    /// plan in the fixture, missing ledger rows in remote.
     case opponentPlanUnavailable
-    /// Remote only: your last check is in and the other person's isn't.
     case awaitingOpponentCheck
     case awaitingStability
 }
@@ -200,18 +173,12 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
     let lastRefresh: LocalCompetitionRefreshPresentation?
     let tally: LocalCompetitionTallyPresentation?
     var terminalResult: LocalCompetitionTerminalPresentation?
-    /// The injected environment time used to build this projection.
     let evaluatedAt: Date
-    /// The immutable competition environment time zone used for day labels.
     let timeZoneIdentifier: String
     let lastSuccessfulFullWindowRefreshAt: Date?
-    /// The other person's newest accepted Health read time (real matches only).
     let opponentUpdatedAt: Date?
-    /// The finished match this challenge is a rematch of.
     var rematchParentID: CompetitionID?
-    /// Both people's reactions, newest first (real matches only).
     var reactions: [CompetitionReaction] = []
-    /// Rings + Sleep matches only: both players' nights (`addingSleep`).
     var sleep: CompetitionSleepPresentation? = nil
 
     init(
@@ -263,8 +230,6 @@ struct LocalCompetitionAward: Equatable, Identifiable, Sendable {
     let friendDisplayName: String
     let opponentIdentity: String
 
-    /// A win is the award: one per won week, newest first. Folding the same
-    /// week twice keeps one award.
     static func fold(
         completed presentations: [LocalCompetitionPresentation]
     ) -> [Self] {
@@ -311,15 +276,12 @@ enum LocalCompetitionClientIssue: Error, Equatable, Sendable {
 
 struct LocalCompetitionDashboard: Equatable, Sendable {
     let competitions: [LocalCompetitionPresentation]
-    // ponytail: no UI reads awards since the belt; delete with its ~25 test constructors in a refactor PR
     let awards: [LocalCompetitionAward]
     let issues: [LocalCompetitionClientIssue]
     let hiddenTerminalCompetitionCount: Int
-    /// Kept apart from `competitions` so no duel-only surface can receive one.
     var groupMatches: [GroupMatchPresentation] = []
 }
 
-/// Closed challenges stay a day so Home and an open challenge screen can say what happened.
 let competitionClosedChallengeRetention: TimeInterval = 24 * 60 * 60
 
 func competitionIsRetainedOnDashboard(
@@ -333,9 +295,6 @@ func competitionIsRetainedOnDashboard(
 }
 
 extension LocalCompetitionDashboard {
-    /// The projector drops a match whose refresh failed. Keep its last
-    /// published presentation so it stays on screen with its problem line
-    /// and an open screen doesn't pop.
     func keepingFailedCompetitions(
         from previous: LocalCompetitionDashboard?,
         now: Date
@@ -364,8 +323,6 @@ extension LocalCompetitionDashboard {
         )
     }
 
-    /// The next instant Home changes on its own: a pending challenge lapses,
-    /// a closed one leaves after a day, or a result moves to History.
     func nextHomeBoundary(after now: Date) -> Date? {
         let duels = competitions.compactMap { competition -> Date? in
             if case .completed = competition.lifecycle {
@@ -383,7 +340,6 @@ extension LocalCompetitionDashboard {
     }
 }
 
-/// When a pending challenge lapses or a closed one leaves Home.
 private func competitionInviteBoundary(_ lifecycle: LocalCompetitionLifecyclePresentation) -> Date? {
     switch lifecycle {
     case let .pending(_, _, expiresAt):
@@ -422,8 +378,6 @@ struct LocalCompetitionPublication: Equatable, Sendable {
     }
 }
 
-// MARK: - Synchronous publication registration
-
 final class LocalCompetitionPublicationHub: @unchecked Sendable {
     private struct State {
         var continuations: [
@@ -433,10 +387,6 @@ final class LocalCompetitionPublicationHub: @unchecked Sendable {
         var isFinished = false
     }
 
-    // Delivery stays inside this recursive lock so accepted publications,
-    // initial replay, and finish are observed in the same total order as the
-    // protected revision state. Recursion keeps an immediately terminated
-    // continuation's cleanup callback safe.
     private let lock = NSRecursiveLock()
     private var state = State()
 
@@ -498,15 +448,12 @@ final class LocalCompetitionPublicationHub: @unchecked Sendable {
     }
 }
 
-// MARK: - Dependency client
-
 enum LocalCompetitionStoreAvailability: Sendable {
     case available(any CompetitionEventStore)
     case unavailable
 }
 
 extension CompetitionClient {
-    // The on-device fixture runtime: Test Lab and unit tests only.
     #if DEBUG
     static func make(
         environment: CompetitionEnvironmentClient,
@@ -714,8 +661,6 @@ extension CompetitionClient: TestDependencyKey {
     static var previewValue: Self { closed(issue: .unimplemented) }
 }
 
-// MARK: - Serialized coordinator
-
 #if DEBUG
 private actor LocalCompetitionCoordinator {
     private let environment: CompetitionEnvironmentClient
@@ -801,7 +746,6 @@ private actor LocalCompetitionCoordinator {
                     )
                     _ = try await runtime.create(genesis)
                 } catch CompetitionEventStoreError.identityAlreadyExists {
-                    // Another process won the deterministic bootstrap race.
                 } catch CompetitionEventStoreError.identityWasDeleted {
                     issues.append(.bootstrapIdentityRetired)
                 } catch {
@@ -1174,7 +1118,6 @@ private actor LocalCompetitionCoordinator {
                 try Task.checkCancellation()
                 await self?.wakeFired()
             } catch {
-                // Cancellation and sealed-environment failure do not mutate.
             }
         }
     }
@@ -1280,8 +1223,6 @@ private actor LocalCompetitionCoordinator {
 }
 #endif
 
-// MARK: - Privacy-preserving projection
-
 enum LocalCompetitionProjector {
     static func dashboard(
         journals: [LoadedCompetitionJournal],
@@ -1296,7 +1237,6 @@ enum LocalCompetitionProjector {
                 configuration: configuration
             )
         }.sorted { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
-        // A rematch has the deterministic id `rematch` gives it.
         let parentsByRematchID = Dictionary(
             all.map { (LocalCompetitionIdentity.rematchID(for: $0.id), $0.id) },
             uniquingKeysWith: { first, _ in first }
@@ -1315,8 +1255,6 @@ enum LocalCompetitionProjector {
         )
     }
 
-    /// Practice journals as matches against their bot. A pending journal
-    /// (an interrupted start) never shows.
     static func practicePresentations(
         journals: [LoadedCompetitionJournal],
         context: CompetitionEnvironmentContext,
@@ -1435,7 +1373,6 @@ enum LocalCompetitionProjector {
         )
     }
 
-    /// Shared with `RemoteCompetitionProjector`.
     static func notificationLifecycle(
         _ lifecycle: LocalCompetitionLifecyclePresentation
     ) -> CompetitionNotificationLifecycle {
@@ -1533,7 +1470,6 @@ enum LocalCompetitionProjector {
         )
     }
 
-    /// Shared with `RemoteCompetitionProjector`.
     static func lifecyclePresentation(
         _ lifecycle: CompetitionLifecycle,
         direction: InvitationDirection
@@ -1567,7 +1503,6 @@ enum LocalCompetitionProjector {
         }
     }
 
-    /// Shared with `RemoteCompetitionProjector`.
     static func terminalPresentation(
         for lifecycle: CompetitionLifecycle
     ) -> LocalCompetitionTerminalPresentation? {
@@ -1586,7 +1521,6 @@ enum LocalCompetitionProjector {
         )
     }
 
-    /// Shared with `RemoteCompetitionProjector`.
     static func currentDayOrdinal(
         schedule: CompetitionSchedule?,
         now: Date

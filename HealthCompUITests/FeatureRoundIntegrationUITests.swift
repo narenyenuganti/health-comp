@@ -1,13 +1,5 @@
 import XCTest
 
-/// The November feature round's features together (spec §6 cross-feature
-/// rules), through the Test Lab's `feature-round` Home: Sam's live match
-/// (you hold the belt, Sam's 🔥 on your Day 1, updated 13 hours ago so a
-/// nudge is offered), Sam's last week (the belt banner, Sam's 👏 on the
-/// result, Share Result), Jordan tallying on Jordan's last check (😤 on your
-/// Day 6, the tally panel's nudge), Riley, and a practice match. Account
-/// switches use `notification-choices`; the Live Activity uses its preview.
-/// Now is Sun Aug 16, 1:00 AM in Los Angeles.
 final class FeatureRoundIntegrationUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -29,20 +21,16 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         app = nil
     }
 
-    // MARK: Match screen
-
     func testMatchCarriesTheBeltAReactionAndANudgeInOrder() {
         launch()
         let sam = button(Self.samLive)
         scrollToElement(sam)
         let label = sam.label
         XCTAssertTrue(label.hasPrefix("Sam. Day 2 of 7"), label)
-        // VoiceOver: the belt first, then the reaction.
         XCTAssertTrue(label.hasSuffix(". You hold the belt. Fire. Sam reacted to your Day 1"), label)
 
         sam.tap()
         XCTAssertTrue(app.navigationBars["Sam"].waitForExistence(timeout: 3))
-        // The belt stays on Home, the result and the person page.
         XCTAssertEqual(labels(containing: "belt").count, 0)
         let nudge = app.buttons["competition.nudge"]
         XCTAssertTrue(nudge.waitForExistence(timeout: 3))
@@ -51,7 +39,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         let latest = app.buttons["competition.reaction.latest"]
         XCTAssertTrue(latest.exists)
         XCTAssertEqual(latest.label, "Fire. Sam reacted to your Day 1")
-        // Scoreboard group with the nudge, then the reaction line.
         XCTAssertLessThan(nudge.frame.maxY, latest.frame.minY + 1)
         XCTAssertFalse(app.buttons["competition.practice.end"].exists)
 
@@ -60,7 +47,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         XCTAssertTrue(sent.waitForExistence(timeout: 5))
         XCTAssertEqual(spaced(sent.label), "Nudged at 1:00 AM. You can nudge again tomorrow.")
         XCTAssertFalse(nudge.exists)
-        // The line stays after the nudge.
         XCTAssertTrue(latest.exists)
 
         latest.tap()
@@ -71,13 +57,11 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         closeDrawer()
         XCTAssertTrue(sent.exists)
 
-        // Seen: Home keeps the belt and drops the reaction.
         goBack()
         let after = button(Self.samLive)
         scrollToElement(after)
         XCTAssertTrue(after.label.hasSuffix(". You hold the belt"), after.label)
         XCTAssertFalse(after.label.contains("reacted"), after.label)
-        // The nudge is still sent when you come back.
         after.tap()
         XCTAssertTrue(element("competition.nudge.sent").waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["competition.nudge"].exists)
@@ -110,8 +94,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         XCTAssertTrue(tally.exists)
     }
 
-    // MARK: Result screen
-
     func testResultStacksTheBeltBannerReactionsAndShareResult() {
         launch()
         let result = button(Self.samResult)
@@ -129,14 +111,12 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         let panel = element("competition.result.react")
         XCTAssertTrue(panel.exists)
         XCTAssertEqual(element("competition.reaction.received").label, "Clap. Sam reacted to the result")
-        // Title and score, belt banner, reaction panel, the week, Share Result.
         XCTAssertLessThanOrEqual(banner.frame.maxY, panel.frame.minY)
         let share = app.buttons["competition.result.share"]
         scrollToElement(share)
         XCTAssertLessThanOrEqual(panel.frame.maxY, share.frame.minY)
         XCTAssertLessThanOrEqual(element("competition.result.week").frame.maxY, share.frame.minY)
         XCTAssertEqual(app.buttons.matching(identifier: "competition.result.share").count, 1)
-        // Sam's next match is live: the pinned action opens it.
         XCTAssertFalse(app.buttons["competition.rematch.create"].exists)
         let viewMatch = app.buttons["competition.rematch.view-match"]
         XCTAssertEqual(viewMatch.label, "View Match")
@@ -146,7 +126,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         chip("salute").tap()
         XCTAssertTrue(waitFor(chip("salute"), "isSelected == true", timeout: 3))
 
-        // The card carries the belt line.
         scrollToElement(share)
         share.tap()
         let card = element("competition.recap.card")
@@ -158,12 +137,9 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         XCTAssertTrue(chip("salute").isSelected)
     }
 
-    // MARK: Home
-
     func testHomeWithSeveralMatchesAndAPractice() {
         launch()
         XCTAssertTrue(anyText(beginningWith: "LIVE · 4").waitForExistence(timeout: 3))
-        // Real matches are live: no practice-only Challenge Someone.
         XCTAssertFalse(app.buttons["competition.practice.challenge"].exists)
 
         let practice = button(Self.practice)
@@ -176,12 +152,10 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         XCTAssertFalse(riley.label.contains("belt"), riley.label)
         XCTAssertFalse(riley.label.contains("Practice"), riley.label)
 
-        // Live cards: soonest end first.
         let jordan = button(Self.jordan)
         scrollToElement(jordan)
         XCTAssertLessThan(jordan.frame.minY, button(Self.samLive).frame.minY)
 
-        // The practice's screen: no nudge, reactions or mute; End Practice.
         scrollToElement(practice)
         practice.tap()
         XCTAssertTrue(app.navigationBars["Pacer"].waitForExistence(timeout: 3))
@@ -204,7 +178,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["competition.practice.end"].waitForNonExistence(timeout: 3))
         goBack()
 
-        // Only Sam's week is a result; the practice never reaches History.
         let history = app.buttons["competition.history.open"]
         scrollToElement(history)
         history.tap()
@@ -214,10 +187,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         XCTAssertEqual(labels(containing: "Practice").count, 0)
     }
 
-    // MARK: Account
-
-    /// Switches held on this iPhone (What it takes, Live Activity) never
-    /// reach the server; Nudges does.
     func testAccountNotificationSwitchesSendOnlyServerHeldKinds() {
         launchNotificationChoices()
         XCTAssertTrue(waitForServer("Muted push kinds: none. Registrations: 1. Failed: 0."))
@@ -243,14 +212,11 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         closeNotificationsAndAccount()
         XCTAssertTrue(waitForServer("Muted push kinds: nudge. Registrations: 2. Failed: 0."))
 
-        // Back on.
         openNotifications()
         for id in ["what-it-takes", "live-activity", "nudge"] { flip(choice(id)) }
         closeNotificationsAndAccount()
         XCTAssertTrue(waitForServer("Muted push kinds: none. Registrations: 3. Failed: 0."))
     }
-
-    // MARK: Live Activity and widget samples
 
     func testLiveActivityPreviewSamplesAndWidgetSampleLaunch() {
         for (sample, lead) in [
@@ -266,7 +232,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
             XCTAssertEqual(element("liveActivity.preview.minimal").label, lead)
             XCTAssertTrue(app.buttons["liveActivity.preview.start"].isEnabled, sample)
         }
-        // The widget hooks write their snapshot alongside the Test Lab.
         for scenario in ["live", "won", "former"] {
             if app.state != .notRunning { app.terminate() }
             app = XCUIApplication()
@@ -281,8 +246,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
             XCTAssertTrue(button(Self.samLive).waitForExistence(timeout: 3), scenario)
         }
     }
-
-    // MARK: Helpers
 
     private func launch(_ arguments: [String] = []) {
         start("feature-round", arguments)
@@ -397,7 +360,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
     }
 
-    /// A Toggle's tappable area is its trailing switch.
     private func flip(_ toggle: XCUIElement) {
         scrollToElement(toggle)
         let knob = toggle.switches.firstMatch
@@ -427,8 +389,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
             let collection = app.collectionViews.firstMatch
             let scrollView = app.scrollViews.firstMatch
             let surface: XCUIElement = collection.exists ? collection : (scrollView.exists ? scrollView : app)
-            // A card taller than the screen (AX5) never fits: its top on
-            // screen is enough.
             if element.exists, element.isHittable,
                app.frame.contains(element.frame)
                 || (element.frame.height > surface.frame.height / 2

@@ -1,13 +1,3 @@
--- HealthComp staging adversarial verification.
---
--- Run only against the approved staging project, as a privileged database
--- session, after reviewing the exact file at the selected commit. Every test
--- row uses a fixed synthetic identity, every assertion fails closed, and the
--- only transaction containing test writes ends in ROLLBACK. The session then
--- becomes read-only before residue verification and the final receipt. The
--- receipt is deliberately privacy-safe: it contains no identifiers, tokens,
--- digests, or health data.
-
 begin;
 
 set local statement_timeout = '30s';
@@ -566,7 +556,6 @@ begin
     from public.competitions c
     join public.competition_invites i on i.competition_id = c.id
     where c.id = created_competition;
-    -- Discard the fresh RPC rows before the fixed-fixture isolation checks.
     raise sqlstate 'ZX001';
   exception
     when sqlstate 'ZX001' then null;
@@ -607,7 +596,6 @@ declare
   returned_state text;
   returned_message text;
 begin
-  -- One statement timestamp makes this an exact equality boundary, not a delay.
   update public.competition_invites
   set expires_at = pg_catalog.statement_timestamp()
   where id = 'f1930000-0000-4000-8000-000000000001';
@@ -722,7 +710,6 @@ declare
   returned_state text;
   returned_message text;
 begin
-  -- The pair's active fixture match blocks acceptance until its week ends.
   begin
     perform public.claim_competition_invite(
       pg_catalog.decode(pg_catalog.repeat('91', 32), 'hex')
@@ -733,7 +720,6 @@ begin
         returned_state = returned_sqlstate,
         returned_message = message_text;
   end;
-  -- End that week only for the replay, then restore the active fixture.
   execute 'reset role';
   update public.competitions set start_day = start_day - 7
   where id = 'f1920000-0000-4000-8000-000000000002';

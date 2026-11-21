@@ -1,89 +1,57 @@
 import Foundation
 
-// Foundation only: the widget extension and the watch compile this file with
-// CompetitionDateFormatting.swift. Points only, never Health values.
-
-/// What the app shares with its widgets through the App Group container, and
-/// with the paired Watch through `CompetitionWatchSync`.
 struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
     static let currentVersion = 2
     static let fileName = "CompetitionWidgetSnapshot.json"
 
     var version = Self.currentVersion
     var matches: [Match]
-    /// A pending incoming challenge exists; no name, no count.
     var hasIncomingChallenge: Bool
 
     struct Match: Codable, Equatable, Sendable {
         var id: UUID
-        /// The other person's identity, for the widget's person picker.
         var personID: String
         var name: String
-        /// Built by the app from `CompetitionRoute`, so the widget never
-        /// hardcodes a scheme.
         var url: URL
-        /// The match calendar.
         var timeZoneIdentifier: String
-        /// Seven match-calendar midnights.
         var dayStarts: [Date]
-        /// The midnight after Day 7.
         var endsAt: Date
         var userPoints: Double
         var opponentPoints: Double
-        /// Seven entries, by day.
         var userDayPoints: [Double?]
         var opponentDayPoints: [Double?]
         var updatedAt: Date?
         var final: Final?
-        /// The Watch's belt row and card. Optional, so older files still decode.
         var belt: Belt?
-        /// The Watch's chase bar, from the phone's what it takes. Nil when
-        /// you lead or the phone couldn't work it out.
         var chase: Chase?
-        /// A live group match. Optional, so older files still decode, and an
-        /// older watch draws the fields above as a card against the next
-        /// place up. Never carries a belt or a chase.
         var group: Group?
     }
 
-    /// A group match's standings, worded on the iPhone from its scoring.
     struct Group: Codable, Equatable, Sendable {
-        /// "Four-Way", "Doubles".
         var title: String
         var isDoubles: Bool
-        /// Ranked: each seat in a free-for-all, each team in doubles.
         var rows: [Row]
-        /// "48 behind Sam", "You lead by 54", "Your team up 247".
         var lead: String?
 
         struct Row: Codable, Equatable, Sendable {
             var place: Int
-            /// "You", "Sam", "You + Priya".
             var name: String
             var points: Double
             var isYou: Bool
 
-            /// Hidden on a locked screen: anything but a lone "You", so your
-            /// team's name hides your partner too.
             var namesSomeone: Bool { name != "You" }
         }
 
         var yourPlace: Int? { rows.first(where: \.isYou)?.place }
     }
 
-    /// What it takes to lead on a live day.
     struct Chase: Codable, Equatable, Sendable {
-        /// The match day it was worked out for, 1...7.
         var day: Int
-        /// Whole points that take the lead; nil when out of reach today.
         var points: Double?
     }
 
-    /// Who holds this pair's belt now, and what this result did to it.
     struct Belt: Codable, Equatable, Sendable {
         enum Holder: String, Codable, Sendable { case you, them }
-        /// Only the changes worth the Watch's card: not their vacant take,
-        /// their defense, or a tie.
         enum Card: Codable, Equatable, Sendable {
             case earned
             case taken(weeks: Int, defenses: Int)
@@ -92,12 +60,10 @@ struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
         }
 
         var holder: Holder
-        /// Title defenses in the current reign.
         var defenses: Int
         var card: Card?
     }
 
-    /// Not `Result`, so it doesn't shadow `Swift.Result`.
     struct Final: Codable, Equatable, Sendable {
         enum Outcome: String, Codable, Sendable { case win, loss, tie }
         var outcome: Outcome
@@ -117,8 +83,6 @@ struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-// MARK: Which match
-
 extension CompetitionWidgetSnapshot.Match {
     func state(at date: Date) -> CompetitionWidgetSnapshot.State {
         if let final {
@@ -131,9 +95,6 @@ extension CompetitionWidgetSnapshot.Match {
 }
 
 extension CompetitionWidgetSnapshot {
-    /// Live ending soonest, then a pending final score, then the next
-    /// scheduled match, then the newest result still on Home. With a person
-    /// picked, only their matches, and nil rather than someone else's.
     func featured(personID: String?, at date: Date) -> Match? {
         let pool = matches.filter { personID == nil || $0.personID == personID }
         func first(
@@ -159,23 +120,18 @@ extension CompetitionWidgetSnapshot {
             ])
     }
 
-    /// The name in this snapshot, never one stored in a widget configuration.
     func name(for personID: String) -> String? {
         matches.first { $0.personID == personID }?.name
     }
 
-    /// People with a match here, by name. "Former competitor" is left out:
-    /// several would look the same and none can play again.
     func suggestedPeople() -> [(id: String, name: String)] {
         var seen = Set<String>()
         return matches
-            // A group match is no person to pick.
             .filter { $0.group == nil && $0.name != "Former competitor" && seen.insert($0.personID).inserted }
             .map { (id: $0.personID, name: $0.name) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    /// A copy without times, for deciding whether a widget needs a reload.
     var ignoringUpdatedAt: Self {
         var copy = self
         copy.matches = matches.map {
@@ -186,8 +142,6 @@ extension CompetitionWidgetSnapshot {
         return copy
     }
 
-    /// Adds the previous matches named in `ids` that this snapshot lacks: the
-    /// ones whose sync failed or was cancelled this round.
     func merging(carriedForward ids: Set<UUID>, from previous: Self?) -> Self {
         guard let previous else { return self }
         let present = Set(matches.map(\.id))
@@ -198,8 +152,6 @@ extension CompetitionWidgetSnapshot {
         return copy
     }
 
-    /// Every future moment a widget changes on its own: day starts, ends and
-    /// results leaving. iOS allows a few, so the first 12.
     func timelineDates(after date: Date) -> [Date] {
         let dates = matches.flatMap { match in
             match.dayStarts + [match.endsAt] + [match.final?.leavesAt].compactMap { $0 }
@@ -207,8 +159,6 @@ extension CompetitionWidgetSnapshot {
         return Array(Set(dates.filter { $0 > date }).sorted().prefix(12))
     }
 }
-
-// MARK: Copy
 
 extension CompetitionWidgetSnapshot.Match {
     var finalDigits: Int {
@@ -235,7 +185,6 @@ extension CompetitionWidgetSnapshot.Match {
         return formatter.string(from: first)
     }
 
-    /// "Day 5 of 7", "Last day", "You won"… Compact: "Day 5", "Final".
     func status(at date: Date, compact: Bool = false, locale: Locale = .current) -> String {
         switch state(at: date) {
         case .scheduled: return "Day 1 is \(weekday("EEEE", locale: locale))"
@@ -253,14 +202,11 @@ extension CompetitionWidgetSnapshot.Match {
         }
     }
 
-    /// The header after the name, kept whole when a long name truncates.
     func mediumStatus(at date: Date, locale: Locale = .current) -> String {
         if case .final = state(at: date) { return "Final" }
         return status(at: date, locale: locale)
     }
 
-    /// "You lead by 54." while live, "Won by 114 points" for a result, nil
-    /// for a tie or a scheduled match.
     func leadLine(at date: Date, locale: Locale = .current) -> String? {
         if let group { return group.lead }
         switch state(at: date) {
@@ -279,8 +225,6 @@ extension CompetitionWidgetSnapshot.Match {
         }
     }
 
-    /// "Updated 9:30 AM" today, "Updated Tue 9:30 PM" before. Nil for a
-    /// scheduled match or with no time.
     func updatedLine(
         at date: Date,
         locale: Locale = .current,
@@ -290,8 +234,6 @@ extension CompetitionWidgetSnapshot.Match {
         return "Updated \(competitionUpdatedText(updatedAt, now: date, locale: locale, timeZone: timeZone))"
     }
 
-    /// "Today 212" under each medium number while live, "Day 7 212" while the
-    /// final score is pending; nil when that side has no points for the day.
     func todayLines(at date: Date, locale: Locale = .current) -> (user: String?, opponent: String?) {
         let (label, index): (String, Int) = switch state(at: date) {
         case let .live(day): ("Today", day - 1)
@@ -305,8 +247,6 @@ extension CompetitionWidgetSnapshot.Match {
         return (line(userDayPoints), line(opponentDayPoints))
     }
 
-    /// Lock Screen rectangle, one array per line, longest first: each line
-    /// falls back to the next entry when it doesn't fit.
     func rectangularLines(
         at date: Date,
         locale: Locale = .current,
@@ -317,13 +257,10 @@ extension CompetitionWidgetSnapshot.Match {
             return [[header, group.title], [line, groupPlaceText ?? group.lead ?? ""]]
         }
         if state(at: date) == .scheduled {
-            // "Day 1 is Wednesday" doesn't fit the rectangle: "Day 1 is Wed".
             return [[name], [status(at: date, locale: locale), "Day 1 is \(weekday("EEE", locale: locale))"]]
         }
         let you = userPointsText(locale: locale)
         let them = opponentPointsText(locale: locale)
-        // "Sam · Final score pending" rarely fits: "Sam · Pending" keeps the
-        // match from reading as live.
         let short = state(at: date) == .finalPending ? ["\(name) · Pending"] : []
         return [
             ["\(name) · \(status(at: date, compact: true, locale: locale))"] + short + [name],
@@ -331,8 +268,6 @@ extension CompetitionWidgetSnapshot.Match {
         ] + [updatedLine(at: date, locale: locale, timeZone: timeZone).map { [$0] }].compactMap { $0 }
     }
 
-    /// The Lock Screen circle: "LEAD" over "+54", "WON" over "+114",
-    /// "DAY 1" over "Mon".
     func circular(at date: Date, locale: Locale = .current) -> (caption: String, value: String) {
         let margin = competitionSignedMarginText(
             userPoints: userPoints, opponentPoints: opponentPoints,
@@ -350,8 +285,6 @@ extension CompetitionWidgetSnapshot.Match {
         }
     }
 
-    /// One VoiceOver label per widget. Redacted (a locked phone) it names no
-    /// one and reads no points: "HealthComp, Day 5."
     func accessibilityLabel(
         at date: Date,
         redacted: Bool,
@@ -388,7 +321,6 @@ extension CompetitionWidgetSnapshot.Match {
             .joined(separator: " ")
     }
 
-    /// The week strip at `date`; the day in progress is `.today`.
     func dayOutcomes(at date: Date) -> [CompetitionDayOutcome] {
         let current: Int? = if case let .live(day) = state(at: date) { day } else { nil }
         func points(_ values: [Double?], _ index: Int) -> Double? {
@@ -406,10 +338,7 @@ extension CompetitionWidgetSnapshot.Match {
     }
 }
 
-// MARK: Group copy
-
 extension CompetitionWidgetSnapshot.Group {
-    /// "2ND", in English as the rest of the copy is.
     func placeText(_ place: Int) -> String {
         let formatter = NumberFormatter()
         formatter.locale = Locale(identifier: "en_US")
@@ -419,19 +348,15 @@ extension CompetitionWidgetSnapshot.Group {
 }
 
 extension CompetitionWidgetSnapshot.Match {
-    /// "Four-Way · Day 4"; nil for a duel.
     func groupHeader(at date: Date, locale: Locale = .current) -> String? {
         group.map { "\($0.title) · \(status(at: date, compact: true, locale: locale))" }
     }
 
-    /// "2nd" in a free-for-all; nil in doubles and duels.
     var groupPlaceText: String? {
         guard let group, !group.isDoubles, let place = group.yourPlace else { return nil }
         return group.placeText(place)
     }
 
-    /// The widget's one label for a group match. `standings` reads every seat
-    /// after it, as the iPhone's Home card does, where the standings are drawn.
     func groupAccessibilityLabel(
         at date: Date, redacted: Bool, standings: Bool = false, locale: Locale = .current
     ) -> String? {
@@ -451,15 +376,10 @@ extension CompetitionWidgetSnapshot.Match {
     }
 }
 
-// MARK: Nothing to show
-
-/// The text for an entry without a match to draw.
 struct CompetitionWidgetEmptyText: Equatable, Sendable {
     let title: String
     let line: String?
-    /// Lock Screen rectangle lines.
     let compact: [String]
-    /// The title names someone, so a locked phone redacts it.
     var namesSomeone = false
 
 #if os(watchOS)
@@ -480,7 +400,6 @@ struct CompetitionWidgetEmptyText: Equatable, Sendable {
         [title, line].compactMap { $0 }.joined(separator: ". ")
     }
 
-    /// For a locked phone, when the title names someone.
     var redactedAccessibilityLabel: String {
         "HealthComp, \(compact.last ?? title)."
     }
@@ -499,7 +418,6 @@ extension CompetitionWidgetSnapshot {
     func emptyText(personID: String?) -> CompetitionWidgetEmptyText {
         guard let personID else {
 #if os(watchOS)
-            // The watch can't challenge anyone, so only a waiting one gets a line.
             let line = hasIncomingChallenge ? emptyLine : nil
 #else
             let line: String? = emptyLine
@@ -519,8 +437,6 @@ extension CompetitionWidgetSnapshot {
         )
     }
 
-    /// The match to draw at `date`, or the text instead. With no snapshot a
-    /// picked person is ignored.
     static func content(
         _ snapshot: Self?,
         personID: String?,
@@ -537,10 +453,7 @@ enum CompetitionWidgetContent: Equatable, Sendable {
     case empty(CompetitionWidgetEmptyText)
 }
 
-// MARK: File
-
 extension CompetitionWidgetSnapshot {
-    /// The file in the App Group named by the `HEALTHCOMP_APP_GROUP` plist key.
     static func fileURL(bundle: Bundle = .main) -> URL? {
         guard let group = bundle.object(forInfoDictionaryKey: "HEALTHCOMP_APP_GROUP") as? String,
               !group.isEmpty,
@@ -551,8 +464,6 @@ extension CompetitionWidgetSnapshot {
         return container.appendingPathComponent(fileName)
     }
 
-    /// Nil for a missing file, bad JSON or another version, so a future
-    /// format fails closed to "Open the app…".
     static func load(from url: URL?) -> Self? {
         guard let url,
               let data = try? Data(contentsOf: url),
@@ -562,9 +473,6 @@ extension CompetitionWidgetSnapshot {
         return snapshot
     }
 
-    /// Sam, Day 5, 1,204 to 1,150 in UTC: the widget gallery and DEBUG
-    /// captures. The caller passes the url: this file can't see
-    /// `CompetitionRoute`.
     static func sample(now: Date, url: URL) -> Self {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
@@ -595,17 +503,11 @@ extension CompetitionWidgetSnapshot {
 
 #if DEBUG
 extension CompetitionWidgetSnapshot {
-    /// Widget states for the Mac mini UI tests (`--widget-scenario <name>`,
-    /// `--watch-scenario <name>`), in UTC days around `now`. Nil means no
-    /// snapshot: the caller clears the file. The caller passes the url scheme:
-    /// this file can't see `CompetitionRoute`.
     static func testLab(_ scenario: String, now: Date, scheme: String) -> Self? {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
         let today = calendar.startOfDay(for: now)
         func day(_ offset: Int) -> Date { calendar.date(byAdding: .day, value: offset, to: today)! }
-        /// `currentDay` 1...7 is live; 0 starts tomorrow, -1 the day after;
-        /// 8 ended at today's midnight, 9 and more ended earlier.
         func match(
             _ index: Int, _ name: String, person: String? = nil, currentDay: Int,
             you: Double = 0, them: Double = 0,
@@ -700,8 +602,6 @@ extension CompetitionWidgetSnapshot {
                 match(10, "Former competitor", person: "sample:former", currentDay: 9,
                       you: 1_840, them: 1_726, final: .win),
             ]
-        // The watch's match list: a lead, a group, a chase, a pending score
-        // and a result the watch hasn't revealed.
         case "card":
             matches = [
                 sam, four,
@@ -715,10 +615,8 @@ extension CompetitionWidgetSnapshot {
             matches = [match(5, "Sam", currentDay: 4, you: 742, them: 510,
                              youDays: [250, 230, 262], themDays: [230, 280, nil], updated: false)]
         case "samGone":
-            // Sam's result has left Home; only Alex is live.
             matches = [alex, match(5, "Sam", currentDay: 12, you: 1_840, them: 1_726, final: .win, leavesInDays: -1)]
         case "noSam": matches = [alex]
-        // Group matches: the legacy fields are you against the next place up.
         case "groupFFA": matches = [four]
         case "groupDoubles":
             var doubles = match(12, "Sam + Leo", person: "group:doubles", currentDay: 4, you: 3_162, them: 2_915,
@@ -734,7 +632,6 @@ extension CompetitionWidgetSnapshot {
         case "closeFinal":
             matches = [match(5, "Sam", currentDay: 9, you: 1_840.25, them: 1_840.40,
                              youDays: theirs, themDays: week, final: .loss)]
-        // The Watch's belt row and card.
         case "beltLive":
             matches = [match(5, "Sam", currentDay: 5, you: 1_204, them: 1_150, youDays: week, themDays: theirs,
                              belt: Belt(holder: .you, defenses: 2))]

@@ -162,7 +162,6 @@ protocol CompetitionActivitySource: Sendable {
 }
 
 extension CompetitionActivitySource {
-    // Sources without sleep (fixtures) have none and ask for nothing.
     func requestSleepReadAuthorization() async throws {}
     func readSleepSamples(_ interval: DateInterval) async throws -> [SleepSample] { [] }
 }
@@ -212,10 +211,6 @@ struct CompetitionEnvironmentClient: Sendable {
         return client
     }
 
-    /// A DEBUG-only production-shaped adapter used to prove that calendar-time
-    /// evaluation and zero-sleep acceleration translate the same logical
-    /// observations. The injected fixture is kept private to DEBUG builds, so
-    /// neither fixture control nor a synthetic clock can enter Release.
     static func productionCalendarTestAdapter(
         source: FixtureActivitySource
     ) -> Self {
@@ -279,8 +274,6 @@ struct CompetitionEnvironmentClient: Sendable {
         let nanoseconds = seconds * 1_000_000_000
         guard nanoseconds.isFinite else { return UInt64.max }
         let rounded = nanoseconds.rounded()
-        // Double(UInt64.max) rounds upward to 2^64. Branch before conversion:
-        // converting that rounded sentinel traps instead of saturating.
         guard rounded < Double(UInt64.max) else { return UInt64.max }
         return UInt64(rounded)
     }

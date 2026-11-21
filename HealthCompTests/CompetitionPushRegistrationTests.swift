@@ -245,8 +245,6 @@ final class CompetitionPushRegistrationTests: XCTestCase {
         await coordinator.stopListening()
     }
 
-    /// Off and back on while the "off" registration is still in flight: the
-    /// server must end with the switch on again.
     func testSwitchFlippedBackDuringARegistrationRegistersTheLatestKinds() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -338,7 +336,6 @@ private actor RemoteInstallationProbe {
         self.removalFailure = removalFailure
     }
 
-    /// The next registration records its request, then waits for `releaseHeld`.
     func holdNextRegistration() { holdsNext = true }
 
     func waitUntilHeld() async {

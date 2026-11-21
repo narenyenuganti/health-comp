@@ -2,16 +2,11 @@ import CoreGraphics
 import Foundation
 
 #if DEBUG
-/// The Test Lab's stand-in for the photo server: in memory, with the same
-/// rules the app relies on (a hidden or missing photo is simply absent, a
-/// report hides that person's photo, a new photo is a new version). Pass its
-/// methods to `CompetitionClient`'s photo closures.
 final class ProfilePhotoTestLabServer: @unchecked Sendable {
     private let lock = NSLock()
     private let ownProfileID: UUID
     private let latency: Duration
     private var photos: [UUID: (reference: ProfilePhotoReference, data: Data)] = [:]
-    /// People whose photo you can't see: blocked either way, or never played.
     private var hidden: Set<UUID>
     private var reported: Set<UUID> = []
 
@@ -46,7 +41,6 @@ final class ProfilePhotoTestLabServer: @unchecked Sendable {
         lock.withLock { OwnProfilePhoto(reference: photos[ownProfileID]?.reference, removedByReview: false) }
     }
 
-    /// Lands after `latency`, so the fade over the initials can be seen.
     func data(_ reference: ProfilePhotoReference) async throws -> Data {
         try await Task.sleep(for: latency)
         guard let photo = lock.withLock({ photos[reference.ownerProfileID] }),
@@ -75,8 +69,6 @@ final class ProfilePhotoTestLabServer: @unchecked Sendable {
         lock.withLock { reported.contains(owner) }
     }
 
-    /// A solid 512 px fixture photo with a lighter top half, encoded the
-    /// way the app encodes uploads.
     static func fixtureJPEG(red: CGFloat, green: CGFloat, blue: CGFloat) -> Data {
         let side = ProfilePhotoImage.side
         guard let context = CGContext(
@@ -97,7 +89,6 @@ import SwiftUI
 import UIKit
 
 extension ProfilePhotoTestLabServer {
-    /// Fictional faces drawn in code; no real person's photo or external asset.
     @MainActor static func illustratedPortrait(_ variant: Int) -> Data {
         let side = CGFloat(ProfilePhotoImage.side)
         let format = UIGraphicsImageRendererFormat()

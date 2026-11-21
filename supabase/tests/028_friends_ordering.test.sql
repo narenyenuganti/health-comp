@@ -12,7 +12,6 @@ insert into public.profiles(id,auth_user_id,display_name,state)
 select pg_temp.pid(n),('cc000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
   case when n in(3,4) then 'Alpha' else 'Zulu' end,'active' from generate_series(1,10) n;
 
--- Insertion order differs from the expected name/time order and its UUID ties.
 insert into private.friendships(profile_low,profile_high) values
   (pg_temp.pid(1),pg_temp.pid(2)),(pg_temp.pid(1),pg_temp.pid(4)),(pg_temp.pid(1),pg_temp.pid(3));
 insert into private.friend_requests(sender_profile_id,recipient_profile_id,created_at) values

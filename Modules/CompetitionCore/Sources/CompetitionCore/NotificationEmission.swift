@@ -1,8 +1,5 @@
 import Foundation
 
-/// Opportunistic notification families whose one-time emission decisions are
-/// durable. Calendar-scheduled requests are derived state and are deliberately
-/// not represented here.
 public enum NotificationEmissionFamily: String, Codable, CaseIterable, Sendable {
     case leadChange = "lead-change"
     case closeScore = "close-score"
@@ -16,8 +13,6 @@ public enum NotificationEmissionLeader: String, Codable, CaseIterable, Sendable 
     case opponent
 }
 
-/// A closed, canonical episode identity. Its encoded form is the suffix used
-/// by the semantic notification identifier.
 public enum NotificationEpisodeKey: Equatable, Sendable {
     case day(Int)
     case leader(dayOrdinal: Int, leader: NotificationEmissionLeader)
@@ -125,9 +120,6 @@ public enum NotificationEmissionDisposition: Codable, Equatable, Sendable {
     case suppressed(reason: NotificationSuppressionReason)
 }
 
-/// A durable decision to consume one opportunistic notification episode.
-/// This value records no notification copy, activity values, or OS delivery
-/// claim. Acceptance by an OS notification API is outside this domain model.
 public struct NotificationEmissionRecorded: Codable, Equatable, Sendable {
     public enum ValidationError: Error, Equatable, Sendable {
         case invalidDayOrdinal(Int)

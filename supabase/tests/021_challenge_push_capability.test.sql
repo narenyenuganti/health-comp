@@ -16,7 +16,6 @@ select ok(coalesce((
     and p.proargtypes = '2950 25 25 16'::oidvector
 ), false), 'capability-aware registration is a narrow authenticated definer RPC');
 
--- A Ana (sender), B Ben (1.0.2), C Cal (current app), D Dee (current app, muted Ana).
 insert into auth.users (id) values
   ('c8000000-0000-4000-8000-000000000001'), ('c8000000-0000-4000-8000-000000000002'),
   ('c8000000-0000-4000-8000-000000000003'), ('c8000000-0000-4000-8000-000000000004');
@@ -63,7 +62,6 @@ select is(pg_temp.supports('c8300000-0000-4000-8000-000000000002'), false,
 select is(pg_temp.supports('c8300000-0000-4000-8000-000000000003'), true,
   'a current registration can show challenges');
 
--- The old call on the same installation clears the capability; the new one restores it.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c8000000-0000-4000-8000-000000000003"}', true);
 select lives_ok($$select public.register_current_device_installation(
@@ -80,7 +78,6 @@ reset role;
 select is(pg_temp.supports('c8300000-0000-4000-8000-000000000003'), true,
   'registering through the new call sets the capability');
 
--- Ana challenges Ben, Cal and Dee.
 create function pg_temp.challenge(recipient uuid, digest_byte text, key uuid)
 returns uuid language plpgsql as $$
 begin

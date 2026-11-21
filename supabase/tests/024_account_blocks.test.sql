@@ -29,7 +29,6 @@ select ok((
   and not has_table_privilege('service_role', 'private.account_blocks', 'select,insert,update,delete'),
   'account_blocks has RLS enabled and forced and no table privileges for client roles');
 
--- A Naren (blocker), B Maya (sender), C Tess, E Ana.
 insert into auth.users (id) values
   ('c9000000-0000-4000-8000-000000000001'), ('c9000000-0000-4000-8000-000000000002'),
   ('c9000000-0000-4000-8000-000000000003'), ('c9000000-0000-4000-8000-000000000005');
@@ -76,7 +75,6 @@ returns table (recipient uuid, source uuid, state text) language sql as $$
   where competition_id = target and kind = 'challenge_declined' order by installation_id;
 $$;
 
--- A finished match between Naren and Maya, for the rematch case.
 insert into r (label, id) values ('old', pg_temp.by_id('c9000000-0000-4000-8000-000000000001',
   'c9100000-0000-4000-8000-000000000002', null, 'a0', 'c9400000-0000-4000-8000-000000000000'));
 set local role authenticated;
@@ -87,7 +85,6 @@ insert into r (label, v) values ('naren-link', public.get_my_challenge_link());
 reset role;
 update public.competitions set lifecycle = 'completed' where id = pg_temp.rid('old');
 
--- Maya challenges Naren, and he blocks her from it.
 insert into r (label, id) values ('mn1', pg_temp.by_id('c9000000-0000-4000-8000-000000000002',
   'c9100000-0000-4000-8000-000000000001', null, 'a1', 'c9400000-0000-4000-8000-000000000001'));
 set local role authenticated;
@@ -118,7 +115,6 @@ select is((select count(*) from private.account_blocks
   where blocker_profile_id = 'c9100000-0000-4000-8000-000000000001'
     and blocked_profile_id = 'c9100000-0000-4000-8000-000000000002'), 1::bigint, 'one block row');
 
--- Every create path refuses the blocked sender with the collapsed error.
 select throws_ok($$select pg_temp.by_id('c9000000-0000-4000-8000-000000000002',
   'c9100000-0000-4000-8000-000000000001', null, 'a2', 'c9400000-0000-4000-8000-000000000002')$$,
   'P0001', 'recipient_unavailable', 'a blocked sender gets recipient_unavailable by id');
@@ -129,7 +125,6 @@ select throws_ok($$select pg_temp.from_link('c9000000-0000-4000-8000-00000000000
   pg_temp.naren_code(), 'a2', 'c9400000-0000-4000-8000-000000000002')$$,
   'P0001', 'recipient_unavailable', 'and by the current link code');
 
--- Both lookups read like an unknown code.
 set local role authenticated;
 select pg_temp.as_user('c9000000-0000-4000-8000-000000000002');
 select throws_ok($$select public.resolve_challenge_link('AAAAAAAAAAAAAAAAAAAAAA')$$,
@@ -149,12 +144,10 @@ select throws_ok($$select public.resolve_challenge_link(pg_temp.naren_code())$$,
   'P0001', 'own_challenge_link', 'the own-link answer is unchanged');
 reset role;
 
--- A retry of the create made before the block returns its id.
 select is(pg_temp.by_id('c9000000-0000-4000-8000-000000000002',
   'c9100000-0000-4000-8000-000000000001', null, 'a1', 'c9400000-0000-4000-8000-000000000001'),
   pg_temp.rid('mn1'), 'an exact retry of a create made before the block returns its id');
 
--- One-way: the blocker can still challenge, and pair conflicts come first.
 insert into r (label, id) values ('nm', pg_temp.by_id('c9000000-0000-4000-8000-000000000001',
   'c9100000-0000-4000-8000-000000000002', null, 'a3', 'c9400000-0000-4000-8000-000000000003'));
 select ok(pg_temp.rid('nm') is not null, 'the blocker can still challenge the blocked person');
@@ -169,7 +162,6 @@ select throws_ok($$select pg_temp.by_id('c9000000-0000-4000-8000-000000000002',
   'c9100000-0000-4000-8000-000000000001', null, 'a4', 'c9400000-0000-4000-8000-000000000004')$$,
   'P0001', 'recipient_unavailable', 'the block refusal comes last');
 
--- Lists.
 set local role authenticated;
 select pg_temp.as_user('c9000000-0000-4000-8000-000000000001');
 select is(public.list_blocked_profiles(),
@@ -180,7 +172,6 @@ select is(public.list_blocked_profiles(), '{"blocked":[]}'::jsonb, 'the blocked 
 select pg_temp.as_user('c9000000-0000-4000-8000-000000000003');
 select is(public.list_blocked_profiles(), '{"blocked":[]}'::jsonb, 'so is a third person''s');
 
--- Only the recipient of a challenge can block from it.
 select throws_ok($$select public.block_challenger(pg_temp.rid('mn1'))$$,
   'P0001', 'invite_unavailable', 'a third person cannot block from someone else''s challenge');
 select pg_temp.as_user('c9000000-0000-4000-8000-000000000002');
@@ -191,7 +182,6 @@ select throws_ok($$select public.block_challenger('c9400000-0000-4000-8000-00000
 select throws_ok($$select public.block_challenger(null)$$,
   '22023', 'invalid_competition_id', 'a null id is invalid');
 
--- Twice is idempotent.
 select pg_temp.as_user('c9000000-0000-4000-8000-000000000001');
 select is(public.block_challenger(pg_temp.rid('mn1')),
   jsonb_build_object('competition_id', pg_temp.rid('mn1')), 'blocking twice answers the same');
@@ -200,7 +190,6 @@ select is((select count(*) from private.account_blocks), 1::bigint, 'blocking tw
 select is((select count(*) from pg_temp.declined_work(pg_temp.rid('mn1'))), 1::bigint,
   'blocking twice sends no second push');
 
--- From a declined or an expired challenge: blocks, declines nothing.
 insert into r (label, id) values ('tn', pg_temp.by_id('c9000000-0000-4000-8000-000000000003',
   'c9100000-0000-4000-8000-000000000001', null, 'a5', 'c9400000-0000-4000-8000-000000000005'));
 insert into r (label, id) values ('an', pg_temp.by_id('c9000000-0000-4000-8000-000000000005',
@@ -231,7 +220,6 @@ select pg_temp.as_user('c9000000-0000-4000-8000-000000000001');
 select is(jsonb_array_length(public.list_blocked_profiles()->'blocked'), 3, 'all three are blocked');
 select is(public.list_blocked_profiles()->'blocked'->0->>'display_name', 'Ana', 'newest block first');
 
--- Unblock.
 select is(public.unblock_profile('c9100000-0000-4000-8000-000000000002'),
   '{"profile_id":"c9100000-0000-4000-8000-000000000002"}'::jsonb, 'Naren unblocks Maya');
 select is(public.unblock_profile('c9100000-0000-4000-8000-0000000000ff'),
@@ -250,7 +238,6 @@ select ok(pg_temp.by_id('c9000000-0000-4000-8000-000000000002',
   'c9100000-0000-4000-8000-000000000001', null, 'a7', 'c9400000-0000-4000-8000-000000000007') is not null,
   'unblock_profile lets them challenge again');
 
--- Starting deletion removes that account's blocks in both directions.
 insert into r (label, id) values ('nt', pg_temp.by_id('c9000000-0000-4000-8000-000000000001',
   'c9100000-0000-4000-8000-000000000003', null, 'a8', 'c9400000-0000-4000-8000-000000000008'));
 insert into r (label, id) values ('am', pg_temp.by_id('c9000000-0000-4000-8000-000000000005',

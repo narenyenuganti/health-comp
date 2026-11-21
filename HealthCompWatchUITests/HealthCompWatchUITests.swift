@@ -1,7 +1,5 @@
 import XCTest
 
-/// Runs on the Mac mini, not CI. `--watch-scenario` needs no phone: one
-/// simulator, no WatchConnectivity.
 final class HealthCompWatchUITests: XCTestCase {
     private func launch(_ scenario: String, _ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
@@ -62,7 +60,6 @@ final class HealthCompWatchUITests: XCTestCase {
         }
     }
 
-    /// A group match: the standings, never a belt.
     func testGroupMatches() {
         for (scenario, label) in [
             ("groupFFA", "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam. 1st, Sam, 1,712 points. "
@@ -114,8 +111,6 @@ final class HealthCompWatchUITests: XCTestCase {
             .firstMatch
     }
 
-    /// The back button on screen. By query, the first match can be the one
-    /// under a pushed screen, which does nothing.
     private func back(_ app: XCUIApplication) {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.14)).tap()
     }
@@ -127,8 +122,6 @@ final class HealthCompWatchUITests: XCTestCase {
         add(shot)
     }
 
-    /// Two or more matches open on the card, in the Board's order. An
-    /// unrevealed final says only "Final" until its Board has played.
     func testTheCardListsEveryMatch() {
         let app = launch("card")
         XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 15))
@@ -150,13 +143,12 @@ final class HealthCompWatchUITests: XCTestCase {
         let board = element(app, "watch.match")
         XCTAssertTrue(board.waitForExistence(timeout: 5))
         XCTAssertTrue(board.label.hasPrefix("Jo, Final."), board.label)
-        sleep(4)  // the reveal
+        sleep(4)
         back(app)
         XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 5))
         XCTAssertTrue(row(app, "Jo").label.contains("Won by 114 points."), row(app, "Jo").label)
     }
 
-    /// A row opens its Board; a duel's Board opens its week.
     func testARowOpensTheBoardAndTheBoardOpensTheWeek() {
         let app = launch("card")
         XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 15))
@@ -169,7 +161,6 @@ final class HealthCompWatchUITests: XCTestCase {
         board.tap()
         let week = element(app, "watch.week")
         XCTAssertTrue(week.waitForExistence(timeout: 5))
-        // Day 1 is two days ago, whatever weekday that is.
         let first = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label ENDSWITH '. You 142. Robin 388.'")).firstMatch
         XCTAssertTrue(first.exists, app.debugDescription)
@@ -179,11 +170,9 @@ final class HealthCompWatchUITests: XCTestCase {
 
         back(app)
         XCTAssertTrue(week.waitForNonExistence(timeout: 5))
-        // A fresh query: the one resolved before the push can miss the Board after the pop.
         XCTAssertTrue(element(app, "watch.match").waitForExistence(timeout: 5))
     }
 
-    /// No week for a group: its Board stays put.
     func testAGroupBoardHasNoWeek() {
         let app = launch("card")
         XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 15))
@@ -195,7 +184,6 @@ final class HealthCompWatchUITests: XCTestCase {
         XCTAssertFalse(element(app, "watch.week").exists)
     }
 
-    /// One match opens straight on its Board, which still opens the week.
     func testOneMatchOpensOnTheBoard() {
         let app = launch("live")
         let board = element(app, "watch.match")
@@ -205,7 +193,6 @@ final class HealthCompWatchUITests: XCTestCase {
         XCTAssertTrue(element(app, "watch.week").waitForExistence(timeout: 5))
     }
 
-    /// A tapped alert opens its match over the card.
     func testATappedAlertOpensItsMatch() {
         let app = launch("card", "--watch-alert", "00000000-0000-0000-0000-000000000013")
         let board = element(app, "watch.match")
@@ -215,12 +202,10 @@ final class HealthCompWatchUITests: XCTestCase {
         XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 5))
     }
 
-    /// The default face's bottom slot reads the file the app just wrote. The
-    /// other shapes need a face with their slots, so they're checked by eye.
     func testComplicationOnTheFace() {
         XCTAssertTrue(element(launch("live"), "watch.match").waitForExistence(timeout: 15))
         let face = XCUIApplication(bundleIdentifier: "com.apple.Carousel")
-        XCUIDevice.shared.press(.home)  // Home toggles face and app grid: never press it twice.
+        XCUIDevice.shared.press(.home)
         sleep(3)
         face.press(forDuration: 2)
         sleep(3)

@@ -760,10 +760,6 @@ export async function submitScoreRevisionHandler(
         return temporarilyUnavailable();
       }
       if (!samePolicyMetadata(verified, registeredKey)) {
-        // A changed value (an app update's new bundle version) means the
-        // registration is stale, not the key: 409 makes the app re-attest, as
-        // authorize_app_attest_proof would. A null/non-null format change
-        // stays a rejection.
         return registeredKey.bundleVersion !== null &&
             verified.bundleVersion !== null
           ? proofConflict()
@@ -779,7 +775,7 @@ export async function submitScoreRevisionHandler(
       try {
         dependencies.reportVerificationFailure?.(verificationError.code);
       } catch {
-        // Diagnostics must never change the non-enumerating client response.
+        return proofRejected();
       }
       return proofRejected();
     }

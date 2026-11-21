@@ -48,7 +48,6 @@ Deno.test({
         1,
       );
     } finally {
-      // Profiles have a no-delete trigger; deactivation releases the test handle.
       await sql`update public.profiles set state='deleting' where id = any(${
         sql.array(users)
       }::uuid[])`;

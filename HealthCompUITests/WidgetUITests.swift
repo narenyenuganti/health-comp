@@ -1,8 +1,5 @@
 import XCTest
 
-/// The match widget on the real Home Screen and Lock Screen. Widgets render
-/// in SpringBoard, so these drive SpringBoard's and PosterBoard's own editing
-/// screens against the Test Lab's sample snapshot (`--widget-sample`).
 final class WidgetUITests: XCTestCase {
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     private let posterboard = XCUIApplication(bundleIdentifier: "com.apple.PosterBoard")
@@ -13,8 +10,6 @@ final class WidgetUITests: XCTestCase {
         XCUIDevice.shared.appearance = .light
     }
 
-    /// Our widgets in any state, by their accessibility identifiers. SpringBoard
-    /// also exposes the Text inside, which can carry the same label.
     private let ourWidgetPredicate = NSPredicate(
         format: "identifier IN %@", ["widget.match", "widget.empty"]
     )
@@ -26,10 +21,6 @@ final class WidgetUITests: XCTestCase {
         removeOurWidgets()
     }
 
-    // MARK: States
-
-    /// One row per widget state: the Test Lab scenario, the VoiceOver label
-    /// of the small and medium widgets, and whether it ends with an Updated time.
     private struct Expectation {
         let scenario: String
         let label: String
@@ -57,7 +48,6 @@ final class WidgetUITests: XCTestCase {
             ),
             Expectation(scenario: "former",
                         label: "Former competitor, Final. You 1,840 points. Former competitor 1,726 points. Won by 114 points."),
-            // Alex (Day 2), Riley (pending), Casey (scheduled) and a result: Sam ends soonest.
             Expectation(scenario: "several", label: sampleLabel.replacingOccurrences(of: " Updated", with: "")),
             Expectation(scenario: "noData", label: "Sam, Day 4 of 7. You 742 points. Sam 510 points. You lead by 232.",
                         updated: false),
@@ -65,22 +55,19 @@ final class WidgetUITests: XCTestCase {
         ]
     }
 
-    /// Small and medium in every state, light and dark, at the default text size.
     func testHomeScreenWidgetsShowEveryMatchState() throws {
         launch(scenario: "live")
         XCUIDevice.shared.press(.home)
         removeOurWidgets()
-        addWidget(sizeSwipes: 1)  // medium
-        addWidget(sizeSwipes: 0)  // small
+        addWidget(sizeSwipes: 1)
+        addWidget(sizeSwipes: 0)
         XCTAssertTrue(ourWidgets().firstMatch.waitForExistence(timeout: 15), springboard.debugDescription)
-        // A reused simulator may have been left at another size.
         setLargestText(false)
-        // Neighbors always differ, so a stale widget can't pass.
         for state in homeStates {
             launch(scenario: state.scenario)
             XCUIDevice.shared.press(.home)
             assertWidgets(state, count: 2)
-            sleep(2)  // let the app-to-Home zoom finish before the capture
+            sleep(2)
             shot("home-\(state.scenario)-light-default")
             XCUIDevice.shared.appearance = .dark
             sleep(3)
@@ -91,20 +78,17 @@ final class WidgetUITests: XCTestCase {
         }
     }
 
-    /// A live group match: your place and the gap, or the two team totals.
     func testHomeScreenWidgetsShowGroupMatches() throws {
         launch(scenario: "groupFFA")
         XCUIDevice.shared.press(.home)
         removeOurWidgets()
-        addWidget(sizeSwipes: 1)  // medium
-        addWidget(sizeSwipes: 0)  // small
+        addWidget(sizeSwipes: 1)
+        addWidget(sizeSwipes: 0)
         XCTAssertTrue(ourWidgets().firstMatch.waitForExistence(timeout: 15), springboard.debugDescription)
         let ffa = "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam."
         let doubles = "Doubles, Day 4 of 7. Your team 3,162 points. Sam + Leo 2,915 points. Your team up 247."
-        // Then again at the largest text size, where the medium drops rows.
         for largest in [false, true] {
             setLargestText(largest)
-            // The medium widget draws every seat, so it reads them too.
             for (state, medium) in [
                 (Expectation(scenario: "groupFFA", label: ffa, updated: false),
                  ffa + " 1st, Sam, 1,712 points. 2nd, You, 1,664 points. 3rd, Priya, 1,498 points. 4th, Leo, 1,203 points."),
@@ -124,9 +108,6 @@ final class WidgetUITests: XCTestCase {
         }
     }
 
-    /// Edit Widget lists only people with a match here, by name, and never
-    /// "Former competitor". A picked person never falls back to someone else
-    /// and never shows a name the current snapshot doesn't have.
     func testPickedPersonShowsOnlyTheirMatchAndNeverAnOldName() throws {
         launch(scenario: "several")
         XCUIDevice.shared.press(.home)
@@ -150,14 +131,12 @@ final class WidgetUITests: XCTestCase {
         pickPerson("Sam", expectingList: nil, absent: [])
         assertWidgets(samLive, count: 1)
 
-        // Sam's result has left Home and only Alex is live: no fallback to Alex.
         launch(scenario: "samGone")
         XCUIDevice.shared.press(.home)
         assertWidgets(Expectation(scenario: "samGone", label: "No match with Sam right now.", updated: false), count: 1)
         sleep(2)
         shot("home-picked-gone-light-default")
 
-        // Sam isn't in the snapshot at all (another account, a deleted one).
         launch(scenario: "noSam")
         XCUIDevice.shared.press(.home)
         assertWidgets(Expectation(scenario: "noSam", label: "No match with this person right now.", updated: false),
@@ -165,17 +144,14 @@ final class WidgetUITests: XCTestCase {
         sleep(2)
         shot("home-picked-missing-light-default")
 
-        // Signed out: the pick is ignored.
         launch(scenario: "none")
         XCUIDevice.shared.press(.home)
         assertWidgets(homeStates.first { $0.scenario == "none" }!, count: 1)
 
-        // Back with Sam: the pick survived.
         launch(scenario: "several")
         XCUIDevice.shared.press(.home)
         assertWidgets(samLive, count: 1)
 
-        // "Ending soonest" undoes the pick: with Sam gone, Alex shows.
         launch(scenario: "samGone")
         XCUIDevice.shared.press(.home)
         pickPerson("Ending soonest", expectingList: nil, absent: [])
@@ -184,7 +160,6 @@ final class WidgetUITests: XCTestCase {
         ), count: 1)
     }
 
-    /// The Lock Screen circle and rectangle in each kind of state.
     func testLockScreenWidgetsShowEveryMatchState() throws {
         setLargestText(false)
         launch(scenario: "live")
@@ -195,7 +170,6 @@ final class WidgetUITests: XCTestCase {
         }
         XCUIDevice.shared.press(.home)
         let full = Dictionary(uniqueKeysWithValues: homeStates.map { ($0.scenario, $0) })
-        // Circle label, then the rectangle's (nil when both read the same).
         let states: [(String, String, Expectation?)] = [
             ("live", "You lead Sam by 54 points", full["live"]),
             ("trailing", "Sam leads by 54 points", full["trailing"]),
@@ -226,7 +200,7 @@ final class WidgetUITests: XCTestCase {
                 sleep(3)
                 shot("lock-\(scenario)-dark-\(size)")
                 XCUIDevice.shared.appearance = .light
-                XCUIDevice.shared.press(.home)  // unlocks: the simulator has no passcode
+                XCUIDevice.shared.press(.home)
                 sleep(1)
             }
         }
@@ -242,10 +216,9 @@ final class WidgetUITests: XCTestCase {
         ] + arguments
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
-        sleep(2)  // the write is a detached task
+        sleep(2)
     }
 
-    /// Day 1's weekday in the fixtures' UTC calendar, as the widget writes it.
     private func dayOneWeekday(daysAhead: Int) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
@@ -258,8 +231,6 @@ final class WidgetUITests: XCTestCase {
         return formatter.string(from: day)
     }
 
-    /// `count` widgets read exactly `state.label`, plus " Updated 9:30 AM."
-    /// when the state has a time. Waits for the reload.
     private func assertWidgets(_ state: Expectation, count: Int, file: StaticString = #filePath, line: UInt = #line) {
         let predicate = state.updated
             ? NSPredicate(format: "label MATCHES %@",
@@ -270,13 +241,10 @@ final class WidgetUITests: XCTestCase {
     }
 
     private func assertLockScreen(_ label: String, count: Int, file: StaticString = #filePath, line: UInt = #line) {
-        // PosterBoard's copies don't promise our identifiers; the labels are unique enough.
         assertOnScreen(NSPredicate(format: "label BEGINSWITH %@", label), count: count,
                        name: "lock", expected: label, widgetsOnly: false, file: file, line: line)
     }
 
-    /// Exactly `count` on-screen widgets match. SpringBoard exposes some
-    /// widgets twice in the same place, and off-page ones too: neither counts.
     private func assertOnScreen(
         _ predicate: NSPredicate, count: Int, name: String, expected: String,
         widgetsOnly: Bool = true, file: StaticString, line: UInt
@@ -301,15 +269,12 @@ final class WidgetUITests: XCTestCase {
         XCTFail("\(name): expected \(count) × \(expected), found \(found): \(labels)", file: file, line: line)
     }
 
-    /// Edit Widget → Person → `name`. With `expectingList`, first checks the
-    /// people offered, top to bottom, and that `absent` aren't.
     private func pickPerson(_ name: String, expectingList: [String]?, absent: [String]) {
         let widget = ourWidgets().firstMatch
         XCTAssertTrue(widget.waitForExistence(timeout: 10))
         widget.press(forDuration: 1.3)
         tap([springboard.buttons["Edit Widget"]], "Edit Widget")
         sleep(2)
-        // The value side of the Person row reads "Person" (or the picked name).
         let current = ["Ending soonest", "Person", "Choose", "Alex", "Casey", "Riley", "Sam"]
             .map { springboard.buttons[$0] }
         tap(current, "Person value")
@@ -337,10 +302,7 @@ final class WidgetUITests: XCTestCase {
         if springboard.buttons["Done"].exists { springboard.buttons["Done"].tap() }
     }
 
-    /// Settings → Accessibility → Display & Text Size → Larger Text. On sets
-    /// the largest accessibility size (AX5); off returns to the default.
     private func setLargestText(_ on: Bool) {
-        // Set first, so tearDown resets the shared simulator even when a step fails.
         changedTextSize = true
         let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
         settings.terminate()
@@ -354,13 +316,9 @@ final class WidgetUITests: XCTestCase {
         }
         let toggle = settings.switches["Larger Accessibility Sizes"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5), settings.debugDescription)
-        // With accessibility sizes on, the slider has 12 stops and Large (the
-        // default) is the 4th: "27%". Set it there before turning them off,
-        // so the shared simulator goes back exactly to the default.
         if (toggle.value as? String) != "1" { flip(toggle) }
         sleep(1)
         let expected = on ? "100%" : "27%"
-        // One drag can stop short while Settings relayouts at the new size.
         for _ in 0..<6 {
             let slider = settings.sliders.firstMatch
             if (slider.value as? String) == expected { break }
@@ -384,12 +342,11 @@ final class WidgetUITests: XCTestCase {
         let app = XCUIApplication()
         launchWithSample()
         XCUIDevice.shared.press(.home)
-        removeOurWidgets()  // a reused simulator may still hold widgets from an earlier run
+        removeOurWidgets()
 
-        addWidget(sizeSwipes: 1)  // medium
-        addWidget(sizeSwipes: 0)  // small
+        addWidget(sizeSwipes: 1)
+        addWidget(sizeSwipes: 0)
 
-        // One VoiceOver element per widget, with the whole score read out.
         let widgets = widgetElements()
         XCTAssertTrue(widgets.firstMatch.waitForExistence(timeout: 15), springboard.debugDescription)
         assertOnScreen(widgetPredicate, count: 2, name: "added", expected: sampleLabel,
@@ -404,13 +361,11 @@ final class WidgetUITests: XCTestCase {
         XCUIDevice.shared.appearance = .light
         sleep(3)
 
-        // Edit Widget offers the snapshot's person (Sam) and Ending soonest.
         let widget = widgetElements().firstMatch
         widget.press(forDuration: 1.3)
         tap([springboard.buttons["Edit Widget"]], "Edit Widget")
         sleep(2)
         shot("edit-widget")
-        // The value side of the Person row reads "Ending soonest" until someone is picked.
         tap(["Ending soonest", "Person", "Choose"].map { springboard.buttons[$0] }, "Person value")
         let sam = springboard.descendants(matching: .any)
             .matching(NSPredicate(format: "label == 'Sam'")).firstMatch
@@ -418,15 +373,12 @@ final class WidgetUITests: XCTestCase {
         shot("edit-widget-people")
         sam.tap()
         sleep(1)
-        // Back on the Home Screen, both widgets still show Sam's match: a
-        // pick that didn't take would show "No match with this person".
         XCUIDevice.shared.press(.home)
         sleep(2)
         if springboard.buttons["Done"].exists { springboard.buttons["Done"].tap() }
         assertOnScreen(widgetPredicate, count: 2, name: "picked", expected: sampleLabel,
                        file: #filePath, line: #line)
 
-        // A tap opens the app (launch only: the test app doesn't route links).
         app.terminate()
         widgetElements().firstMatch.tap()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
@@ -449,7 +401,7 @@ final class WidgetUITests: XCTestCase {
         XCUIDevice.shared.appearance = .dark
         sleep(3)
         shot("lock-dark")
-        XCUIDevice.shared.press(.home)  // unlocks: the simulator has no passcode
+        XCUIDevice.shared.press(.home)
         sleep(1)
     }
 
@@ -463,7 +415,7 @@ final class WidgetUITests: XCTestCase {
         ]
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
-        sleep(2)  // the sample write is a detached task
+        sleep(2)
     }
 
     private func showLockScreen() {
@@ -479,8 +431,6 @@ final class WidgetUITests: XCTestCase {
             .matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
     }
 
-    /// Lock Screen editing lives in PosterBoard: Customize, the Lock Screen
-    /// poster, the widget row, then both of our sizes.
     private func addLockScreenWidgets() {
         springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).press(forDuration: 1.8)
         sleep(2)
@@ -489,7 +439,6 @@ final class WidgetUITests: XCTestCase {
         tap([springboard.cells.matching(NSPredicate(format: "label BEGINSWITH 'Customize Lock'")).firstMatch],
             "Customize Lock Screen")
         sleep(3)
-        // The widget row under the clock; PosterBoard doesn't expose it until the editor settles.
         springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.29)).tap()
         sleep(2)
         tap([posterboard.buttons["Continue"]], "keyboard intro", timeout: 3, required: false)
@@ -510,10 +459,9 @@ final class WidgetUITests: XCTestCase {
         }
         shot("lock-editor")
         if !tap([posterboard.buttons["close"]], "close gallery", timeout: 3, required: false) {
-            // The sheet's close button, when PosterBoard doesn't expose it.
             springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.91, dy: 0.475)).tap()
         }
-        sleep(2)  // let the sheet finish closing, or Done ignores the tap
+        sleep(2)
         let done = posterboard.buttons["editing-done"]
         for _ in 0..<3 {
             if done.exists, done.isHittable { done.tap() } else {
@@ -523,7 +471,6 @@ final class WidgetUITests: XCTestCase {
             if !done.exists { break }
         }
         shot("lock-after-done")
-        // Back on the poster switcher: pick the edited poster to leave it.
         tap([springboard.cells.matching(NSPredicate(format: "identifier BEGINSWITH 'posterboard-posteruuid'")).firstMatch],
             "poster", timeout: 3, required: false)
         sleep(2)
@@ -534,8 +481,6 @@ final class WidgetUITests: XCTestCase {
         (inner.exists ? inner : toggle).tap()
     }
 
-    // MARK: SpringBoard
-
     private func ourWidgets() -> XCUIElementQuery {
         springboard.descendants(matching: .any).matching(ourWidgetPredicate)
     }
@@ -544,7 +489,6 @@ final class WidgetUITests: XCTestCase {
         springboard.descendants(matching: .any).matching(widgetPredicate)
     }
 
-    /// The sample's label on any day, so a run across UTC midnight still matches.
     private var widgetPredicate: NSPredicate {
         let pattern = NSRegularExpression.escapedPattern(for: sampleLabel)
             .replacingOccurrences(of: "Day 5", with: "Day \\d")
@@ -581,7 +525,6 @@ final class WidgetUITests: XCTestCase {
     }
 
     private func enterEditMode() {
-        // Blank wallpaper below the icon rows, above the dock.
         springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
             .press(forDuration: 1.6)
         sleep(1)
@@ -593,13 +536,9 @@ final class WidgetUITests: XCTestCase {
         tap([springboard.buttons["Edit"]], "Edit")
         tap([springboard.buttons["Add Widget"]], "Add Widget")
         sleep(2)
-        // A fresh simulator explains slide-to-type over the focused search
-        // field. SpringBoard's typeText goes to the App Library field, so
-        // scroll the gallery's app list instead of searching.
         tap([springboard.buttons["Continue"]], "keyboard intro", timeout: 3, required: false)
         let result = springboard.cells["HealthComp"]
         if !result.waitForExistence(timeout: 2) {
-            // The gallery opened on its suggestions: focusing search lists the apps.
             tap([springboard.searchFields["Search Widgets"]], "Search Widgets")
             tap([springboard.buttons["Continue"]], "keyboard intro", timeout: 3, required: false)
         }
@@ -631,7 +570,6 @@ final class WidgetUITests: XCTestCase {
         let remove = springboard.alerts.buttons["Remove"]
         var pages = 0
         for _ in 0..<10 {
-            // A reused simulator can hold widgets on later pages too.
             guard let widget = ourWidgets().allElementsBoundByIndex.first(where: { $0.isHittable }) else {
                 guard pages < 2 else { break }
                 pages += 1
@@ -645,11 +583,10 @@ final class WidgetUITests: XCTestCase {
             if remove.waitForExistence(timeout: 5) { remove.tap() }
             sleep(1)
         }
-        // Never leave an alert or edit mode in front of the next step.
         let cancel = springboard.alerts.buttons["Cancel"]
         if cancel.exists { cancel.tap() }
         if springboard.buttons["Done"].exists { springboard.buttons["Done"].tap() }
-        XCUIDevice.shared.press(.home)  // back to the first page
+        XCUIDevice.shared.press(.home)
         sleep(1)
     }
 }

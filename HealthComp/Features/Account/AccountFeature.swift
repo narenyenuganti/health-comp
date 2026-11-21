@@ -81,7 +81,6 @@ struct AccountFeature {
             }
         }
 
-        /// The launch-failure title, naming the step that failed.
         var failureTitle: String? {
             switch self {
             case .tryAgain: "Couldn’t connect"
@@ -99,7 +98,6 @@ struct AccountFeature {
             }
         }
 
-        /// Shown under Delete Account instead of in the profile section.
         var isDeletionMessage: Bool {
             self == .deleteFailed || self == .reauthenticationRequired
         }
@@ -299,8 +297,6 @@ struct AccountFeature {
         state.message = nil
     }
 
-    /// Deleting abandons an open name edit so the overlay, not the Save
-    /// button, shows the wait.
     private func beginDeletion(state: inout State) {
         state.isDeleteConfirmationPresented = false
         state.displayName = state.committedDisplayName
@@ -313,12 +309,9 @@ struct AccountFeature {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The server rejects the same names; checking here keeps the message
-    /// specific.
     private func displayNameProblem(_ value: String) -> Message? {
         let value = trimmedDisplayName(value)
         if value == "Former competitor" { return .reservedDisplayName }
-        // Code points, as the server's char_length counts them.
         guard (1...64).contains(value.unicodeScalars.count),
               !value.unicodeScalars.contains(where: {
                 CharacterSet.controlCharacters.contains($0)

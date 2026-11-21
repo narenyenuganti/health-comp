@@ -1,7 +1,5 @@
 import XCTest
 
-/// The belt ceremonies, driven through the remote Test Lab's `belt-ceremony`
-/// history. Every other UI test launches without `--belt-ceremonies`.
 final class BeltCeremonyUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -29,7 +27,6 @@ final class BeltCeremonyUITests: XCTestCase {
             tapWeek(ceremony.byte)
             XCTAssertTrue(soon(5) { self.ceremony.exists }, ceremony.clip)
             XCTAssertTrue(soon(3) { self.element("competition.belt.ceremony.clip.\(ceremony.clip)").exists })
-            // The words land on the settle beat, so these prove the clip ran.
             for word in ceremony.words {
                 XCTAssertTrue(soon(6) { self.app.staticTexts[word].exists }, word)
             }
@@ -127,8 +124,6 @@ final class BeltCeremonyUITests: XCTestCase {
         assertNoCeremony()
     }
 
-    // MARK: Helpers
-
     private var ceremony: XCUIElement { element("competition.belt.ceremony") }
 
     private func launchLab(_ arguments: [String] = [], ceremonies: Bool = true) {
@@ -186,9 +181,6 @@ final class BeltCeremonyUITests: XCTestCase {
         XCTAssertFalse(ceremony.waitForExistence(timeout: 1), file: file, line: line)
     }
 
-    /// `waitForExistence` and predicate waits first look after a full second,
-    /// longer than a ceremony's words or a poster stay up, so this looks again
-    /// as soon as each query returns.
     private func soon(_ seconds: TimeInterval, _ condition: () -> Bool) -> Bool {
         let deadline = Date().addingTimeInterval(seconds)
         repeat {

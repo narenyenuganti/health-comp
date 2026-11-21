@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - Immutable stream origin
-
 public struct CompetitionGenesis: Codable, Equatable, Sendable {
     public static let currentVersion: UInt32 = 1
 
@@ -131,10 +129,6 @@ public struct CompetitionGenesis: Codable, Equatable, Sendable {
     }
 }
 
-// MARK: - Typed persisted domain events
-
-/// The immutable server descriptor that changes a journal from the simulated
-/// opponent protocol to the remote-participant protocol. It is v4-only.
 public struct RemoteCompetitionConfiguration: Codable, Equatable, Sendable {
     public enum ValidationError: Error, Equatable, Sendable {
         case distinctParticipantsRequired, invalidPolicy, invalidRevision, invalidDeadline, invalidSchedule
@@ -145,7 +139,6 @@ public struct RemoteCompetitionConfiguration: Codable, Equatable, Sendable {
     public let remote: RemoteParticipant
     public let acceptedSchedule: CompetitionSchedule
     public let scoringPolicyIdentity: String
-    /// Downloaded backend cursor (`next_server_seq - 1`) at acceptance.
     public let backendDescriptorRevision: Int64
     public let bestAvailableDeadline: Date
 
@@ -442,8 +435,6 @@ public struct ActivitySnapshotRecorded: Codable, Equatable, Sendable {
     }
 }
 
-/// Payload version 1 is decoded through an immutable schema mirror so adding
-/// payload-v2 fields or cases cannot silently broaden the old wire contract.
 private enum ActivityStandModeV1: String, Decodable {
     case standHours
     case rollHours
@@ -543,9 +534,6 @@ private enum CompetitionDomainEventV1: Decodable {
     }
 }
 
-/// Payload version 2's top-level union is immutable. Its leaf values remain
-/// the already-persisted version-2 types; adding a new live union case must not
-/// make that case decodable from an older envelope.
 private enum CompetitionDomainEventV2: Decodable {
     case lifecycle(CompetitionEventV3)
     case activitySnapshotRecorded(ActivitySnapshotRecorded)
@@ -563,9 +551,6 @@ private enum CompetitionDomainEventV2: Decodable {
     }
 }
 
-/// Payload-v3 is frozen independently of the live union. This is important:
-/// a future top-level case must be impossible to decode merely because it was
-/// added to `CompetitionDomainEvent`.
 private enum CompetitionDomainEventV3: Decodable {
     case lifecycle(CompetitionEventV3)
     case activitySnapshotRecorded(ActivitySnapshotRecorded)
@@ -582,9 +567,6 @@ private enum CompetitionDomainEventV3: Decodable {
     }
 }
 
-/// Payload versions 1 through 3 remain immutable and replayable. New writes use
-/// version 4; envelopes preserve exact encoded bytes and semantic duplicate
-/// checks compare decoded values.
 public enum CompetitionDomainEvent: Codable, Equatable, Sendable {
     case lifecycle(CompetitionEvent)
     case activitySnapshotRecorded(ActivitySnapshotRecorded)
@@ -630,7 +612,6 @@ public enum CompetitionDomainEvent: Codable, Equatable, Sendable {
         case let .activitySnapshotRecorded(event): event.observedAt
         case let .activityRefreshAttemptRecorded(event): event.readAt
         case let .notificationEmissionRecorded(event): event.decidedAt
-        // No acceptance time is stored; the schedule start is its closest bound.
         case let .remoteConfigurationAccepted(event):
             (try? event.acceptedSchedule.calendar.startOfDay(event.acceptedSchedule.startDay))
                 ?? event.bestAvailableDeadline
@@ -641,8 +622,6 @@ public enum CompetitionDomainEvent: Codable, Equatable, Sendable {
         }
     }
 }
-
-// MARK: - Journal values
 
 public struct CompetitionJournalCursor: Codable, Equatable, Sendable {
     public let commitRevision: UInt64
@@ -664,8 +643,6 @@ public struct CompetitionJournalEnvelope: Codable, Equatable, Sendable {
     public static let currentEnvelopeVersion: UInt32 = 1
     public static let currentPayloadVersion: UInt32 = 4
     private static let supportedPayloadVersions: ClosedRange<UInt32> = 1...4
-    /// Sequences are one-based. Zero means an unsupported future envelope did
-    /// not expose a sequence using the version-one field shape.
     public static let unknownSequence: UInt64 = 0
 
     public let envelopeVersion: UInt32
@@ -897,9 +874,7 @@ public struct CompetitionJournalAppendResult: Equatable, Sendable {
 
 public enum CompetitionJournalRelationship: Equatable, Sendable {
     case equal
-    /// The receiver is an exact envelope prefix of the argument.
     case prefix
-    /// The argument is an exact envelope prefix of the receiver.
     case descendant
     case divergent
 }
@@ -913,8 +888,6 @@ public struct CompetitionReplayProjection: Equatable, Sendable {
     public let remoteWindowAttestations: [UUID: RemoteFinalWindowAttestation]
     public let synchronizationCursor: Int64
     public let sharedResult: SharedCompetitionResult?
-    /// The newest `recordedAt` (Health read time) of each participant's
-    /// accepted remote revisions; derived on replay, never persisted.
     public let remoteLatestRecordedAt: [UUID: Date]
 
     internal init(
@@ -1011,10 +984,6 @@ public struct CompetitionJournal: Codable, Equatable, Sendable {
         )
     }
 
-    /// Constructs from already-stored envelopes while deriving every journal
-    /// redundancy and replay-validating the candidate. Kept internal so only a
-    /// storage adapter's decoded document (or adversarial tests) can exercise
-    /// the same validation path; callers cannot publish an unchecked stream.
     internal init(
         validating genesis: CompetitionGenesis,
         envelopes: [CompetitionJournalEnvelope]
@@ -1041,9 +1010,6 @@ public struct CompetitionJournal: Codable, Equatable, Sendable {
         self = candidate
     }
 
-    /// Compares exact persisted ancestry. A nonempty prefix must end between
-    /// append commits; sharing bytes only through the middle of a commit is a
-    /// divergent transaction history.
     public func relationship(
         to other: CompetitionJournal
     ) -> CompetitionJournalRelationship {
@@ -1310,10 +1276,6 @@ public struct CompetitionJournal: Codable, Equatable, Sendable {
     }
 
     private static func digest(genesis: CompetitionGenesis) throws -> String {
-        // Genesis commitment v1 is independent of JSON number/date rendering:
-        // domain, schema, UUID, direction, reference-date IEEE bits, optional
-        // expiry, scoring-policy identity, and downward-revision policy. Strings
-        // are UInt64-length-prefixed; integers are fixed-width big-endian.
         var bytes = JournalCanonicalBytes()
         bytes.append("healthcomp.competition-genesis")
         bytes.append(genesis.version)
@@ -1354,8 +1316,6 @@ public struct CompetitionJournal: Codable, Equatable, Sendable {
         return SHA256Digest.hexDigest(bytes.data)
     }
 }
-
-// MARK: - Pure replay
 
 public enum CompetitionReplayer {
     public static func replay(
@@ -1573,8 +1533,6 @@ public enum CompetitionReplayer {
                       attestation.participant == configuration.owner,
                       { if case .tallying = workingCompetition.lifecycle { return true }; return false }()
                 else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
-                // An owner with no accepted rows attests best-available with an
-                // all-zero vector; the stable branch below still requires rows.
                 let ledger = try workingRemoteLedgers[attestation.participant.profileID]
                     ?? RemoteScoreLedger(
                         competitionID: configuration.competitionID,
@@ -1607,8 +1565,6 @@ public enum CompetitionReplayer {
                       result.remote == configuration.remote,
                       let ownerResultWindow = try? result.window(for: configuration.owner)
                 else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
-                // A participant can reach the deadline with no accepted rows.
-                // Validate that empty history without manufacturing score evidence.
                 let ownerLedger = try workingRemoteLedgers[configuration.owner.profileID]
                     ?? RemoteScoreLedger(
                         competitionID: configuration.competitionID,
@@ -1643,9 +1599,6 @@ public enum CompetitionReplayer {
                 workingNotificationEmissions.record(record)
 
             case let .activityRefreshAttemptRecorded(attempt):
-                // Remote journals are fed only by server-accepted remote rows.
-                // A local HealthKit refresh is simulated-protocol evidence and
-                // must never be allowed to mutate a remote competition.
                 guard workingCompetition.remoteConfiguration == nil else {
                     throw CompetitionJournalError.invalidDomainTransition(
                         sequence: sequence
@@ -1905,8 +1858,6 @@ public enum CompetitionReplayer {
 }
 
 public extension CompetitionReplayProjection {
-    /// Builds the evidence that must be appended immediately after `refresh`
-    /// in the same journal commit. The receiver remains unchanged.
     func finalReadEvidence(
         after refresh: ActivityRefreshAttemptRecorded
     ) throws -> FinalReadEvidence {
@@ -1991,8 +1942,6 @@ public extension CompetitionReplayProjection {
     }
 }
 
-// MARK: - Adapter seam
-
 public enum CompetitionJournalLoadSource: Equatable, Sendable {
     case primary
     case recoveredPrevious
@@ -2045,9 +1994,6 @@ public protocol CompetitionEventStore: Sendable {
         to id: CompetitionID,
         expectedCursor: CompetitionJournalCursor
     ) async throws -> CompetitionJournalAppendResult
-    /// A live stream is deleted only when this cursor still matches under the
-    /// store's lock. After the durable tombstone commit point, retries are
-    /// idempotent regardless of the supplied cursor.
     func delete(
         _ id: CompetitionID,
         expectedCursor: CompetitionJournalCursor

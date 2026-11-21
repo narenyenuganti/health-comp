@@ -4,15 +4,11 @@ import XCTest
 
 final class PracticeMatchTests: XCTestCase {
     private let calendar = try! CompetitionCalendar(timeZoneIdentifier: "UTC")
-    /// Fri May 1 2026, noon UTC.
     private let startedAt = Date(timeIntervalSince1970: 1_777_636_800)
-
-    // MARK: Baseline
 
     func testBaselineAveragesScoredDaysOverTwoWeeks() throws {
         let first = try read(startingDaysBefore: 14, points: [100, 200, 300, 400, 500, 600, nil])
         let second = try read(startingDaysBefore: 7, points: [nil, nil, 250, 350, nil, nil, nil])
-        // (100 + 200 + 300 + 400 + 500 + 600 + 250 + 350) / 8 = 337.5
         XCTAssertEqual(PracticeMatch.baselineDailyPoints([first, second]), 338)
     }
 
@@ -25,12 +21,9 @@ final class PracticeMatchTests: XCTestCase {
     func testBaselineClampsTo100And600() throws {
         let low = try read(startingDaysBefore: 7, points: [10, 20, 30, nil, nil, nil, nil])
         XCTAssertEqual(PracticeMatch.baselineDailyPoints([low]), 100)
-        // A 900-point day counts as 600.
         let high = try read(startingDaysBefore: 7, points: [900, 900, 600, nil, nil, nil, nil])
         XCTAssertEqual(PracticeMatch.baselineDailyPoints([high]), 600)
     }
-
-    // MARK: Start
 
     func testStartCreatesOneScheduledV3PracticeStartingTomorrow() async throws {
         let (runtime, environment, _) = try makeRuntime(dailyPoints: 400)
@@ -47,7 +40,6 @@ final class PracticeMatchTests: XCTestCase {
         let plan = try XCTUnwrap(competition.opponentPlan)
         XCTAssertEqual(plan.generatorVersion, .v3)
         XCTAssertEqual(plan.difficulty, .beast)
-        // Baseline 400: Beast is 1.25–1.50 of it.
         for day in plan.days {
             XCTAssertTrue((500...600).contains(day.finalPoints), "\(day.finalPoints)")
         }
@@ -109,8 +101,6 @@ final class PracticeMatchTests: XCTestCase {
         XCTAssertNotEqual(id, interrupted)
     }
 
-    // MARK: Projection and wakes
-
     func testPracticePresentationsUsePacerIdentityAndHidePendingJournals() async throws {
         let (runtime, environment, _) = try makeRuntime(dailyPoints: 300)
         let id = try await PracticeMatch.start(.pacer, runtime: runtime, environment: environment)
@@ -156,7 +146,6 @@ final class PracticeMatchTests: XCTestCase {
             PracticeMatch.nextPacerReveal(journals: journals, now: noon),
             max(next, noon.addingTimeInterval(300))
         )
-        // Just before a checkpoint, the pacer still waits 5 minutes.
         let justBefore = next.addingTimeInterval(-10)
         XCTAssertEqual(
             PracticeMatch.nextPacerReveal(journals: journals, now: justBefore),
@@ -204,8 +193,6 @@ final class PracticeMatchTests: XCTestCase {
         let completed = try await presentation(runtime, environment)
         XCTAssertNil(PracticeMatch.startBlocker(in: realLive + [completed]))
     }
-
-    // MARK: Shadow rival
 
     func testShadowRivalsExtractsEligibleRivalsExcludesBlockedAndFormerAndSubtractsSleepPoints() throws {
         let startDay = try CompetitionDay(era: 1, year: 2026, month: 8, day: 3, timeZoneIdentifier: "UTC")
@@ -262,7 +249,6 @@ final class PracticeMatchTests: XCTestCase {
         let blockedID = UUID(uuidString: "d1000000-0000-4000-8000-0000000000c9")!
         let sparseID = UUID(uuidString: "d1000000-0000-4000-8000-0000000000c8")!
 
-        // Dev: Day 1 has 450 total including 80 sleep -> 370 ring points.
         let devMatch = makeMatch(
             profileID: devID,
             name: "Dev Patel",
@@ -271,7 +257,6 @@ final class PracticeMatchTests: XCTestCase {
             points: [450, 415, 340, 445, 390, 520, 420],
             sleep: [80, nil, nil, nil, nil, nil, nil]
         )
-        // Maya: Active on Day 5 -> closed days 1..4 count, Day 5 (120) does not.
         let mayaMatch = makeMatch(
             profileID: mayaID,
             name: "Maya Chen",
@@ -345,8 +330,6 @@ final class PracticeMatchTests: XCTestCase {
         XCTAssertTrue(shown.isPractice)
     }
 
-    // MARK: Helpers
-
     private func presentation(
         _ runtime: LocalCompetitionRuntime,
         _ environment: CompetitionEnvironmentClient
@@ -373,8 +356,6 @@ final class PracticeMatchTests: XCTestCase {
             day = try dayBefore(day)
             days.append(day)
         }
-        // The practice week itself, so it can finish: the local engine never
-        // finalizes a week with a day of no data.
         days += try calendar.sevenDayWindow(startingOn: calendar.day(after: today))
         let source = FixtureActivitySource(
             fixture: try ActivityFixture(
@@ -401,7 +382,6 @@ final class PracticeMatchTests: XCTestCase {
         return (runtime, environment, source)
     }
 
-    /// Past the week and its 60 s best-available grace.
     private func finish(runtime: LocalCompetitionRuntime, source: FixtureActivitySource) async throws {
         let loaded = await runtime.loadAll().successfulJournals
         let journal = try XCTUnwrap(loaded.first)
@@ -447,7 +427,6 @@ final class PracticeMatchTests: XCTestCase {
         try calendar.day(containing: calendar.startOfDay(day).addingTimeInterval(-3_600))
     }
 
-    /// Move alone scores the points: value/goal as a percentage.
     private func snapshot(_ points: Double) throws -> ActivitySnapshot {
         ActivitySnapshot(
             moveMode: .activeEnergyKilocalories,

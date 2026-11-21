@@ -1,6 +1,5 @@
 import XCTest
 
-/// Share Result and its sheet (spec §9.2), driven through the remote Test Lab.
 final class RecapCardUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -25,14 +24,10 @@ final class RecapCardUITests: XCTestCase {
         app = nil
     }
 
-    // MARK: Flows
-
     func testLossSheetPreviewsTheCardAndClosesBackToTheResult() {
         launchLab()
         openHomeResult("Casey")
 
-        // Share Result sits in the scroll after the belt banner and the week,
-        // above the one pinned primary action.
         let share = app.buttons["competition.result.share"]
         scrollToElement(share)
         app.scrollViews.firstMatch.swipeUp()
@@ -42,7 +37,6 @@ final class RecapCardUITests: XCTestCase {
         XCTAssertTrue(week.exists)
         XCTAssertLessThanOrEqual(week.frame.maxY, share.frame.minY)
         XCTAssertLessThanOrEqual(element("competition.result.belt").frame.maxY, week.frame.minY)
-        // An unarchived result has no archive note.
         XCTAssertFalse(element("competition.history.preserved").exists)
         let rematch = app.buttons["competition.rematch.create"]
         XCTAssertEqual(rematch.label, "Rematch Casey")
@@ -61,7 +55,6 @@ final class RecapCardUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Hide name"].isSelected)
         XCTAssertEqual(card.label, Self.caseyShown)
 
-        // A 4:5 preview, at most 320 pt wide and centred.
         XCTAssertLessThanOrEqual(card.frame.width, 321)
         XCTAssertEqual(card.frame.height / card.frame.width, 1.25, accuracy: 0.02)
         XCTAssertEqual(card.frame.midX, app.frame.midX, accuracy: 1)
@@ -69,7 +62,6 @@ final class RecapCardUITests: XCTestCase {
         let imageShare = waitForEnabledShare()
         XCTAssertEqual(imageShare.label, "Share")
         XCTAssertTrue(imageShare.isHittable)
-        // Clear of the home indicator.
         XCTAssertLessThanOrEqual(imageShare.frame.maxY, app.frame.maxY - 34)
         XCTAssertGreaterThanOrEqual(imageShare.frame.height, 44)
 
@@ -78,7 +70,6 @@ final class RecapCardUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Casey"].exists)
         XCTAssertTrue(share.isHittable)
 
-        // A swipe down dismisses it too.
         share.tap()
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         card.swipeDown(velocity: .fast)
@@ -100,7 +91,6 @@ final class RecapCardUITests: XCTestCase {
         waitForEnabledShare()
         closeSheet()
 
-        // Morgan's archived tie, from History, inherits the choice.
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
         openHistory()
@@ -120,7 +110,6 @@ final class RecapCardUITests: XCTestCase {
         waitForEnabledShare()
         closeSheet()
 
-        // Back on Casey, the choice Morgan's sheet made holds.
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
         app.navigationBars.buttons.firstMatch.tap()
@@ -183,7 +172,6 @@ final class RecapCardUITests: XCTestCase {
         waitForEnabledShare()
         closeSheet()
 
-        // Back walks the same stack: result, person page, History.
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
         XCTAssertTrue(element("competition.person.belt").exists)
@@ -204,7 +192,6 @@ final class RecapCardUITests: XCTestCase {
         let card = element("competition.recap.card")
         let shown = "Match won. Aug 6 to 12, 2026. You 2,104.30 points. \(Self.longName) 2,104.00 points. Won by 0.30 points, won 3 days, lost 4. Photo finish: decided by 0.30 points. Comeback: down 90 points after Saturday. Took the belt."
         XCTAssertEqual(card.label, shown)
-        // The segment may truncate on screen; VoiceOver reads it in full.
         XCTAssertTrue(app.buttons["Show \(Self.longName)"].isHittable)
         waitForEnabledShare()
         attachScreenshot("qa-sheet-long-name")
@@ -235,7 +222,6 @@ final class RecapCardUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["competition.result.share"].exists)
 
-        // The simulated (local) result never offers it.
         app.terminate()
         app = XCUIApplication()
         app.launchArguments = [
@@ -271,15 +257,12 @@ final class RecapCardUITests: XCTestCase {
         let share = waitForEnabledShare()
         share.tap()
 
-        // The system share sheet lists Save Image for the PNG.
         let saveImage = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == 'Save Image'")).firstMatch
         XCTAssertTrue(saveImage.waitForExistence(timeout: 10))
         attachScreenshot("qa-system-share-sheet")
         saveImage.tap()
 
-        // Saving asks for add-only Photos access (NSPhotoLibraryAddUsageDescription); without
-        // the key the app would crash here.
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let alert = springboard.alerts.firstMatch
         if alert.waitForExistence(timeout: 5) {
@@ -290,7 +273,6 @@ final class RecapCardUITests: XCTestCase {
             let allow = alert.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Allow'")).firstMatch
             (allow.exists ? allow : alert.buttons.element(boundBy: 1)).tap()
         }
-        // Saving closes only the system sheet: Share Result stays open, ready to share again.
         XCTAssertEqual(app.state, .runningForeground)
         XCTAssertTrue(saveImage.waitForNonExistence(timeout: 5))
         XCTAssertTrue(element("competition.recap.card").exists)
@@ -316,7 +298,6 @@ final class RecapCardUITests: XCTestCase {
         openHomeResult("Casey")
         let share = app.buttons["competition.result.share"]
         scrollToElement(share)
-        // At AX sizes Rematch moves into the scroll, after Share Result.
         let rematch = app.buttons["competition.rematch.create"]
         scrollToElement(rematch)
         XCTAssertLessThanOrEqual(share.frame.maxY, rematch.frame.minY)
@@ -351,8 +332,6 @@ final class RecapCardUITests: XCTestCase {
         close.tap()
         XCTAssertTrue(card.waitForNonExistence(timeout: 3))
     }
-
-    // MARK: Helpers
 
     private func launchLab(_ arguments: [String] = [], environment: [String: String] = [:]) {
         if app.state != .notRunning { app.terminate() }
@@ -389,11 +368,9 @@ final class RecapCardUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3))
     }
 
-    /// Opens Share Result and, for a named person, resets the remembered choice to Show.
     private func openSheet(showing name: String? = nil) {
         let share = app.buttons["competition.result.share"]
         scrollToElement(share)
-        // The reaction panel can leave Share Result under the pinned Rematch.
         let rematch = app.buttons["competition.rematch.create"]
         for _ in 0..<3 where rematch.exists && share.frame.maxY > rematch.frame.minY {
             app.scrollViews.firstMatch.swipeUp(velocity: .slow)
@@ -428,7 +405,6 @@ final class RecapCardUITests: XCTestCase {
         return share
     }
 
-    /// A Toggle's tappable area is its trailing switch.
     private func tapSwitch(_ toggle: XCUIElement) {
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
     }
@@ -463,7 +439,6 @@ final class RecapCardUITests: XCTestCase {
         add(attachment)
     }
 
-    /// The Share Result drawer's own scroll view, not the result behind it.
     private var sheetScroll: XCUIElement {
         app.scrollViews.containing(NSPredicate(format: "identifier == %@", "competition.recap.card")).firstMatch
     }

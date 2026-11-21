@@ -4,7 +4,6 @@ import XCTest
 final class OpponentShadowPlanTests: XCTestCase {
     private func mondaySchedule() throws -> CompetitionSchedule {
         let calendar = try CompetitionCalendar(timeZoneIdentifier: "UTC")
-        // Monday, Aug 17, 2026
         let start = try CompetitionDay(era: 1, year: 2026, month: 8, day: 17, timeZoneIdentifier: "UTC")
         return CompetitionSchedule(calendar: calendar, startDay: start)
     }
@@ -23,7 +22,6 @@ final class OpponentShadowPlanTests: XCTestCase {
     }
 
     func testShadowGeneratorVariesAcrossSeedsWithinRivalDistributionAndNeverClones100Percent() throws {
-        // Mon..Sun: 340, 410, 290, 450, 380, 530, 470
         let historical = [340, 410, 290, 450, 380, 530, 470]
         let weekdays = [2, 3, 4, 5, 6, 7, 1]
         let samples = try zip(weekdays, historical).map {
@@ -74,7 +72,6 @@ final class OpponentShadowPlanTests: XCTestCase {
     }
 
     func testShadowGeneratorPreservesRivalWeekdayShape() throws {
-        // Two weeks where Mon–Fri are 240–300 and Sat–Sun are 500–560.
         let rawPairs: [(Int, Int)] = [
             (2, 250), (3, 280), (4, 240), (5, 300), (6, 270), (7, 540), (1, 510),
             (2, 260), (3, 290), (4, 255), (5, 285), (6, 275), (7, 560), (1, 520),
@@ -97,7 +94,6 @@ final class OpponentShadowPlanTests: XCTestCase {
                 schedule: schedule,
                 shadowProfile: profile
             )
-            // Schedule starts Monday: ordinals 1..5 are Mon..Fri, 6..7 are Sat..Sun.
             for day in plan.days {
                 if day.ordinal <= 5 {
                     weekdaySum += day.finalPoints
@@ -143,7 +139,6 @@ final class OpponentShadowPlanTests: XCTestCase {
         XCTAssertEqual(decoded, first)
         XCTAssertEqual(decoded.opponentName, "Maya’s Shadow")
 
-        // Tampering opponentName breaks commitment verification on decode.
         let tampered = try XCTUnwrap(
             String(data: data, encoding: .utf8)?
                 .replacingOccurrences(of: "Maya’s Shadow", with: "Sam’s Shadow")

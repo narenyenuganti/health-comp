@@ -961,7 +961,6 @@ struct CompetitionDescriptor: Codable, Equatable, Sendable {
 }
 
 extension CompetitionWireCodec {
-    /// resolve_challenge_link: exactly `{display_name}`, never an account id.
     static func challengeLinkOwnerName(from data: Data) throws -> String {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(object.keys) == ["display_name"],
@@ -974,9 +973,6 @@ extension CompetitionWireCodec {
     }
 }
 
-/// Who a new challenge goes to. A challenge link is sent as its code, so the
-/// server can refuse a code its owner has reset. An account id is for
-/// rematches, Challenge Again and 1.0.2 account codes.
 enum CompetitionInviteRecipient: Equatable, Sendable {
     case profile(UUID)
     case challengeLink(CompetitionChallengeLinkCode)
@@ -1014,7 +1010,6 @@ struct CompetitionInviteCreationRequest: Codable, Equatable, Sendable {
     ) throws {
         let validRecipient = switch recipient {
         case let .profile(id): CompetitionWireValue.validUUID(id)
-        // A rematch is between people who already played, never by link.
         case .challengeLink: rematchParentID == nil
         }
         guard validRecipient,
@@ -1483,10 +1478,7 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
     let installationID: UUID
     let apnsToken: String
     let environment: CompetitionInstallationEnvironment
-    /// A capability flag: this build can show reactions. Always true from
-    /// new builds; older ones register through overloads that store false.
     let supportsReactions: Bool
-    /// Server-sent kinds switched off on this iPhone (Account → Notifications).
     let mutedPushKinds: [String]
 
     init(
@@ -1543,10 +1535,8 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
         try container.encodeWireUUID(installationID, forKey: .installationID)
         try container.encode(apnsToken, forKey: .apnsToken)
         try container.encode(environment, forKey: .environment)
-        // Opts this install into challenge pushes; 1.0.2 omits it.
         try container.encode(true, forKey: .supportsChallenges)
         try container.encode(supportsReactions, forKey: .supportsReactions)
-        // Opts into Friends pushes (20261109003100); older servers fall back.
         try container.encode(true, forKey: .supportsFriends)
         try container.encode(mutedPushKinds, forKey: .mutedPushKinds)
     }
@@ -2951,7 +2941,6 @@ struct CompetitionChangePage: Codable, Equatable, Sendable {
                 throw CompetitionWireContractError.serverContractMismatch
             }
         case let .profilePresentation(value):
-            // Deletion may redact a historical name-change event in place.
             guard change.entityID == value.profileID,
                   change.kind != .profileAnonymized
                       || value.displayName == "Former competitor"

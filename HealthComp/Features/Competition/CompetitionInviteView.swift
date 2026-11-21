@@ -5,12 +5,9 @@ struct CompetitionInviteView: View {
     let competition: LocalCompetitionPresentation
     let source: CompetitionPublicationSource
     let isCommandInFlight: Bool
-    /// The outgoing challenge's link, when this iPhone has asked for it.
     let link: CompetitionFeature.InviteLinkState?
     let send: (CompetitionFeature.Action) -> Void
-    /// The last accept, decline or cancel failed.
     var commandFailed = false
-    /// A challenge you received, once you've finished a week together.
     var recordLink: CompetitionRecordLink? = nil
     @State private var showsDeclineConfirmation = false
     @State private var showsCancelConfirmation = false
@@ -43,7 +40,6 @@ struct CompetitionInviteView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Theme.ground)
-        // The link stays in reach; PR 7 adds Cancel Challenge under it.
         .safeAreaInset(edge: .bottom) {
             if isRemoteOutgoing, !dynamicTypeSize.isAccessibilitySize {
                 outgoingControls
@@ -83,7 +79,6 @@ struct CompetitionInviteView: View {
                 }
             }
         }
-        // The simulated fixture has no server, so it offers no block.
         .alert(
             "Decline challenge from \(competition.opponentDisplayName)?",
             isPresented: declineBinding(remote: false)
@@ -141,8 +136,6 @@ struct CompetitionInviteView: View {
 
     private var outgoingControls: some View {
         VStack(spacing: 6) {
-            // `.loading` to `.ready` stays a swap: both are
-            // competition.invite.share, and they differ by an opacity.
             ZStack {
                 shareControl
                     .id(linkIsShareable)
@@ -179,7 +172,6 @@ struct CompetitionInviteView: View {
             .accessibilityIdentifier("competition.invite.error")
     }
 
-    // The mark, labeled: your ring bars against their single block.
     private var faceOff: some View {
         CompetitionInvitationFaceOff(
             ownName: competition.ownerDisplayName,
@@ -230,7 +222,6 @@ struct CompetitionInviteView: View {
     private var actionControls: some View {
         if case let .pending(direction, _, _) = competition.lifecycle {
             if source == .remoteParticipants {
-                // The outgoing title already says who you're waiting for.
                 if direction == .incoming {
                     VStack(spacing: 6) {
                         incomingButtons
@@ -315,7 +306,6 @@ struct CompetitionInviteView: View {
         source == .remoteParticipants && direction == .incoming
     }
 
-    /// One decline flag; the fixture shows the alert, a remote challenge the dialog.
     private func declineBinding(remote: Bool) -> Binding<Bool> {
         Binding(
             get: { showsDeclineConfirmation && (source == .remoteParticipants) == remote },
@@ -414,12 +404,9 @@ struct CompetitionInviteView: View {
 }
 
 struct CompetitionInvitationFaceOff: View {
-    /// Yours, for your initial.
     var ownName = ""
     let opponentDisplayName: String
-    /// Their account. The server shares a photo only once you may see it.
     var opponentPhoto: UUID? = nil
-    /// The claim sheet has its own mark above.
     var showsMark = true
 
     var body: some View {
@@ -451,8 +438,6 @@ struct CompetitionInvitationFaceOff: View {
     }
 }
 
-/// One line of the challenge rules: calendar, scoring or privacy. Shared by
-/// the invitation screen and the claim sheet.
 struct CompetitionRuleRow: View {
     enum Icon {
         case symbol(String)
@@ -510,14 +495,10 @@ struct CompetitionRuleDivider: View {
     }
 }
 
-/// The one rules and consent card: the week, scoring, who wins and what the
-/// other person sees. Shown on the create, challenge and claim screens and
-/// from a match's ••• menu.
 struct CompetitionRulesCard: View {
     let source: CompetitionPublicationSource
     var opponentName: String? = nil
     var weekText: String? = nil
-    /// Rings + Sleep: a night is worth up to 100 more.
     var withSleep = false
 
     var body: some View {

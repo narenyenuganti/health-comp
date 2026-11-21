@@ -1,10 +1,6 @@
 import Foundation
 import Supabase
 
-/// One immutable client lifetime's access to storage; never reopened or reused.
-/// Explicit session removal is separate from closure-only retirement. Neither
-/// operation claims to settle SDK background tasks.
-/// Underlying storage and cleanup callbacks must not reenter this adapter.
 final class SupabaseAuthStorageLifetime: AuthLocalStorage, @unchecked Sendable {
     enum Failure: Error, Equatable { case retiring, retired, unverifiedRemoval }
     private let underlying: any AuthLocalStorage
@@ -69,16 +65,11 @@ final class SupabaseAuthStorageLifetime: AuthLocalStorage, @unchecked Sendable {
 
     func removeSessionAndRetire(removing: () throws -> Void) throws {
         try lock.withLock {
-            // A repeated old-owner request cannot touch a replacement's state.
             guard !isRetired else { return }
-            // Intent closes writes permanently, including failed removal. A
-            // delayed old callback cannot revive the cancelled session or clear
-            // its pending-removal marker while cleanup awaits retry.
             writesClosed = true
             prepareRemoval()
             try removing()
             try verifyRemoval()
-            // Removal, verification and closure exclude every old callback.
             isRetired = true
         }
     }

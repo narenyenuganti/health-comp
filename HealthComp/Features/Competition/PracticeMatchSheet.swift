@@ -1,7 +1,6 @@
 import CompetitionCore
 import SwiftUI
 
-/// What Home and Duel need to offer a practice match.
 struct CompetitionPracticeStart {
     let isStarting: Bool
     let failed: Bool
@@ -9,7 +8,6 @@ struct CompetitionPracticeStart {
     let start: (PracticeStartTarget) -> Void
 }
 
-/// Pick a bot; the practice starts tomorrow like a real match.
 struct PracticeMatchSheet: View {
     let practice: CompetitionPracticeStart
 
@@ -17,11 +15,8 @@ struct PracticeMatchSheet: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selection: OpponentDifficulty = .pacer
     @State private var shadowRivalID: String?
-    /// `commandRejected` lingers in the dashboard, so only a Start tapped in
-    /// this presentation shows the error.
     @State private var hasAttempted = false
 
-    /// Each bot's week as seven bars, tallest 28 pt.
     static let bots: [(OpponentDifficulty, String, [CGFloat])] = [
         (.pacer, "Your usual week, steady every day.", [18, 19, 18, 19, 18, 19, 18]),
         (.chill, "A little under your usual. Starts slow.", [8, 9, 10, 11, 12, 13, 14]),
@@ -85,7 +80,6 @@ struct PracticeMatchSheet: View {
                     .transition(Motion.appear)
                 }
 
-                // At accessibility sizes a pinned button would cover the rows.
                 if dynamicTypeSize.isAccessibilitySize {
                     startControl
                 }
@@ -118,8 +112,6 @@ struct PracticeMatchSheet: View {
         hasAttempted && practice.failed && !practice.isStarting
     }
 
-    /// `isStarting` clears a tick before the sheet closes, so a start that
-    /// didn't fail stays busy until it has gone.
     private var isBusy: Bool {
         practice.isStarting || (hasAttempted && !practice.failed)
     }
@@ -160,7 +152,6 @@ struct PracticeMatchSheet: View {
     }
 }
 
-/// One selectable bot card with its seven-day bar profile.
 struct PracticeBotOptionCard: View {
     let difficulty: OpponentDifficulty
     let detail: String
@@ -189,7 +180,6 @@ struct PracticeBotOptionCard: View {
     }
 }
 
-/// The Shadow preset card, whose 7-bar glyph previews the selected rival's weekday rhythm.
 struct PracticeShadowOptionCard: View {
     let activeRival: PracticeShadowRival?
     let hasRivals: Bool
@@ -217,7 +207,6 @@ struct PracticeShadowOptionCard: View {
     }
 }
 
-/// Lists eligible past rivals whose empirical distribution can drive a Shadow match.
 struct PracticeShadowRivalPicker: View {
     let rivals: [PracticeShadowRival]
     @Binding var selectedID: String?

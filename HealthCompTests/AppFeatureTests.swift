@@ -15,15 +15,11 @@ final class AppFeatureTests: XCTestCase {
     }
 
     func testLaunchMarkPulsesThenLeavesForHome() {
-        // Whole before the first pulse and between pulses; mid-pulse the
-        // first bar is inside the slash.
         for time in [0, 1.3] {
             for length in LaunchMarkFrame(at: time).growth { XCTAssertEqual(length, 1, accuracy: 0.001) }
         }
         XCTAssertEqual(LaunchMarkFrame(at: 0.4).growth[0], 0, accuracy: 0.001)
 
-        // Matches arrive mid-pulse: the bars are whole 150 ms in, and both
-        // halves have flown clear of the scoreboard by the end.
         let whole = LaunchMarkFrame(at: 0.56, handoff: 0.4, landing: .score)
         for length in whole.growth { XCTAssertEqual(length, 1, accuracy: 0.001) }
         let split = LaunchMarkFrame(at: 0.4 + LaunchMarkFrame.duration, handoff: 0.4, landing: .score)
@@ -32,7 +28,6 @@ final class AppFeatureTests: XCTestCase {
         XCTAssertEqual(split.barsOpacity, 0, accuracy: 0.001)
         XCTAssertEqual(split.blockOpacity, 0, accuracy: 0.001)
 
-        // Empty Home: your bars stay and the block leaves its outline.
         let slot = LaunchMarkFrame(at: 5 + LaunchMarkFrame.duration, handoff: 5, landing: .slot)
         XCTAssertEqual(slot.travel, 1, accuracy: 0.001)
         XCTAssertEqual(slot.barsLeave, 0)
@@ -40,7 +35,6 @@ final class AppFeatureTests: XCTestCase {
         XCTAssertEqual(slot.blockOpacity, 0, accuracy: 0.001)
         XCTAssertEqual(slot.slotOpacity, 1, accuracy: 0.001)
 
-        // Nowhere to land: the mark fades where it stands.
         let faded = LaunchMarkFrame(at: 5.2, handoff: 5)
         XCTAssertEqual(faded.travel, 0)
         XCTAssertEqual(faded.barsOpacity, 0, accuracy: 0.001)
@@ -135,7 +129,6 @@ final class AppFeatureTests: XCTestCase {
                 throw AuthenticationClientFailure.operationFailed
             }
         }
-        // A new storage instance reproduces a cold launch with another session.
         let store = TestStore(initialState: AppFeature.State(authEpoch: 7)) { AppFeature() } withDependencies: {
             $0.authenticationClient = authentication
             $0.competitionClient = .test(stop: { calls.record("runtime-stop") })
@@ -499,8 +492,6 @@ final class AppFeatureTests: XCTestCase {
             $0.account = AccountFeature.State(mode: .settingUpProfile)
         }
         await fulfillment(of: [subscribed], timeout: 1)
-        // A queued old-owner event remains harmless; a fresh-owner event reaches
-        // the reducer through the renewed stream without re-stamping either one.
         let stale = AuthenticationEvent.owned(oldOrigin, .signedOut)
         continuation.yield(stale)
         await store.receive(.authenticationEvent(stale))
@@ -674,7 +665,6 @@ final class AppFeatureTests: XCTestCase {
         }
         XCTAssertTrue(signedOut.state.hasPendingChallenge)
 
-        // A link that lands mid-teardown is kept for the Welcome that follows.
         let tearingDown = TestStore(initialState: AppFeature.State(phase: .tearingDown)) {
             AppFeature()
         } withDependencies: {
@@ -684,8 +674,6 @@ final class AppFeatureTests: XCTestCase {
             $0.pendingChallengeSequence = 4
         }
 
-        // Submitting a name creates the account, so the link can't be for
-        // it. The boundary survives a failed bootstrap and Try Again.
         var settingUp = AppFeature.State(
             phase: .settingUpProfile,
             account: AccountFeature.State(mode: .settingUpProfile),
@@ -1234,7 +1222,6 @@ final class AppFeatureTests: XCTestCase {
             .updateProfileResponse(epoch: 8, .success(updated))
         ) {
             $0.profile = updated
-            // Home's avatar reads the competition's copy of the profile.
             $0.mainTab?.competition.ownProfile = updated
         }
         await store.receive(
@@ -2141,7 +2128,6 @@ final class AppFeatureTests: XCTestCase {
             AppFeature()
         }
 
-        // The SDK may emit this before local removal verification settles.
         await store.send(.authenticationEvent(.signedOut))
         XCTAssertEqual(store.state.phase, .authenticated)
         XCTAssertEqual(store.state.profile, profile)
@@ -2501,8 +2487,6 @@ final class AppFeatureTests: XCTestCase {
 
     @MainActor
     func testCompetitionMountFailureCleansUpMountedProfileStorage() async {
-        // Only a root this mount created goes; an existing profile keeps its
-        // unsent scores and practice journal for Try Again.
         for isNewlyCreated in [true, false] {
         let calls = OrderedCallRecorder()
         let profile = profile

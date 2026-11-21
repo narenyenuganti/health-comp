@@ -43,7 +43,6 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         let store = makeStore(.init()) { client in
             client.getFriendSettings = { try answers.withValue { $0.removeFirst() }.get() }
         }
-        // A server without Friends leaves the rows hidden.
         await store.send(.requested)
         await store.receive(.loaded(nil))
         await store.send(.requested)
@@ -141,7 +140,6 @@ final class FriendsSettingsFeatureTests: XCTestCase {
             $0.sheet?.edit = 2
         }
         await clock.advance(by: .milliseconds(399))
-        // The wait for "nar" ends, but the field has moved on.
         await store.receive(.usernameDebounced(edit: 1))
         XCTAssertEqual(asked.value, [])
         await clock.advance(by: .milliseconds(1))
@@ -151,7 +149,6 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         }
         XCTAssertEqual(asked.value, ["nare"])
 
-        // An edit clears the answer, and an invalid name never asks.
         await store.send(.usernameChanged("na")) {
             $0.sheet?.draft = "na"
             $0.sheet?.edit = 3
@@ -161,8 +158,6 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(asked.value, ["nare"])
     }
 
-    /// Clearing the field mid-check and typing a new name: only the new
-    /// name is answered, and Continue saves exactly that name.
     func testRetypingDuringASlowCheckChecksAndSavesTheLastName() async {
         let clock = TestClock()
         let asked = LockIsolated<[String]>([])
@@ -200,7 +195,6 @@ final class FriendsSettingsFeatureTests: XCTestCase {
             }
         }
         await clock.advance(by: .milliseconds(700))
-        // The slow answer about "betaal" lands after the edits and is dropped.
         await store.receive(.usernameChecked(edit: 1, isAvailable: true))
         for edit in 3...5 { await store.receive(.usernameDebounced(edit: edit)) }
         await store.receive(.usernameChecked(edit: 5, isAvailable: true)) {
@@ -218,10 +212,6 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(saved.value, ["offline_name"])
     }
 
-    // MARK: Username field
-
-    /// A selection replaced by characters that filter away (or to the same
-    /// text) leaves the caret after it, so the next key inserts there.
     func testAFilteredReplacementOverASelectionLeavesTheCaretAfterIt() throws {
         let upper = try XCTUnwrap(UsernameField.filteredEdit("abc", NSRange(location: 1, length: 1), "B"))
         XCTAssertEqual(upper.text, "abc")
@@ -244,8 +234,6 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         XCTAssertNil(UsernameField.filteredEdit("ab", NSRange(location: 5, length: 1), "c"))
     }
 
-    /// Input that skips the delegate (dictation, an accepted prediction)
-    /// still ends up filtered, and the store hears the filtered name.
     func testTextThatSkipsTheFilterIsFilteredWhenItChanges() {
         let sent = LockIsolated<[String]>([])
         let coordinator = UsernameField.Coordinator()
@@ -272,9 +260,6 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.sheet?.availability, .unknown)
     }
 
-    /// alice, alice2, alice inside one wait: the first alice's wait ends
-    /// early but belongs to an earlier edit, so only the last edit asks, once,
-    /// and an answer for an earlier edit of the same text changes nothing.
     func testReturningToANameAsksOnceForTheLatestEdit() async {
         let clock = TestClock()
         let asked = LockIsolated<[String]>([])
@@ -304,7 +289,6 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         }
         XCTAssertEqual(asked.value, ["alice"])
 
-        // Delivered late, the first alice's answer changes nothing.
         await store.send(.usernameChecked(edit: 1, isAvailable: false))
         await store.send(.usernameDebounced(edit: 1))
         XCTAssertEqual(asked.value, ["alice"])
@@ -396,9 +380,6 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         }
     }
 
-    // MARK: Sign-out
-
-    /// A server call held open until released, recording its cancellation.
     private final class HeldCall: Sendable {
         private let isEntered = LockIsolated(false)
         private let isCancelled = LockIsolated(false)
@@ -439,7 +420,6 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         }
     }
 
-    /// The last account's answer, arriving after the next account's, is dropped.
     func testSignOutCancelsAHeldLoad() async {
         let held = HeldCall()
         let calls = LockIsolated(0)

@@ -1,16 +1,9 @@
 import XCTest
 
-/// The versus intro through Home's own reducer. The `versus` Test Lab scenario
-/// holds Alex's challenge to you, yours to Sam (who accepts 12 s after launch),
-/// Riley's scheduled first fight, Morgan and Jordan's Day 1 rematches with the
-/// belt on either side, a long name, Casey on Day 2 and a practice.
-/// `--versus-hold` keeps the intro up until a tap, or it is over before
-/// XCUITest looks; the tests without it check that it ends by itself.
 final class VersusIntroUITests: XCTestCase {
     private var app: XCUIApplication!
 
     private static let longName = "Maximiliana Featherstonehaugh-Worthington"
-    /// Past the intro's 4 s, with room for a slow simulator.
     private static let played: TimeInterval = 8
 
     override func setUpWithError() throws {
@@ -34,7 +27,6 @@ final class VersusIntroUITests: XCTestCase {
         XCTAssertTrue(intro.waitForExistence(timeout: 3))
         XCTAssertEqual(intro.label, "You versus Alex. Day 1 is Monday.")
         skip()
-        // The match was already there underneath.
         XCTAssertTrue(app.navigationBars["Alex"].exists)
         XCTAssertTrue(app.staticTexts["competition.schedule.dates"].exists)
 
@@ -47,7 +39,6 @@ final class VersusIntroUITests: XCTestCase {
         launch()
         open("pending", 0x02)
         XCTAssertFalse(intro.exists)
-        // Sam accepts with the screen open.
         XCTAssertTrue(intro.waitForExistence(timeout: 16))
         XCTAssertEqual(intro.label, "You versus Sam. Day 1 is Monday.")
         skip()
@@ -125,8 +116,6 @@ final class VersusIntroUITests: XCTestCase {
         skip()
     }
 
-    // A launch argument can't switch Reduce Motion on in a simulator;
-    // `--versus-reduce-motion` takes the app's Reduce Motion path.
     func testReduceMotionShowsTheComposedScreenAndATapEndsIt() {
         launch(["--versus-reduce-motion"])
         open("active", 0x04)
@@ -151,14 +140,10 @@ final class VersusIntroUITests: XCTestCase {
     func testVoiceOverSkipsTheScreenAndAnnouncesIt() {
         launch(["--versus-voiceover"])
         open("scheduled", 0x03)
-        // The lab prints what would have been announced.
         XCTAssertTrue(app.staticTexts["You versus Riley. Day 1 is Monday."].waitForExistence(timeout: 3))
         XCTAssertFalse(intro.exists)
     }
 
-    // MARK: Helpers
-
-    /// By label: the lab root's identifier replaces any id on Home's overlay.
     private var intro: XCUIElement {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "You versus ")).firstMatch
     }
@@ -195,8 +180,6 @@ final class VersusIntroUITests: XCTestCase {
     }
 
     private func replay(file: StaticString = #filePath, line: UInt = #line) {
-        // A touch at its centre, as a person's: Xcode 16.4 reports the menu's
-        // own inner button there, calls ••• not hittable and won't tap it.
         app.buttons["competition.more"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let replay = app.buttons["competition.versus.replay"]
         XCTAssertTrue(replay.waitForExistence(timeout: 3), file: file, line: line)
@@ -227,7 +210,6 @@ final class VersusIntroUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
     }
 
-    /// A still of the composed screen, for judging by eye.
     private func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name

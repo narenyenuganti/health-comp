@@ -143,7 +143,6 @@ final class AccountDeletionTests: XCTestCase {
         let pending = Task { try await signIn() }
         await entered.wait()
         pending.cancel()
-        // Cancellation alone must not release an operation still settling.
         do { _ = try await signIn(); XCTFail("Concurrent browser sign-in accepted") }
         catch { XCTAssertEqual(error as? AuthenticationClientFailure, .operationFailed) }
         do { _ = try await client.signInWithApple(); XCTFail("Concurrent native sign-in accepted") }

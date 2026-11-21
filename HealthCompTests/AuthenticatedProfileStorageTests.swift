@@ -79,7 +79,6 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
                 .completeUntilFirstUserAuthentication
             )
         }
-        // The practice journal holds exact Health values: never backed up.
         XCTAssertEqual(
             try URL(fileURLWithPath: paths.practiceEventsDirectory.path)
                 .resourceValues(forKeys: [.isExcludedFromBackupKey])

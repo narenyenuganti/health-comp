@@ -5,8 +5,6 @@ enum CompetitionSyncCoordinatorFailure: Error, Equatable, Sendable {
     case stopped
 }
 
-/// Move, Exercise and Stand for display, or nil unless all three are known
-/// and add up to the accepted score, so a split never disagrees with it.
 func competitionRingBasisPoints(
     _ accepted: Int?,
     _ move: Int?,
@@ -182,8 +180,6 @@ actor CompetitionSyncCoordinator {
         }
     }
 
-    /// `ignoringBackoff` is for a caller that has just reached the server:
-    /// waiting out a backoff earned while offline would only delay uploads.
     func wake(ignoringBackoff: Bool = false) {
         if ignoringBackoff { backoffWaived = true }
         requestDrain()
@@ -248,7 +244,6 @@ actor CompetitionSyncCoordinator {
                 if let durableRetryAt {
                     replaceRetrySchedule(with: durableRetryAt)
                 }
-                // A request made while this pass failed still gets its pass.
                 guard drainRequested else { return }
                 nextRetryAt = durableRetryAt
             }
@@ -265,9 +260,6 @@ actor CompetitionSyncCoordinator {
         let ignoreBackoff = backoffWaived
         backoffWaived = false
         var nextRetryAt: Date?
-        // The server refuses a revision below one it already holds, so a
-        // match's uploads go in queue order: once one is held back, the
-        // match's later ones wait for it.
         var heldCompetitionIDs: Set<UUID> = []
         for entry in entries {
             try Task.checkCancellation()
@@ -369,8 +361,6 @@ actor CompetitionSyncCoordinator {
                     )
                     continue
                 }
-                // A receipt for another window can't be stored as this
-                // one's; park it rather than stall the queue behind it.
                 _ = try await outboxStore.update(
                     entry.semanticEventID,
                     expectedGeneration: entry.generation,
@@ -386,12 +376,9 @@ actor CompetitionSyncCoordinator {
                         )
                 )
             case (.finalWindowAttestation, .attestationAcknowledged):
-                // Task 13 removes this only after the authoritative change
-                // feed materializes the server-owned attestation fields.
                 continue
             case (.finalWindowAttestation, .permanentFailure),
                  (.scoreRevision, .permanentFailure):
-                // Terminal failures intentionally remain support-inspectable.
                 continue
             case (.scoreRevision, .attestationAcknowledged),
                  (.finalWindowAttestation, .appAttestRejectionRecovery),
@@ -467,8 +454,6 @@ actor CompetitionSyncCoordinator {
             )
             return nil
         }
-        // Whole seconds survive the outbox's millisecond dates exactly, so a
-        // replay after a crash journals the same receipt as this run would.
         let receivedAt = Date(
             timeIntervalSince1970: now().timeIntervalSince1970.rounded(.down)
         )
@@ -477,7 +462,6 @@ actor CompetitionSyncCoordinator {
             rejection = response.rejectionCode.map { permanentFailure(for: $0) }
                 ?? .serverContractMismatch
         } else if response.wireContentSHA256 != request.wireContentSHA256 {
-            // An answer for other content: never stored as this upload's.
             rejection = .serverContractMismatch
         } else {
             rejection = nil
@@ -507,9 +491,6 @@ actor CompetitionSyncCoordinator {
         return nil
     }
 
-    /// Journals an accepted score, then drops its entry. An answer the
-    /// journal can never take parks only this entry, so the uploads queued
-    /// behind it still go out.
     private func persistAccepted(
         _ entry: CompetitionOutboxEntry,
         request: CompetitionScoreRevisionRequest,
@@ -540,8 +521,6 @@ actor CompetitionSyncCoordinator {
         )
     }
 
-    /// Failures a retry can't change: the answer contradicts the upload, or
-    /// the journal refuses the row. Storage and cursor races stay retryable.
     private static func isUnrecordable(_ error: any Error) -> Bool {
         if let failure = error as? CompetitionRemoteFailure {
             return failure == .serverContractMismatch

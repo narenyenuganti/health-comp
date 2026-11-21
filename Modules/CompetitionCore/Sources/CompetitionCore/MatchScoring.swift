@@ -42,7 +42,6 @@ public struct MatchSeat: Codable, Equatable, Sendable {
 public struct MatchConfiguration: Codable, Equatable, Sendable {
     public let format: MatchFormat
     public let seats: [MatchSeat]
-    /// Inclusive last banked day; missing banked scores and later days are resolved zero contributions.
     public let leaveCutoffs: [UUID: Int]
 
     public init(format: MatchFormat, seats: [MatchSeat], leaveCutoffs: [UUID: Int] = [:]) throws {
@@ -147,7 +146,6 @@ public struct MatchScoreProjection: Equatable, Sendable {
 
 public enum MatchDayWinners: Equatable, Sendable {
     case unresolved
-    /// Live projections only; finished matches use the server's frozen result.
     case winners([MatchStandingSubject])
 }
 
@@ -201,7 +199,6 @@ public enum MatchScoring {
         return .unique(margin: current.centipoints - second)
     }
 
-    /// Accepted week-to-date totals, including provisional projections; no rounding or reduction.
     public static func teamShare(seat seatID: UUID, configuration: MatchConfiguration,
                                  days: [MatchDayScore], throughDay: Int) throws -> MatchTeamShare? {
         guard let seat = configuration.seats.first(where: { $0.id == seatID }) else { throw MatchScoringError.unknownSeat }
@@ -239,7 +236,6 @@ public enum MatchScoring {
                 switch value {
                 case let .centipoints(points): total += points
                 case .notSynced, .unavailable:
-                    // Leaving seals the bank: no later upload can fill a missing score.
                     if configuration.leaveCutoffs[seat.id] == nil { provisional = true }
                 case .afterLeave: break
                 }
@@ -251,7 +247,6 @@ public enum MatchScoring {
             let subject: MatchStandingSubject = configuration.format == .doubles ? .team(seat.team!) : .seat(seat.id)
             subjectTotals[subject, default: 0] += totals[seat.id]!
         }
-        // Stable order is solely for display; it never breaks a scoring tie.
         let ordered = subjectTotals.keys.sorted { lhs, rhs in
             if subjectTotals[lhs]! != subjectTotals[rhs]! { return subjectTotals[lhs]! > subjectTotals[rhs]! }
             switch (lhs, rhs) {

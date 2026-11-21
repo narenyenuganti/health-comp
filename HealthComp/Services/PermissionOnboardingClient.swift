@@ -2,14 +2,11 @@ import Dependencies
 import Foundation
 import HealthKit
 
-/// A first-run screen that explains an iOS permission before iOS asks.
 enum PermissionOnboardingStep: Equatable, Sendable {
     case health
     case notifications
 }
 
-/// What HealthKit will say. It never says whether reads were allowed, only
-/// whether iOS has asked.
 enum HealthAccessStatus: Equatable, Sendable {
     case unavailable
     case notRequested
@@ -18,19 +15,14 @@ enum HealthAccessStatus: Equatable, Sendable {
 
 struct PermissionOnboardingClient: Sendable {
     var requestHealthAccess: @Sendable () async -> Void
-    /// Records Not now on the notifications prompt.
     var deferNotifications: @Sendable () async -> Void
     var healthAccess: @Sendable () async -> HealthAccessStatus
     var notificationsDeferred: @Sendable () async -> Bool
 
-    /// The first run is Health only; notifications are asked once a match
-    /// with a person exists.
     static func steps(health: HealthAccessStatus) -> [PermissionOnboardingStep] {
         health == .notRequested ? [.health] : []
     }
 
-    /// `notificationsDeferred: true` keeps hosts that inject this, like the
-    /// local Test Lab, from ever showing the notifications prompt.
     static let inert = PermissionOnboardingClient(
         requestHealthAccess: {},
         deferNotifications: {},
@@ -49,8 +41,6 @@ extension PermissionOnboardingClient: DependencyKey {
         let deferredKey = "healthcomp.onboarding.notificationsDeferred"
         return PermissionOnboardingClient(
             requestHealthAccess: {
-                // iOS never says whether reads were allowed, so either answer
-                // moves on.
                 try? await healthStore.requestAuthorization(
                     toShare: [],
                     read: HealthKitProvider.competitionReadTypes()

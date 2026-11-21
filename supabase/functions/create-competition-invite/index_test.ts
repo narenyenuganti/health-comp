@@ -180,7 +180,6 @@ Deno.test("create from a challenge link sends its code, never an account id", as
   ]);
   assertEquals(calls[0].args.challenge_link_code, "Xb3kP9qL2mN8vR4tY6wZ1a");
 
-  // A reset (or unknown) code reads like any unavailable recipient.
   const reset = await createCompetitionInviteHandler(request(body), {
     createUserClient: () => client(null),
     createServiceClient: () => client({ message: "recipient_unavailable" }),
@@ -424,7 +423,6 @@ Deno.test("create maps divergent idempotency reuse without database details", as
 });
 
 Deno.test("create reports pending, overlap, reciprocal and unavailable recipients safely", async () => {
-  // Friend privacy refusals use the same opaque response on id and link paths.
   for (
     const recipient of [
       { recipientProfileId: "42000000-0000-4000-8000-000000000002" },

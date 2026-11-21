@@ -1,10 +1,5 @@
 import XCTest
 
-/// Nudge, end to end through Home's own reducer and match screens. The
-/// `nudge` Test Lab scenario scripts each person's answer: Riley and Morgan
-/// accept after 4 s, Sam fails once then accepts, Avery fails once then is
-/// refused, Casey is refused, the rest accept.
-/// Now is Sun Aug 16, 1:00 AM in Los Angeles.
 final class NudgeUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -34,7 +29,6 @@ final class NudgeUITests: XCTestCase {
         XCTAssertFalse(element("competition.nudge.error").exists)
 
         nudge.tap()
-        // Sending: the same button, disabled, so a second tap does nothing.
         XCTAssertTrue(nudge.exists)
         XCTAssertFalse(nudge.isEnabled)
         nudge.tap()
@@ -47,13 +41,11 @@ final class NudgeUITests: XCTestCase {
             1
         )
 
-        // The confirmation outlives leaving the screen.
         goBack()
         open("active", "Riley")
         XCTAssertTrue(element("competition.nudge.sent").waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["competition.nudge"].exists)
 
-        // It belongs to Riley's match only: the long-name match still offers one.
         goBack()
         open("active", "Alexandria")
         let other = app.buttons["competition.nudge"]
@@ -64,7 +56,6 @@ final class NudgeUITests: XCTestCase {
 
     func testFailedNudgeRetriesAndARefusalExplains() {
         launch()
-        // Sam has never uploaded: no freshness line, the button alone.
         open("active", "Sam")
         XCTAssertFalse(element("competition.updated").exists)
         let nudge = app.buttons["competition.nudge"]
@@ -85,7 +76,6 @@ final class NudgeUITests: XCTestCase {
         XCTAssertFalse(error.exists)
         XCTAssertFalse(nudge.exists)
 
-        // Casey's last day: the server says no.
         goBack()
         open("ends-today", "Casey")
         let casey = app.buttons["competition.nudge"]
@@ -96,7 +86,6 @@ final class NudgeUITests: XCTestCase {
         XCTAssertEqual(refused.label, "Casey doesn’t need a nudge right now.")
         XCTAssertFalse(app.buttons["competition.nudge"].exists)
         XCTAssertFalse(element("competition.nudge.sent").exists)
-        // The refusal's refresh publishes the same match; the note stays.
         XCTAssertFalse(app.buttons["competition.nudge"].waitForExistence(timeout: 2))
         XCTAssertTrue(refused.exists)
     }
@@ -113,7 +102,6 @@ final class NudgeUITests: XCTestCase {
         let nudge = app.buttons["competition.nudge"]
         XCTAssertTrue(nudge.waitForExistence(timeout: 3))
         XCTAssertEqual(nudge.label, "Nudge Morgan")
-        // Once, inside the panel under its text, never also under the scoreboard.
         XCTAssertEqual(app.buttons.matching(identifier: "competition.nudge").count, 1)
         XCTAssertGreaterThanOrEqual(nudge.frame.minY, tally.frame.maxY)
         XCTAssertLessThan(nudge.frame.minY - tally.frame.maxY, 40)
@@ -134,7 +122,6 @@ final class NudgeUITests: XCTestCase {
         XCTAssertFalse(avery.label.contains("Nothing for you to do"), avery.label)
         XCTAssertEqual(app.buttons["competition.nudge"].label, "Nudge Avery")
 
-        // Waiting on the stability check, not on Quinn: no nudge.
         goBack()
         open("tallying", "Quinn")
         let quinn = element("competition.tally")
@@ -147,7 +134,6 @@ final class NudgeUITests: XCTestCase {
 
     func testNoNudgeOnFreshScheduledOrSimulatedMatches() {
         launch()
-        // Jordan updated an hour ago.
         open("active", "Jordan")
         XCTAssertTrue(element("competition.updated").waitForExistence(timeout: 3))
         assertNoNudgeControl()
@@ -158,7 +144,6 @@ final class NudgeUITests: XCTestCase {
         assertNoNudgeControl()
         shot("none-scheduled-light-default")
 
-        // The same stale match on the simulated fixture.
         launch(.simulated)
         open("active", "Riley")
         XCTAssertTrue(element("competition.updated").waitForExistence(timeout: 3))
@@ -168,15 +153,12 @@ final class NudgeUITests: XCTestCase {
 
     func testTodayIsTheMatchTimeZonesDay() {
         launch()
-        // Sent Sat 8:00 PM here, which is Sun noon in Tokyo: still today there.
         open("active", "Kenji")
         let sent = element("competition.nudge.sent")
         XCTAssertTrue(sent.waitForExistence(timeout: 3))
         XCTAssertEqual(spaced(sent.label), "Nudged at Sat 8:00 PM. You can nudge again tomorrow.")
         XCTAssertFalse(app.buttons["competition.nudge"].exists)
 
-        // The server's time is already Monday: the tap still confirms, and
-        // the button doesn't come straight back.
         goBack()
         open("active", "Alexandria")
         let nudge = app.buttons["competition.nudge"]
@@ -189,8 +171,6 @@ final class NudgeUITests: XCTestCase {
         XCTAssertFalse(nudge.exists)
     }
 
-    // Light and dark at the default size and at AX5, every nudge state.
-    // Screenshots are attached as nudge-<screen>-<light|dark>-<default|ax5>.
     func testNudgeScreensLightDefault() throws {
         try captureNudgeScreens(dark: false, largest: false)
     }
@@ -269,8 +249,6 @@ final class NudgeUITests: XCTestCase {
         shot("tally-sent-\(suffix)")
         try audit("tally-sent-\(suffix)")
 
-        // Waiting for Avery to sync: the other tally copy, then a failure,
-        // then a refusal.
         goBack()
         open("tallying", "Avery")
         XCTAssertTrue(nudge.waitForExistence(timeout: 3))
@@ -293,16 +271,12 @@ final class NudgeUITests: XCTestCase {
         open("active", "Alexandria")
         XCTAssertTrue(nudge.waitForExistence(timeout: 3))
         scrollToElement(nudge)
-        // The scoreboard's name header predates the nudge; the audit flags it
-        // for any long name.
         shot("live-long-name-\(suffix)")
         try audit(
             "live-long-name-\(suffix)",
             preexistingClippedLabels: ["ALEXANDRIA MONTGOMERY-FEATHERSTONEHAUGH"]
         )
     }
-
-    // MARK: Helpers
 
     private enum Scenario: String {
         case remote = "nudge"
@@ -360,7 +334,6 @@ final class NudgeUITests: XCTestCase {
         }
     }
 
-    /// Times use a narrow no-break space before AM/PM.
     private func spaced(_ text: String) -> String {
         text.replacingOccurrences(of: "\u{202F}", with: " ")
     }
@@ -372,9 +345,6 @@ final class NudgeUITests: XCTestCase {
         add(attachment)
     }
 
-    /// Audits scroll the screen, so they run after the screenshot. Layout
-    /// audits for the whole screen; contrast for the nudge only, since
-    /// the rest of the screen predates it.
     private func audit(_ name: String, preexistingClippedLabels: Set<String> = []) throws {
         let bar = app.navigationBars.firstMatch.frame
         func ignored(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
@@ -383,7 +353,6 @@ final class NudgeUITests: XCTestCase {
             case .contrast:
                 return !element.identifier.hasPrefix("competition.nudge")
             case .textClipped:
-                // iOS truncates a long name in the navigation bar title.
                 return bar.contains(element.frame)
                     || preexistingClippedLabels.contains(element.label)
             default:
@@ -397,8 +366,6 @@ final class NudgeUITests: XCTestCase {
             do {
                 try app.performAccessibilityAudit(for: types, ignored)
             } catch let error as NSError where error.code == -56 {
-                // "Audit failed to complete in time": a loaded Mac, not a
-                // finding. One retry.
                 try app.performAccessibilityAudit(for: types, ignored)
             }
         }
@@ -406,7 +373,6 @@ final class NudgeUITests: XCTestCase {
 
     private func scrollToElement(_ element: XCUIElement) {
         for _ in 0..<24 {
-            // Clear of the home indicator, so screenshots show it whole.
             if element.exists, element.isHittable,
                app.frame.insetBy(dx: 0, dy: 40).contains(element.frame) { return }
             let collectionView = app.collectionViews.firstMatch

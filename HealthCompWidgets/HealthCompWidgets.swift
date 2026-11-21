@@ -2,8 +2,6 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
-// The extension only reads the app's snapshot file: no network, no HealthKit.
-
 @main
 struct HealthCompWidgetBundle: WidgetBundle {
     var body: some Widget {
@@ -27,19 +25,13 @@ struct CompetitionMatchWidget: Widget {
     }
 }
 
-// MARK: Person picker
-
-/// Someone you have a live, scheduled or recent match with. No directory and
-/// no lookup: the people come from the snapshot.
 struct CompetitionPersonEntity: AppEntity {
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "Person"
     static var defaultQuery = CompetitionPersonQuery()
 
-    /// The snapshot's `personID`, or `soonestID`.
     let id: String
     let name: String
 
-    /// "Ending soonest": nobody picked. Listed first, so a pick can be undone.
     static let soonestID = "soonest"
     static let soonest = CompetitionPersonEntity(id: soonestID, name: "Ending soonest")
 
@@ -49,8 +41,6 @@ struct CompetitionPersonEntity: AppEntity {
 }
 
 struct CompetitionPersonQuery: EntityQuery {
-    /// Every id gets an entity, so WidgetKit never drops a stored person and
-    /// silently falls back to the default match.
     func entities(for identifiers: [String]) async throws -> [CompetitionPersonEntity] {
         let snapshot = CompetitionWidgetSnapshot.load(from: CompetitionWidgetSnapshot.fileURL())
         return identifiers.map {
@@ -78,22 +68,17 @@ struct CompetitionWidgetIntent: WidgetConfigurationIntent {
     @Parameter(title: "Person")
     var person: CompetitionPersonEntity?
 
-    /// Nil for "Ending soonest".
     var personID: String? {
         person.flatMap { $0.id == CompetitionPersonEntity.soonestID ? nil : $0.id }
     }
 }
 
-// MARK: Timeline
-
 struct CompetitionWidgetEntry: TimelineEntry {
     let date: Date
     let snapshot: CompetitionWidgetSnapshot?
-    /// No name here: the view looks the person up in `snapshot`.
     let personID: String?
 
     static func sample(_ date: Date) -> Self {
-        // never tapped: placeholder and gallery entries aren't interactive
         Self(
             date: date,
             snapshot: .sample(now: date, url: URL(fileURLWithPath: "/")),
@@ -116,8 +101,6 @@ struct CompetitionWidgetProvider: AppIntentTimelineProvider {
         )
     }
 
-    /// Now, plus one entry at each day start, end and result leaving, so the
-    /// widget moves on at the match calendar's midnight without the app.
     func timeline(for configuration: CompetitionWidgetIntent, in context: Context) async -> Timeline<CompetitionWidgetEntry> {
         let now = Date()
         let snapshot = CompetitionWidgetSnapshot.load(from: CompetitionWidgetSnapshot.fileURL())

@@ -1,31 +1,20 @@
 import SwiftUI
 import UIKit
 
-/// L2 · Ring code. Color always means you: Move, Exercise and Stand for your
-/// ring detail, amber for your score. The opponent and all structure stay
-/// neutral, so no color here carries a second meaning.
 enum Theme {
     static let move = Color(uiColor: UIColor(hex: 0xE4003A))
     static let exercise = Color(uiColor: UIColor(hex: 0x009A4E))
     static let stand = Color(uiColor: UIColor(hex: 0x0072BC))
-    /// Sleep beta: your night, beside the three rings. The one colour added
-    /// since the rings (owner, 2026-11-15).
     static let sleep = dynamic(light: 0x5856D6, dark: 0x7D7AFF)
 
-    /// Your score, name and wins. Light mode darkens amber so text keeps 4.5:1
-    /// on ground, panel and control.
     static let you = dynamic(light: 0x8F5C00, dark: 0xF2A100)
-    /// Amber fills stay bright in both modes; put `onYouFill` content on them.
     static let youFill = Color(uiColor: UIColor(hex: 0xF2A100))
     static let onYouFill = Color(uiColor: UIColor(hex: 0x111111))
 
     static let inkUI = UIColor(light: 0x111111, dark: 0xF5F5F0)
     static let groundUI = UIColor(light: 0xFAFAF7, dark: 0x0F0F10)
-    /// Primary text, the opponent, and neutral primary buttons.
     static let ink = Color(uiColor: inkUI)
     static let onInk = dynamic(light: 0xFAFAF7, dark: 0x0F0F10)
-    // Increase Contrast steps the greys and strokes to stronger values
-    // already in this palette; the default look is unchanged.
     static let secondary = dynamic(light: 0x5E5E62, dark: 0xA3A3A8, highContrast: (0x3A3A40, 0xCFCFC9))
     static let tertiary = dynamic(light: 0x66666B, dark: 0x8E8E93, highContrast: (0x5E5E62, 0xA3A3A8))
     static let faint = dynamic(light: 0xB8B8B2, dark: 0x48484D, highContrast: (0x8E8E93, 0x6E6E73))
@@ -35,8 +24,6 @@ enum Theme {
     static let hairline = dynamic(light: 0xDEDED8, dark: 0x2C2C30, highContrast: (0xB8B8B2, 0x48484D))
     static let track = dynamic(light: 0xE2E2DC, dark: 0x26262A, highContrast: (0xCFCFC9, 0x3A3A40))
     static let outline = dynamic(light: 0xCFCFC9, dark: 0x3A3A40, highContrast: (0x8E8E93, 0x6E6E73))
-    /// Behind the belt art: the dark ground in light mode, the panel in dark,
-    /// where the ground would erase the card's top edge.
     static let beltWell = dynamic(light: 0x0F0F10, dark: 0x19191B)
 
     private static func dynamic(
@@ -48,7 +35,6 @@ enum Theme {
     }
 
 #if !os(watchOS)
-    /// Opaque bars in the ground color so each screen reads as one surface.
     static func applyNavigationBarAppearance() {
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
@@ -74,14 +60,12 @@ extension UIColor {
         )
     }
 
-    /// `highContrast` replaces both values under Increase Contrast.
     convenience init(
         light: UInt32,
         dark: UInt32,
         highContrast: (light: UInt32, dark: UInt32)? = nil
     ) {
 #if os(watchOS)
-        // watchOS is always dark and has no dynamic colors.
         self.init(hex: dark)
 #else
         self.init { traits in
@@ -95,11 +79,8 @@ extension UIColor {
 }
 
 extension Font {
-    /// Scoreboard numerals: SF Pro Compressed, heavy. Size it with
-    /// `@ScaledMetric` so it still follows Dynamic Type.
     static func score(size: CGFloat) -> Font {
 #if os(watchOS)
-        // `.system` falls back to SF Compact here; a text style keeps Compressed.
         Font(UIFont.preferredFont(forTextStyle: .largeTitle).withSize(size))
             .weight(.heavy).width(.compressed)
 #else
@@ -107,12 +88,9 @@ extension Font {
 #endif
     }
 
-    /// Section and status labels: SF Pro Condensed, bold. Use the
-    /// `.themeLabel()` view modifier, which adds the 1.2 tracking.
     static let themeLabel = Font.footnote.weight(.bold).width(.condensed)
 }
 
-/// The person's System / Light / Dark choice from Account → Appearance.
 enum AppAppearance: String, CaseIterable, Identifiable {
     case system
     case light
@@ -139,13 +117,8 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     }
 }
 
-/// The mark: three ring bars (Move, Exercise, Stand) facing one neutral
-/// opponent block. Geometry lives in a 100×80 box.
 struct BrandMark: View {
-    /// Like the website, the ring bars grow out of the slash, where all
-    /// three end: once on appear, again on each tap.
     var grows = false
-    /// The mark as a spinner: while true, the bars keep growing out of the slash.
     var spins = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -170,7 +143,6 @@ struct BrandMark: View {
         .contentShape(Rectangle())
         .onAppear(perform: play)
         .task(id: spins) {
-            // One lap is the keyframes' 0.75 s. Reduce Motion leaves it still.
             while spins, !reduceMotion, !Task.isCancelled {
                 plays += 1
                 try? await Task.sleep(for: .seconds(0.75))
@@ -184,7 +156,6 @@ struct BrandMark: View {
         if grows && !reduceMotion { plays += 1 }
     }
 
-    // The website's 450 ms cubic-bezier(.25, 1.2, .5, 1), which overshoots.
     @KeyframeTrackContentBuilder<Double>
     private static func grow(after delay: Double) -> some KeyframeTrackContent<Double> {
         MoveKeyframe(0)
@@ -206,11 +177,7 @@ struct MarkPolygon: Shape {
     static let block: [(CGFloat, CGFloat)] = [(63.4, 8), (91.4, 8), (78.6, 72), (50.6, 72)]
 
     let points: [CGPoint]
-    /// Bars scale toward their right edge: corners 0 and 3 slide toward 1 and 2.
     let growth: CGFloat
-    /// Launch: how far the shape has left the slash, in the 100-wide box.
-    /// Leftward carries the right edge (a bar), rightward the left edge (the
-    /// block), and `stretch` lengthens the shape away from the slash.
     let shift: CGFloat
     let stretch: CGFloat
 
@@ -253,8 +220,6 @@ struct MarkPolygon: Shape {
     }
 }
 
-/// A bar with the mark's 12° slant. Half the slant extends past each side,
-/// so neighbouring bars leave a slash-shaped gap like the logo.
 struct SlantedBar: Shape {
     func path(in rect: CGRect) -> Path {
         let inset = rect.height * tan(12 * .pi / 180) / 2
@@ -268,7 +233,6 @@ struct SlantedBar: Shape {
     }
 }
 
-/// Primary actions are neutral; color is reserved for you and your rings.
 struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -310,7 +274,6 @@ struct SecondaryButtonStyle: ButtonStyle {
     }
 }
 
-/// Rare or destructive text actions. Neutral: colour means you.
 struct QuietButtonStyle: ButtonStyle {
     var color = Theme.secondary
     @Environment(\.isEnabled) private var isEnabled
@@ -328,8 +291,6 @@ struct QuietButtonStyle: ButtonStyle {
 }
 
 private extension View {
-    /// The shared buttons' press: the opacity dip, a small scale (skipped
-    /// under Reduce Motion) and a light tap as the finger lands.
     func pressFeel(_ isPressed: Bool, isEnabled: Bool, reduceMotion: Bool) -> some View {
         scaleEffect(isPressed && !reduceMotion ? 0.97 : 1)
             .opacity(isEnabled ? (isPressed ? 0.8 : 1) : 0.45)
@@ -339,9 +300,6 @@ private extension View {
     }
 }
 
-/// A button label that waits. The words stay, dimmed by the disabled style,
-/// and the spinner replaces them only once the wait outlasts 200 ms. They keep
-/// the width and, at opacity 0, the accessibility name.
 struct BusyLabel: View {
     let title: String
     let isBusy: Bool
@@ -367,8 +325,6 @@ struct BusyLabel: View {
     }
 }
 
-/// A condensed section label. Pass the exact string: VoiceOver and the UI
-/// tests read it as written.
 struct SectionLabel: View {
     let title: String
 
@@ -384,7 +340,6 @@ struct SectionLabel: View {
     }
 }
 
-/// The chevron on a row that opens something. Decoration: the row says what it opens.
 struct DisclosureChevron: View {
     var body: some View {
         Image(systemName: "chevron.right")
@@ -395,12 +350,10 @@ struct DisclosureChevron: View {
 }
 
 extension View {
-    /// The label font with its tracking, so the two can't drift apart.
     func themeLabel(tracking: CGFloat = 1.2) -> some View {
         font(.themeLabel).tracking(tracking)
     }
 
-    /// The raised surface used for cards and grouped rows.
     func themePanel(cornerRadius: CGFloat = 20) -> some View {
         background(
             Theme.panel,

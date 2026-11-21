@@ -69,8 +69,6 @@ final class CompetitionPresentationTests: XCTestCase {
         }
         .environment(\.dynamicTypeSize, .large)
 
-        // A finite, unattached host drives real SwiftUI layout without a window.
-        // Only the test parent sends special proposals to its LayoutSubview.
         let host = UIHostingController(rootView: root)
         host.loadViewIfNeeded()
         host.view.frame = CGRect(origin: .zero, size: canvasSize)
@@ -361,8 +359,6 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(timing(.active(dayOrdinal: 4), phone: "Asia/Tokyo"), "Ends Tue night PST")
         XCTAssertEqual(timing(.endsToday, phone: "Asia/Tokyo"), "Ends at midnight PST")
         XCTAssertEqual(timing(.scheduled, phone: "Asia/Tokyo"), "Starts Wed, Oct 28 PDT")
-        // Same offset under another zone name: no suffix. (Not Vancouver:
-        // current tzdata keeps British Columbia on -07 from Nov 2026.)
         XCTAssertEqual(timing(.active(dayOrdinal: 4), phone: "US/Pacific"), "Ends Tue night")
         XCTAssertEqual(timing(.endsToday, phone: "US/Pacific"), "Ends at midnight")
         XCTAssertEqual(timing(.scheduled, phone: "US/Pacific"), "Starts Wed, Oct 28")
@@ -689,7 +685,6 @@ final class CompetitionPresentationTests: XCTestCase {
             "Updated 6:30 AM"
         )
 
-        // Synced rings that can't be scored still show, with no total.
         let paused = try makeSnapshot(
             moveMode: .activeEnergyKilocalories,
             standMode: .standHours,
@@ -735,7 +730,6 @@ final class CompetitionPresentationTests: XCTestCase {
             era: 1, year: 2026, month: 12, day: 25,
             timeZoneIdentifier: "America/Los_Angeles"
         )
-        // 5 PM Dec 31 in LA is already 2027 in UTC.
         let laEvening = try XCTUnwrap(iso.date(from: "2027-01-01T01:00:00Z"))
         XCTAssertEqual(
             competitionDayText(dec31, now: laEvening, locale: en, timeZone: la),
@@ -745,13 +739,11 @@ final class CompetitionPresentationTests: XCTestCase {
             normalized(competitionWeekText(dec25, dec31, now: laEvening, locale: en, timeZone: la)),
             "Dec 25 – 31"
         )
-        // 8 AM Jan 1 in Tokyo is still 2026 in UTC.
         let tokyoMorning = try XCTUnwrap(iso.date(from: "2026-12-31T23:00:00Z"))
         XCTAssertEqual(
             competitionDayText(jan1, now: tokyoMorning, locale: en, timeZone: tokyo),
             "Fri, Jan 1"
         )
-        // A different year still shows.
         XCTAssertEqual(
             competitionDayText(dec31, now: tokyoMorning, locale: en, timeZone: tokyo),
             "Thu, Dec 31, 2026"
@@ -806,8 +798,6 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(line(you: nil, them: them), "Hermes: updated Fri 11:40 PM")
         XCTAssertNil(line(you: nil, them: nil))
     }
-
-    // MARK: What it takes
 
     func testWhatItTakesNamesThePointsAndTheRoomiestRings() throws {
         let takes = try XCTUnwrap(competitionWhatItTakes(
@@ -957,7 +947,6 @@ final class CompetitionPresentationTests: XCTestCase {
         ))
         XCTAssertEqual(exact.suggestion, "About 180 kcal of Move or 9 min of Exercise.")
 
-        // 7 / 100 * 100 is 7.000000000000001 in doubles; without the 1e-9 it reads 8 min.
         let epsilon = try XCTUnwrap(competitionWhatItTakes(
             takesCompetition(user: 1_000, opponent: 1_006, accepted: try takesRings(move: (0, 600), exercise: (0, 100))),
             locale: en
@@ -999,8 +988,6 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
-    /// One live day against "Sam". `latest` defaults to `accepted`; pass
-    /// `.some(nil)` for no latest reading.
     private func takesCompetition(
         user: Double = 1_112,
         opponent: Double = 1_150,
@@ -1253,14 +1240,12 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertFalse(canNudge(updatedAgo: 12 * 3_600))
         XCTAssertFalse(canNudge(updatedAgo: 12 * 3_600 - 60))
         XCTAssertTrue(canNudge(.endsToday, updatedAgo: 13 * 3_600))
-        // Never uploaded: counted from Day 1's midnight (Aug 17, 15 h 12 m ago).
         XCTAssertTrue(canNudge(updatedAgo: nil, dayOneAgo: 13 * 3_600))
         XCTAssertFalse(canNudge(updatedAgo: nil, dayOneAgo: nil))
         XCTAssertFalse(canNudge(.scheduled, updatedAgo: 13 * 3_600))
         XCTAssertFalse(
             canNudge(.completed(outcome: .win, basis: .bestAvailable, completedAt: now), updatedAgo: 13 * 3_600)
         )
-        // Day 1 started 2 hours ago.
         let early = Date(timeIntervalSince1970: 1_786_924_800 + 2 * 3_600)
         XCTAssertFalse(competitionCanNudge(nudgePresentation(
             lifecycle: .active(dayOrdinal: 1),
@@ -1305,8 +1290,6 @@ final class CompetitionPresentationTests: XCTestCase {
     func testNudgeSentAfterMidnightOnTheServerStillShowsAsSent() throws {
         let en = Locale(identifier: "en_US")
         let zone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
-        // The last projection is Sat 11:50 PM in Los Angeles; the server
-        // accepted the nudge at Sun 12:01 AM.
         let projected = Date(timeIntervalSince1970: 1_786_863_000)
         let nudgedAt = projected.addingTimeInterval(11 * 60)
         let display = competitionNudgeDisplay(
@@ -1346,12 +1329,10 @@ final class CompetitionPresentationTests: XCTestCase {
             .button(error: nil, isSending: true)
         )
         XCTAssertEqual(competitionNudgeDisplay(nil, competition: stale), .button(error: nil, isSending: false))
-        // A refusal from yesterday no longer applies.
         XCTAssertEqual(
             competitionNudgeDisplay(.notNeeded(now.addingTimeInterval(-86_400)), competition: stale),
             .button(error: nil, isSending: false)
         )
-        // Once they update, the whole control goes, confirmation included.
         let fresh = nudgePresentation(
             lifecycle: .active(dayOrdinal: 2),
             evaluatedAt: now,
@@ -1370,7 +1351,6 @@ final class CompetitionPresentationTests: XCTestCase {
                 opponentRevealedPoints: them
             )
         }
-        // Today (Day 7) waits until it ends.
         let week = [
             day(1, 124, 100), day(2, 100, 137), day(3, 100, 107), day(4, 130, 100),
             day(5, 100, 128), day(6, 166, 100), day(7, 300, 0),
@@ -1382,8 +1362,6 @@ final class CompetitionPresentationTests: XCTestCase {
             XCTAssertEqual(change, expected, accuracy: 0.0001)
         }
 
-        // Through a tie, the change sits on the tie; a missing score counts 0
-        // and the line stops at the first day that hasn't happened.
         let tied = try XCTUnwrap(competitionLeadLine(
             [day(1, 110, 100), day(2, 90, 100), day(3, nil, 5), day(4, nil, nil, occurred: false)],
             currentDayOrdinal: nil
@@ -1395,7 +1373,6 @@ final class CompetitionPresentationTests: XCTestCase {
     }
 
     func testLeadMomentsAreTheirBiggestLeadThenYourBestDay() throws {
-        // Oct 25 – 31 with Sam, through Thursday (Day 5): Sun 25 Oct is Day 1.
         func day(_ ordinal: Int, _ you: Double?, _ them: Double?, occurred: Bool = true) -> LocalCompetitionDayPresentation {
             LocalCompetitionDayPresentation(
                 day: try! CompetitionDay(era: 1, year: 2026, month: 10, day: 24 + ordinal, timeZoneIdentifier: "UTC"),
@@ -1417,8 +1394,6 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(moments.map { weekdayText($0.day, locale: en) }, ["Tue", "Wed"])
         XCTAssertEqual(moments.map(\.text), ["Sam’s biggest lead, 40", "Your best day, 434"])
 
-        // Never behind: only your best day. Your best day on their biggest
-        // lead steps aside rather than stack.
         let won = [day(1, 300, 100), day(2, 200, 100)]
         let ahead = try XCTUnwrap(competitionLeadLine(won, currentDayOrdinal: 3))
         let aheadMoments = competitionLeadMoments(ahead, days: won, opponentName: "Sam")
@@ -1433,12 +1408,9 @@ final class CompetitionPresentationTests: XCTestCase {
 
     func testLeadMomentMovesOffASlashButStaysOnTheLineOtherwise() {
         let axis: CGFloat = 60
-        // Clear of every slash: on the line.
         XCTAssertEqual(competitionLeadMomentY(at: CGPoint(x: 100, y: 66), axis: axis, changes: [160], height: 120), 66)
-        // Over a slash, below the axis: moves down, clear of it.
         let below = competitionLeadMomentY(at: CGPoint(x: 100, y: 66), axis: axis, changes: [104], height: 120)
         XCTAssertGreaterThanOrEqual(below - axis, 25)
-        // No room below: goes above instead.
         let above = competitionLeadMomentY(at: CGPoint(x: 100, y: 104), axis: 100, changes: [104], height: 120)
         XCTAssertGreaterThanOrEqual(100 - above, 25)
     }
@@ -1715,8 +1687,6 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
-    // MARK: Belt
-
     private func beltWeek(
         _ id: Int,
         _ outcome: CompetitionOutcome,
@@ -1748,10 +1718,10 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(cards, [
             .earned,
             .defended(1),
-            nil,  // a tie keeps the belt but isn't a defense
+            nil,
             .defended(2),
             .lost(weeks: 4, defenses: 2),
-            nil,  // their defense earns you no card
+            nil,
             .taken(weeks: 2, defenses: 1),
         ])
         XCTAssertEqual(belt(6, of: weeks)?.holder, .you)
@@ -1790,7 +1760,6 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(belt.holder, .you)
         XCTAssertEqual(belt.current, CompetitionBeltReign(holder: .you, weeks: 1, startID: weeks[5].id))
         XCTAssertEqual(belt.changes, 3)
-        // On equal length the more recent reign is the longest.
         XCTAssertEqual(
             belt.longest,
             CompetitionBeltReign(holder: .them, weeks: 2, startID: weeks[3].id, defenses: 1)
@@ -1825,7 +1794,6 @@ final class CompetitionPresentationTests: XCTestCase {
     }
 
     func testBeltOrdersWeeksByEndThenID() throws {
-        // Weeks 3 and 4 share an end; they fold in uuid order (3, then 4).
         let weeks = [
             beltWeek(4, .loss, start: (9, 8)),
             beltWeek(1, .win, start: (9, 1)),
@@ -1958,7 +1926,6 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(chip([(.win, 1), (.tie, 0)]), "You hold the belt")
         XCTAssertEqual(chip([(.win, 1), (.win, 1)]), "You hold the belt · 1 defense")
         XCTAssertEqual(chip([(.loss, 1), (.loss, 1), (.loss, 1)]), "Sam holds the belt · 2 defenses")
-        // A new reign starts the count again.
         XCTAssertEqual(chip([(.win, 1), (.win, 1), (.loss, 1)]), "Sam holds the belt")
     }
 
@@ -1966,7 +1933,6 @@ final class CompetitionPresentationTests: XCTestCase {
         let belt = titleFold([(.win, 412.4), (.win, 10), (.tie, 0), (.loss, 268), (.loss, 1)]).belt
         let rows = competitionTaleOfTheTape(belt)
 
-        // Four rows about the belt: the record is the page's header.
         XCTAssertEqual(rows.map(\.label), [
             "Title reigns", "Title defenses", "Longest reign", "Biggest win",
         ])
@@ -1976,7 +1942,6 @@ final class CompetitionPresentationTests: XCTestCase {
             competitionTaleOfTheTape(titleFold([(.win, 5)]).belt).map(\.them),
             ["0", "0", "–", "–"]
         )
-        // A win under half a point keeps its decimals rather than read +0.
         XCTAssertEqual(competitionTaleOfTheTape(titleFold([(.win, 0.4)]).belt).map(\.you).last, "+" + competitionPointsText(0.4, fractionDigits: 2))
     }
 
@@ -2037,7 +2002,6 @@ final class CompetitionPresentationTests: XCTestCase {
             XCTAssertLessThan(clip.settle, duration, name)
             XCTAssertFalse(clip.impacts.isEmpty, name)
             XCTAssertNotNil(UIImage(named: "\(name)-final.jpg"), name)
-            // The words land on the last settle beat, where the hold starts.
             let json = try XCTUnwrap(Bundle.main.url(forResource: name, withExtension: "json"))
             let file = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: json)) as? [String: Any])
             let holdStart = try XCTUnwrap(file["holdStart"] as? Double, name)
@@ -2149,7 +2113,6 @@ final class CompetitionPresentationTests: XCTestCase {
             showsFriends: Binding(get: { showsFriends }, set: { showsFriends = $0 })
         )
 
-        // The trap: a route the setter doesn't model pops itself.
         XCTAssertEqual(stack.wrappedValue, [.friends])
         stack.wrappedValue = [.friends]
         XCTAssertTrue(showsFriends)
@@ -2185,31 +2148,26 @@ final class CompetitionPresentationTests: XCTestCase {
             openCompetition: { openedCompetitions.append($0) }
         )
 
-        // Search People pushes Friends over the Challenge sheet.
         stack.wrappedValue = [.friends]
         XCTAssertEqual(stack.wrappedValue, [.friends])
         XCTAssertTrue(isPresented)
         XCTAssertEqual(closedFriendsCount, 0)
 
-        // Opening a profile from search keeps Friends underneath without clearing search.
         stack.wrappedValue = [.friends, .profile("p")]
         XCTAssertEqual(stack.wrappedValue, [.friends, .profile("p")])
         XCTAssertTrue(isPresented)
         XCTAssertEqual(closedFriendsCount, 0)
 
-        // Back from the profile returns one step to Friends.
         stack.wrappedValue = [.friends]
         XCTAssertEqual(stack.wrappedValue, [.friends])
         XCTAssertTrue(isPresented)
         XCTAssertEqual(closedFriendsCount, 0)
 
-        // Back from Friends returns one step to the Challenge sheet (still presented) and closes Friends.
         stack.wrappedValue = []
         XCTAssertEqual(stack.wrappedValue, [])
         XCTAssertTrue(isPresented)
         XCTAssertEqual(closedFriendsCount, 1)
 
-        // Tapping a match from a person's rivalry weeks closes the sheet, cleans up Friends, and opens the match.
         stack.wrappedValue = [.friends, .profile("p"), .person("p")]
         stack.wrappedValue = [.friends, .profile("p"), .person("p"), .competition(id)]
         XCTAssertEqual(stack.wrappedValue, [])
@@ -2263,14 +2221,11 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(blocker(.scheduled), "In a match with you")
         XCTAssertEqual(blocker(.active(dayOrdinal: 3)), "In a match with you")
         XCTAssertEqual(blocker(.endsToday), "In a match with you")
-        // As the server: tallying and finished weeks don't stop a new challenge.
         XCTAssertNil(blocker(.tallying(startedAt: at)))
         XCTAssertNil(blocker(.completed(outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: at)))
         XCTAssertNil(blocker(.expired(at: at, direction: .outgoing)))
         XCTAssertNil(blocker(.scheduled, identity: "other"), "Only their own matches count")
     }
-
-    // MARK: Home and History
 
     func testHomeLayoutSingleLiveMatchIsTheHero() {
         let active = homePresentation(id: 1, lifecycle: .active(dayOrdinal: 4))
@@ -2426,7 +2381,6 @@ final class CompetitionPresentationTests: XCTestCase {
             competitionHomeLayout(homeDashboard(competitions), now: homeNow).shape
         }
 
-        // The next day, or a new `evaluatedAt`, moves nothing on Home.
         XCTAssertEqual(
             shape([hermes]),
             shape([homePresentation(
@@ -2435,7 +2389,6 @@ final class CompetitionPresentationTests: XCTestCase {
                 evaluatedAt: homeNow.addingTimeInterval(60)
             )])
         )
-        // The same match moving from hero to Live does.
         XCTAssertNotEqual(shape([hermes]), shape([hermes, andy]))
         XCTAssertNotEqual(
             shape([hermes]),
@@ -2509,7 +2462,6 @@ final class CompetitionPresentationTests: XCTestCase {
         let result = try XCTUnwrap(snapshot.matches.first)
         XCTAssertEqual(result.final?.outcome, .win)
         XCTAssertEqual(result.final?.leavesAt, homeInstant("2026-11-03T08:00:00Z"))
-        // The tally finished on the 3rd day after Day 7: two days after that.
         XCTAssertEqual(snapshot.matches[1].final?.leavesAt, homeInstant("2026-11-04T08:00:00Z"))
         let week = snapshot.matches[2]
         XCTAssertNil(week.final)
@@ -2795,7 +2747,6 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
-    /// A match in an America/Los_Angeles calendar starting on 2026 (month, day).
     private func homePresentation(
         id: Int,
         name: String = "Hermes",
@@ -2988,7 +2939,6 @@ final class CompetitionPresentationTests: XCTestCase {
             timeZone: utc
         )
         XCTAssertEqual(text.title, "Alex sent a rematch")
-        // ICU puts a narrow no-break space before PM.
         XCTAssertEqual(
             text.detail?.replacingOccurrences(of: "\u{202F}", with: " "),
             "Expires Sun 10:00 PM"
@@ -3019,7 +2969,6 @@ final class CompetitionPresentationTests: XCTestCase {
             competitionInviteFailureText(.connection, opponentName: "Hermes"),
             "Couldn’t send the challenge. Check your connection and try again."
         )
-        // Test builds are Debug, so the configuration line names the build.
         XCTAssertEqual(
             competitionInviteFailureText(.unavailable, opponentName: "Hermes"),
             "Challenge links are not configured for this build."
@@ -3033,8 +2982,6 @@ final class CompetitionPresentationTests: XCTestCase {
             "You already challenged Hermes. It expires 24 hours after you sent it."
         )
     }
-
-    // MARK: Reactions
 
     private static let reactionMatchID = CompetitionID(
         UUID(uuidString: "86000000-0000-4000-8000-000000000001")!
@@ -3120,9 +3067,7 @@ final class CompetitionPresentationTests: XCTestCase {
         let marked = seen.marking(match)
         XCTAssertEqual(marked.seenAt[Self.reactionMatchID.rawValue.uuidString.lowercased()], 200)
         XCTAssertNil(competitionUnseenReaction(match, seen: marked))
-        // Marking an older list never moves the mark back.
         XCTAssertEqual(marked.marking(reactionPresentation(reactions: [older])), marked)
-        // Your own reactions alone leave the marks alone.
         XCTAssertEqual(seen.marking(reactionPresentation(reactions: [yours])), seen)
 
         let changed = reactionPresentation(reactions: [reaction(.day(2), .fire, at: 250), older])
@@ -3183,10 +3128,8 @@ final class CompetitionPresentationTests: XCTestCase {
         let rained = CompetitionMotionSeen().raining([match])
         XCTAssertNil(competitionReactionRainBatch([match], seen: seen, motionSeen: rained))
         XCTAssertEqual(CompetitionMotionSeen(rawValue: rained.rawValue), rained)
-        // The rain mark leaves the Week's alone.
         XCTAssertFalse(rained.weekGained(match))
 
-        // A newer one rains alone; one already seen on its screen never does.
         let changed = reactionPresentation(reactions: [reaction(.day(2), .fire, at: 250), older])
         XCTAssertEqual(
             competitionReactionRainBatch([changed], seen: seen, motionSeen: rained)?.kinds,
@@ -3423,8 +3366,6 @@ private struct FinalScoreProbeOwner: View {
     }
 }
 
-// MARK: - Practice match
-
 extension CompetitionPresentationTests {
     private func practicePresentation(
         id: Int,
@@ -3440,7 +3381,6 @@ extension CompetitionPresentationTests {
         )
     }
 
-    /// "Nothing leaves this iPhone" on the practice invite depends on this.
     func testPracticeNeverReachesTheWidgetsOrTheWatch() {
         let practice = practicePresentation(id: 1, lifecycle: .active(dayOrdinal: 3), start: (10, 28))
         XCTAssertNil(CompetitionWidgetSnapshot.Match(presentation: practice))
@@ -3508,7 +3448,6 @@ extension CompetitionPresentationTests {
             start: (10, 21)
         )
         let best = week(10, (10, 28), 1_400)
-        // Week 1 is the fifth back, so its 5,000 never counts.
         XCTAssertEqual(
             competitionPersonalBestText(for: best, in: past + [practice, best], locale: en),
             "Your best week of your last 5, 400 points above your average"
@@ -3522,7 +3461,6 @@ extension CompetitionPresentationTests {
         XCTAssertNil(competitionPersonalBestText(for: usual, in: past + [usual], locale: en))
         let won = week(10, (10, 28), 1_400, .win)
         XCTAssertNil(competitionPersonalBestText(for: won, in: past + [won], locale: en))
-        // Two earlier weeks, and one that overlaps this one, aren't enough.
         let overlapping = week(11, (10, 27), 100)
         XCTAssertNil(
             competitionPersonalBestText(
@@ -3614,7 +3552,6 @@ extension CompetitionPresentationTests {
         XCTAssertEqual(beside.live.map(\.id), [livePractice.id])
         XCTAssertEqual(beside.upNext, [])
 
-        // The practice starts sooner, but the real match leads.
         let bothScheduled = layout([scheduledPractice, realScheduled])
         XCTAssertEqual(bothScheduled.hero?.id, realScheduled.id)
         XCTAssertEqual(bothScheduled.upNext.map(\.id), [scheduledPractice.id])
@@ -3633,7 +3570,6 @@ extension CompetitionPresentationTests {
         let real = homePresentation(id: 2, lifecycle: .endsToday, start: (10, 24))
         XCTAssertNil(CompetitionWidgetSnapshot.Match(presentation: practice))
         XCTAssertNotNil(CompetitionWidgetSnapshot.Match(presentation: real))
-        // 6 PM on the last day: a real match's card would start.
         func steps(_ p: LocalCompetitionPresentation) -> [CompetitionLiveActivityStep] {
             CompetitionLiveActivityPlanner.steps(
                 presentations: [p],
@@ -3739,13 +3675,11 @@ extension CompetitionPresentationTests {
         XCTAssertEqual(rematch.yourTape, "1–2")
         XCTAssertEqual(rematch.theirTape, "2–1 · 1 defense")
 
-        // Ties only: a record, but no belt to put on the line.
         let tied = try XCTUnwrap(versusContent(scheduled, with: [beltWeek(1, .tie, start: (9, 1))]))
         XCTAssertNil(tied.headline)
         XCTAssertNil(tied.holder)
         XCTAssertEqual(tied.theirTape, "0–0–1")
 
-        // An earlier match still running could move the belt: nothing is claimed.
         let earlier = homePresentation(
             id: 8, name: "Sam", identity: identity, lifecycle: .active(dayOrdinal: 5), start: (10, 24)
         )

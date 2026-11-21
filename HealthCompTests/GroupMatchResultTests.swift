@@ -14,7 +14,6 @@ final class GroupMatchResultTests: XCTestCase {
         XCTAssertEqual(won.label, "UNANIMOUS DECISION")
         XCTAssertEqual(won.title, "YOUR WINNER")
         XCTAssertEqual(won.heading, "YOU VS SAM VS PRIYA VS LEO · FINAL BELL")
-        // Last place loses its light first; the last two walk to the referee.
         XCTAssertEqual(won.ring.clock.cuts, [4: 0.8, 3: 1.5])
         XCTAssertEqual(won.ring.clock.walk, 2.2)
         XCTAssertEqual(won.ring.clock.raise, 3.4, accuracy: 0.001)
@@ -26,7 +25,6 @@ final class GroupMatchResultTests: XCTestCase {
         XCTAssertEqual(tied.title, "IT’S A DRAW")
         XCTAssertEqual(tied.ring.stances.map(\.won), [true, true, false, false])
 
-        // You and Priya share 3rd: both lights cut together, Leo's arm goes up.
         let third = try XCTUnwrap(CompetitionJudgesBout(GroupMatchFixtures.routed(.resultFFATiedThird)!))
         XCTAssertEqual(third.title, "THE WINNER, LEO")
         XCTAssertEqual(third.ring.clock.cuts, [3: 0.8])
@@ -41,13 +39,11 @@ final class GroupMatchResultTests: XCTestCase {
         XCTAssertEqual(
             try XCTUnwrap(CompetitionJudgesBout(GroupMatchFixtures.routed(.resultDoublesTied)!)).title, "IT’S A DRAW"
         )
-        // What VoiceOver hears in place of the reveal.
         XCTAssertTrue(competitionJudgesAnnouncement(won).hasPrefix("You win, unanimous decision, you "))
         XCTAssertTrue(competitionJudgesAnnouncement(tied).hasPrefix("It is a draw, you "))
         XCTAssertTrue(competitionJudgesAnnouncement(third).hasPrefix("Leo wins, "))
         XCTAssertTrue(competitionJudgesAnnouncement(doubles).hasPrefix("You win, "))
         XCTAssertTrue(competitionJudgesAnnouncement(doubles).contains("you and Priya "))
-        // No result yet, no reveal.
         XCTAssertNil(CompetitionJudgesBout(GroupMatchFixtures.routed(.liveFFA)!))
     }
 
@@ -63,19 +59,16 @@ final class GroupMatchResultTests: XCTestCase {
                 label: ""
             )
         }
-        // A tie for second: the lights cut until the winner stands alone, with no referee.
         let second = bout([1, 2, 2, 4], cards: []).ring
         XCTAssertFalse(second.clock.hasReferee)
         XCTAssertNil(second.clock.walk)
         XCTAssertEqual(second.clock.cuts, [4: 0.8, 2: 1.5])
         XCTAssertEqual(second.clock.raise, 2.5, accuracy: 0.001)
         XCTAssertEqual(second.stances.map(\.isOut), [false, true, true, true])
-        // Three share first: only last place is cut and all three raise.
         let shared = bout([1, 1, 1, 4], cards: []).ring
         XCTAssertEqual(shared.clock.cuts, [4: 0.8])
         XCTAssertEqual(shared.clock.raise, 1.8, accuracy: 0.001)
         XCTAssertEqual(shared.stances.map(\.isOut), [false, false, false, true])
-        // Cards that add up the same on different days are even, not won.
         let even = CompetitionJudgesBout.Side(
             label: "", isYours: true, place: 1, total: 0,
             cards: [[1.11, 2.22, 3.33, 4.44, 0, 0, 0], [5.55, 5.55, 0, 0, 0, 0, 0], []]
@@ -83,7 +76,6 @@ final class GroupMatchResultTests: XCTestCase {
         XCTAssertEqual(even.cardTotal(0), even.cardTotal(1))
         XCTAssertNil(even.cardTotal(2))
         XCTAssertEqual(competitionJudgesVerdict(winner: [3, 2, 1.0000000001], rest: [[2, 1, 1]]), "MAJORITY DECISION")
-        // A bot has no rings: the cards never decide it.
         let empty = Array(repeating: [Double?](repeating: nil, count: 7), count: 3)
         XCTAssertEqual(CompetitionJudgesBout.label(bout([1, 2, 3], cards: empty).sides), "BY TOTAL POINTS")
         XCTAssertEqual(competitionJudgesVerdict(winner: [3, 2, 1], rest: [[2, 2, 0], [1, 1, 5]]), "BY TOTAL POINTS")
@@ -101,7 +93,6 @@ final class GroupMatchResultTests: XCTestCase {
         XCTAssertEqual(match.frozenCarryPercent(seatID: GroupMatchFixtures.Player.you.seatID), 53)
         XCTAssertEqual(match.frozenDaysWon(by: .team(1)), 7)
 
-        // Cached days that disagree with a result carrying only places are never used.
         let bare = try doubles(partner: .person(profileID: UUID(), invite: .accepted), won: true)
         XCTAssertNil(bare.frozenCarryPercent(seatID: GroupMatchFixtures.Player.you.seatID))
         XCTAssertNil(bare.frozenDaysWon(by: .team(1)))
@@ -127,7 +118,6 @@ final class GroupMatchResultTests: XCTestCase {
         XCTAssertEqual(finished.map(\.id), history.map(\.id))
     }
 
-    /// A finished doubles match whose result carries only the places.
     private func doubles(
         partner: GroupMatchSeat.Occupant, name: String = "Priya", won: Bool
     ) throws -> GroupMatchPresentation {

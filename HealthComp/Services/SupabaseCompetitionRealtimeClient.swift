@@ -69,8 +69,6 @@ private actor SupabaseCompetitionRealtimeClientBox {
         generation &+= 1
         let activeGeneration = generation
         await stopCurrent()
-        // Actor reentrancy permits another stream/stop request during cleanup.
-        // Only the latest still-admitted request may create a channel afterward.
         guard activeGeneration == generation, !Task.isCancelled else {
             return AsyncStream { $0.finish() }
         }
@@ -111,9 +109,6 @@ private actor SupabaseCompetitionRealtimeClientBox {
                             )
                         }
                     )
-                    // A driver may finish opening despite cancellation. The
-                    // retirement task awaits us, so clean that late resource
-                    // before allowing it to report settlement or admit a successor.
                     if Task.isCancelled { await driver.stop() }
                     return
                 } catch is CancellationError {
@@ -159,8 +154,6 @@ private actor SupabaseCompetitionRealtimeClientBox {
         self.continuation = nil
         openingTask?.cancel()
         continuation?.finish()
-        // Retain cleanup ownership until both the driver and opening work have
-        // settled. Clearing active fields must not admit a concurrent opener.
         let stoppingTask = Task {
             await driver.stop()
             await openingTask?.value
@@ -216,8 +209,6 @@ private actor SupabaseCompetitionRealtimeDriverBox {
             config.isPrivate = request.isPrivate
         }
 
-        // Both streams are registered before subscription. In particular,
-        // broadcastStream installs its callback synchronously.
         let broadcasts = channel.broadcastStream(event: request.event)
         let statuses = channel.statusChange
         let broadcastTask = Task {

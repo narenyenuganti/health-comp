@@ -19,7 +19,6 @@ final class MatchBanterTests: XCTestCase {
         }, leaveCutoffs: cutoffs)
     }
 
-    /// nil omits the seat that day, which scoring treats as not synced.
     private func points(_ ordinal: Int, _ values: [Int?]) throws -> [MatchDayScore] {
         try values.enumerated().compactMap { index, value in
             guard let value else { return nil }
@@ -107,7 +106,6 @@ final class MatchBanterTests: XCTestCase {
     }
 
     func testGoldenValuesAndRepeatedCalls() throws {
-        // FNV-1a 64 of the UUID's RFC 4122 bytes plus the day byte. Not Swift.Hasher.
         XCTAssertEqual(MatchBanter.selectionHash(matchID: matchID, dayOrdinal: 3), 5_396_351_818_893_131_890)
         XCTAssertEqual(MatchBanter.selectionHash(matchID: matchID, dayOrdinal: 4), 5_396_346_321_334_990_835)
 

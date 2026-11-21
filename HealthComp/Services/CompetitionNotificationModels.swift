@@ -7,7 +7,6 @@ enum CompetitionScheduledNotificationFamily: String, CaseIterable, Sendable {
     case finalDay = "final-day"
     case competitionEnded = "competition-ended"
     case whatItTakes = "what-it-takes"
-    /// A group match's evening line, at 8 PM in the match's zone.
     case groupBanter = "group-banter"
 }
 
@@ -94,12 +93,8 @@ struct CompetitionNotificationCompetitionSnapshot: Equatable, Sendable {
     let evaluationFreshness: CompetitionNotificationEvaluationFreshness
     let terminalResult: CompetitionNotificationTerminalSnapshot?
     let emissionHistory: NotificationEmissionProjection
-    /// The deterministic environment instant used for this projection. It is
-    /// carried per aggregate so a CAS retry can rebuild fresh state without
-    /// consulting the physical clock.
     let evaluatedAt: Date
     let timeZoneIdentifier: String
-    /// Today's "N to take the lead" for the 7 PM reminder. Stays on the iPhone.
     let whatItTakes: CompetitionWhatItTakes?
 
     init(
@@ -144,10 +139,7 @@ struct CompetitionNotificationPlanningSnapshot: Equatable, Sendable {
     let evaluatedAt: Date
     let timeZoneIdentifier: String
     let competitions: [CompetitionNotificationCompetitionSnapshot]
-    /// `nil` means store enumeration failed and orphan cleanup must not run.
-    /// A non-nil set includes both successfully loaded and failed-load IDs.
     let knownCompetitionIDs: Set<CompetitionID>?
-    /// Only for their evening banter; nothing else here notifies about them.
     let groupMatches: [GroupMatchPresentation]
 
     init(
@@ -177,7 +169,6 @@ extension CompetitionNotificationLifecycle {
 }
 
 extension CompetitionNotificationPlanningSnapshot {
-    /// Matches whose current day counts today; muted ones included.
     var liveMatchCount: Int { competitions.filter(\.lifecycle.isLiveDay).count }
 }
 
@@ -196,8 +187,6 @@ enum CompetitionNotificationMessageFamily: Equatable, Sendable {
 }
 
 extension CompetitionNotificationMessageFamily {
-    /// The switch that silences this family; nil means always on. Exhaustive on
-    /// purpose: a new family must choose.
     var choice: CompetitionNotificationChoice? {
         switch self {
         case .opportunistic(.leadChange): .leadChange
@@ -228,13 +217,10 @@ struct CompetitionNotificationMessage: Equatable, Sendable {
     var liveMatchCount: Int = 1
     var expiresAt: Date? = nil
     var invitationDirection: InvitationDirection = .outgoing
-    /// Set only to a `.took` event: the result adds one belt sentence.
     var beltTake: CompetitionBeltEvent? = nil
-    /// The 7 PM reminder: its numbers, the match's zone and the midnight it names.
     var whatItTakes: CompetitionWhatItTakes? = nil
     var matchTimeZoneIdentifier: String? = nil
     var matchDayEnd: Date? = nil
-    /// A group match's banter, already rendered for this person.
     var banter: CompetitionNotificationContent? = nil
 }
 

@@ -25,86 +25,35 @@ enum MultiUserCompetitionTestLabScenario:
     case welcomeChallenge = "welcome-challenge"
     case healthOnboarding = "health-onboarding"
     case healthOnboardingChallenge = "health-onboarding-challenge"
-    /// A challenge link opened before Health is set up, through the real
-    /// Home flow.
     case healthOnboardingClaim = "health-onboarding-claim"
-    /// A real account's challenge to you: Decline, Decline and Block, ••• Block.
     case incomingChallenge = "incoming-challenge"
-    /// Home and Account through the real app root: block from a challenge,
-    /// then Unblock. Nobody is blocked yet.
     case block
-    /// The same, with two people already blocked.
     case blockedAccount = "blocked-account"
-    /// The same, with Naren's challenge link opened in the claim sheet.
     case blockClaim = "block-claim"
-    /// Account → Privacy through the real app root: no username yet. See
-    /// `FriendSettingsTestLabServer`.
     case friendsAccount = "friends-account"
-    /// Friends through the real app root: two requests, friends with and
-    /// without matches, a username. See `FriendsTestLabServer`.
     case friends
-    /// The same with nobody on the lists.
     case friendsEmpty = "friends-empty"
-    /// The same lists, with no username yet and the first-open sheet unspent.
     case friendsNoUsername = "friends-no-username"
-    /// The same, with Priya a friend you already challenged: the Challenge
-    /// sheet's friends, Remove, Block and Report. See `FriendsTestLabServer`.
     case challengeFriend = "challenge-friend"
-    /// Match screens with a nudge to send, run through Home's own reducer.
     case nudge
-    /// The same matches published as the simulated fixture: never a nudge.
     case nudgeSimulated = "nudge-simulated"
-    /// Live matches where you're behind, level or ahead: the Today page's
-    /// what-it-takes panel in each state.
     case whatItTakes = "what-it-takes"
-    /// Real matches with reactions, run through Home's own reducer.
     case reactions
-    /// The same matches published as the simulated fixture: never a reaction.
     case reactionsSimulated = "reactions-simulated"
-    /// The final-day Live Activity's views, and a button that starts a real one.
     case liveActivity = "live-activity"
-    /// The empty Home with Practice Match, run through Home's own reducer.
     case practice
-    /// Account → Notifications through the real app root, with the real
-    /// installation coordinator registering against a stand-in server.
     case notificationChoices = "notification-choices"
-    /// Five people's belts: taken, kept, tied, waiting on an earlier match,
-    /// retired, and a 64-character name, with five live cards.
     case belt
-    /// The same history with only Sam's match live: the hero card's chip.
     case beltHero = "belt-hero"
-    /// A finished week for each belt event, ceremony or not. Ceremonies also
-    /// need `--belt-ceremonies`.
     case beltCeremony = "belt-ceremony"
-    /// The round's features together, through Home's own reducer: Sam's
-    /// match with the belt, a reaction and a nudge; Sam's last week with the
-    /// belt banner, a reaction and Share Result; Jordan tallying with a
-    /// nudge; Riley; and a practice match.
     case featureRound = "feature-round"
-    /// The versus intro through Home's own reducer: Alex's challenge to
-    /// accept, yours to Sam (who accepts 12 s after launch), first fights,
-    /// rematches with either belt, a long name, Day 2, and a practice.
-    /// Pair with `--versus-intro`.
     case versus
-    /// Ten finished weeks with Sam, nothing live: the person page with every
-    /// piece, Records and its comeback, as on the rivalry history page.
     case rivalry
-    /// The first five of those weeks: Records holds five rows.
     case rivalryFive = "rivalry-5"
-    /// The ten weeks with the first five in 2025: Records offers 2026 or
-    /// All time, and 2026 notes your best week from September 2025.
     case rivalryYears = "rivalry-years"
-    /// Sun Nov 1: October with Sam and Alex, its deck open over Home with
-    /// its row; History lists October and September.
     case month
-    /// Group match screens; `-groupLab <setup>` picks one (see `GroupMatchLabSetup`).
     case groupMatches = "group-matches"
-    /// The reactions matches with Jordan's (live) and Riley's (finished) as
-    /// Rings + Sleep, and the Sleep Beta on.
     case sleep
-    /// Home mounted on the real `CompetitionClient.remote` coordinator: the
-    /// first pull-to-refresh hits a transient sync failure + realtime wake-up
-    /// recovery, and the second hits a persistent failure that stays.
     case transientRefresh = "transient-refresh"
 }
 
@@ -172,7 +121,6 @@ struct MultiUserCompetitionTestLabRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Filmed, and the intro runs edge to edge.
             if configuration.scenario != .versus {
                 Text("REMOTE UI TEST LAB")
                     .font(.body.weight(.bold))
@@ -308,9 +256,6 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var judgesNotificationStatus = "Loading sample photos"
     @State private var judgesPhotos = ProfilePhotoImages(ownID: MultiUserCompetitionTestLabFixtures.ownProfileID)
 
-    /// Once per process, never per init: SwiftUI re-runs child inits
-    /// whenever the root re-evaluates. Launch arguments can't do this: an
-    /// argument-domain value would mask the app's own writes.
     private static let resetReactionsSeen: Void = {
         UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
         UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
@@ -386,10 +331,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     case .history:
                         CompetitionHistoryView(publication: publication, openRecap: { recapPeriod = $0 })
                     case .friends, .profile:
-                        // The sharing lab has no friends or profiles of others.
                         EmptyView()
                     case .ownProfile:
-                        // `--own-profile` opens it; nothing is shared or edited here.
                         CompetitionOwnProfileView(
                             publication: publication, name: "Beta Alice",
                             sharesCareer: nil, setSharesCareer: { _ in }, edit: {}
@@ -487,7 +430,6 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             reactionTarget: .result, recipientUserID: MultiUserCompetitionTestLabFixtures.ownProfileID,
             sender: sender
         ))
-        // iOS owns the delay, so the alert fires even after the lab backgrounds.
         do {
             try await UNUserNotificationCenter.current().add(UNNotificationRequest(
                 identifier: request.identifier, content: request.content,
@@ -592,7 +534,6 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         }
     }
 
-    /// Saves at once; the same preset again removes it, as on the server.
     private func reactionControl(_ id: CompetitionID) -> CompetitionReactionControl {
         CompetitionReactionControl(pending: [:], failed: []) { target, kind in
             let key = CompetitionReactionKey(competitionID: id, target: target)
@@ -786,8 +727,6 @@ private struct MultiUserCompetitionClaimTestLabView: View {
     }
 }
 
-/// A fresh install: Health isn't set up and a challenge link is waiting.
-/// Runs Home's own reducer; only the server and iOS are stand-ins.
 private struct MultiUserCompetitionPreHealthClaimTestLabView: View {
     @State private var store = Store(initialState: MainTabFeature.State()) {
         MainTabFeature()
@@ -819,7 +758,6 @@ private struct MultiUserCompetitionPreHealthClaimTestLabView: View {
     }
 }
 
-/// Alex's challenge to you, as a real account: the outcome stands in for the server.
 private struct MultiUserCompetitionIncomingChallengeTestLabView: View {
     @State private var outcome: String?
 
@@ -848,8 +786,6 @@ private struct MultiUserCompetitionIncomingChallengeTestLabView: View {
     }
 }
 
-/// Blocking through the app's own root, Home and Account reducers; only the
-/// server is a stand-in (see `MultiUserCompetitionBlockTestLabServer`).
 private struct MultiUserCompetitionBlockTestLabView: View {
     @State private var mainStore: StoreOf<MainTabFeature>
     @State private var accountStore: StoreOf<AccountFeature>
@@ -933,9 +869,6 @@ private struct MultiUserCompetitionBlockTestLabView: View {
     }
 }
 
-/// Alex's block takes 2 s, so the disabled screen can be seen. Sam's first
-/// block and Naren's first claim-sheet block fail. Alexandria's first
-/// Unblock fails; every Unblock takes 1.5 s.
 private final class MultiUserCompetitionBlockTestLabServer: @unchecked Sendable {
     typealias Fixtures = MultiUserCompetitionTestLabFixtures
     private let hub: LocalCompetitionPublicationHub
@@ -945,12 +878,10 @@ private final class MultiUserCompetitionBlockTestLabServer: @unchecked Sendable 
     private var rejected: Set<CompetitionID> = []
     private var blockCalls: [CompetitionID: Int] = [:]
     private var unblockCalls: [UUID: Int] = [:]
-    /// Newest first.
     private var blocked: [AuthenticatedProfile]
 
     init(hub: LocalCompetitionPublicationHub, seeded: Bool) {
         self.hub = hub
-        // A block declines the pending challenge, so a seeded block has none.
         closed = seeded ? [Fixtures.blockLongNameID] : []
         blocked = seeded
             ? [Fixtures.blockSender(Fixtures.blockLongNameID)!, Fixtures.blockedMorgan]
@@ -959,8 +890,6 @@ private final class MultiUserCompetitionBlockTestLabServer: @unchecked Sendable 
 
     @discardableResult
     func publish() -> LocalCompetitionPublication {
-        // The revision and its state move together, so a newer revision is
-        // always the newer state even when two publishes race.
         let publication = lock.withLock {
             revision += 1
             return Fixtures.blockPublication(revision: revision, closed: closed, rejected: rejected)
@@ -1011,9 +940,6 @@ private final class MultiUserCompetitionBlockTestLabServer: @unchecked Sendable 
     }
 }
 
-/// Every call takes 0.3 s. `taken_name` is taken; `late_taken` passes the
-/// check and is taken by the time it's saved; `offline_name` fails to save
-/// once. The first save that changes Show Me in Search fails.
 private actor FriendSettingsTestLabServer {
     private var current: FriendSettings
     private var searchSaveFailed = false
@@ -1058,8 +984,6 @@ private actor FriendSettingsTestLabServer {
     }
 }
 
-/// Friends through the app's own root, Home and Account reducers; only the
-/// server is a stand-in (see `FriendsTestLabServer`).
 private struct MultiUserCompetitionFriendsTestLabView: View {
     @State private var mainStore: StoreOf<MainTabFeature>
     @State private var accountStore: StoreOf<AccountFeature>
@@ -1178,11 +1102,6 @@ private struct MultiUserCompetitionFriendsTestLabView: View {
     }
 }
 
-/// Every call takes 0.3 s. Search matches name and username prefixes across
-/// the cast below; `ratelimit` hits the search limit; adding Mara fails once.
-/// Challenging Kai is refused, as when someone accepts friends only and
-/// stopped being one; any other challenge is sent. Blocking ends the
-/// friendship, as on the server, and a blocked person can't be reported.
 private actor FriendsTestLabServer {
     private static func person(
         _ byte: UInt8,
@@ -1285,14 +1204,11 @@ private actor FriendsTestLabServer {
         return CompetitionInviteCreationOutcome(
             invite: try CompetitionInvite(
                 competitionID: UUID(uuidString: "D2000000-0000-4000-8000-0000000000c1")!,
-                // 32 bytes, base64url without padding, as the server mints it.
                 token: Data(repeating: 0x53, count: 32).base64EncodedString()
                     .replacingOccurrences(of: "+", with: "-")
                     .replacingOccurrences(of: "/", with: "_")
                     .replacingOccurrences(of: "=", with: "")
             ),
-            // Past the lab's publication, which never shows the new
-            // challenge: the link is kept until it would.
             expectedPublicationRevision: 100
         )
     }
@@ -1391,17 +1307,11 @@ private final class FriendsPracticeLabState: @unchecked Sendable {
     }
 }
 
-/// The block lab's Home and Account, with notifications allowed and the
-/// long-named challenger muted. Every switch starts on at launch. The real
-/// `CompetitionInstallationCoordinator` registers this iPhone's switched-off
-/// push kinds with `NotificationChoicesLabServer`, whose state shows under
-/// Home. A switch re-registers, and so does coming back to the app.
 private struct MultiUserCompetitionNotificationChoicesTestLabView: View {
     @State private var mainStore: StoreOf<MainTabFeature>
     @State private var accountStore: StoreOf<AccountFeature>
     @State private var server: NotificationChoicesLabServer
 
-    /// Once per launch: SwiftUI may build this view more than once.
     private static let switchesReset: Void = {
         for choice in CompetitionNotificationChoice.allCases {
             UserDefaults.standard.removeObject(forKey: choice.storageKey)
@@ -1459,7 +1369,6 @@ private struct MultiUserCompetitionNotificationChoicesTestLabView: View {
                 },
                 updates: { hub.stream() },
                 reconcileAll: { _ in
-                    // As `performReconciliation`: a failed registration retries here.
                     await installation.reconcile()
                     return publish()
                 },
@@ -1500,9 +1409,6 @@ private struct MultiUserCompetitionNotificationChoicesTestLabView: View {
     }
 }
 
-/// What the installation row holds. Each registration takes 2.5 s, so a
-/// quick off and on lands while one is in flight. The first registration
-/// that switches Reactions off fails, as if offline.
 @MainActor @Observable
 private final class NotificationChoicesLabServer {
     private(set) var mutedPushKinds: [String]?
@@ -1551,9 +1457,6 @@ private final class NotificationChoicesLabServer {
     }
 }
 
-/// Real matches with stale scores, through Home's own reducer and match
-/// screens. Only the server is a stand-in; each person answers a nudge
-/// differently (see `nudge(_:)`).
 private struct MultiUserCompetitionNudgeTestLabView: View {
     @State private var store: StoreOf<MainTabFeature>
 
@@ -1562,8 +1465,6 @@ private struct MultiUserCompetitionNudgeTestLabView: View {
         let hub = LocalCompetitionPublicationHub()
         let server = MultiUserCompetitionNudgeTestLabServer(hub: hub, source: source)
         var state = MainTabFeature.State()
-        // Sat 8:00 PM here is Sun noon in Tokyo, the match's zone: still
-        // today there, so the confirmation shows.
         state.competition.nudges[Fixtures.nudgeKenjiID] = .sent(
             Fixtures.labNow.addingTimeInterval(-5 * 3_600)
         )
@@ -1615,7 +1516,6 @@ private final class MultiUserCompetitionNudgeTestLabServer: @unchecked Sendable 
         self.source = source
     }
 
-    /// Every reconcile publishes a newer revision of the same matches.
     @discardableResult
     func publish() -> LocalCompetitionPublication {
         let next = lock.withLock { () -> UInt64 in
@@ -1638,7 +1538,6 @@ private final class MultiUserCompetitionNudgeTestLabServer: @unchecked Sendable 
         }
         switch id {
         case Fixtures.nudgeRileyID, Fixtures.nudgeMorganID:
-            // Long enough to see the button disabled while it sends.
             try await Task.sleep(for: .seconds(4))
             return Fixtures.labNow
         case Fixtures.nudgeSamID where call == 1:
@@ -1649,8 +1548,6 @@ private final class MultiUserCompetitionNudgeTestLabServer: @unchecked Sendable 
         case Fixtures.nudgeCaseyID, Fixtures.nudgeAveryID:
             throw CompetitionRemoteFailure.forbidden
         case Fixtures.nudgeLongNameID:
-            // The server's clock is already in the next match day (Mon
-            // 12:01 AM); this iPhone's last projection is older.
             return Fixtures.labNow.addingTimeInterval(23 * 3_600 + 60)
         default:
             return Fixtures.labNow
@@ -1658,8 +1555,6 @@ private final class MultiUserCompetitionNudgeTestLabServer: @unchecked Sendable 
     }
 }
 
-/// The round's features on one Home, through Home's own reducer and screens.
-/// Only the server is a stand-in: every nudge and reaction is accepted at once.
 private struct MultiUserCompetitionFeatureRoundTestLabView: View {
     @State private var store: StoreOf<MainTabFeature>
 
@@ -1754,13 +1649,10 @@ private final class MultiUserCompetitionFeatureRoundTestLabServer: @unchecked Se
     }
 }
 
-/// Both ends of an acceptance, through Home's own reducer and screens. Only
-/// the server is a stand-in.
 private struct MultiUserCompetitionVersusTestLabView: View {
     @State private var store: StoreOf<MainTabFeature>
     @AppStorage(CompetitionVersusIntroGate.announcedKey) private var announced = ""
 
-    /// Once per process, as with the seen marks.
     private static let resetAnnounced: Void = UserDefaults.standard
         .removeObject(forKey: CompetitionVersusIntroGate.announcedKey)
 
@@ -1842,14 +1734,9 @@ private final class MultiUserCompetitionVersusTestLabServer: @unchecked Sendable
     }
 }
 
-/// Real matches with reactions, through Home's own reducer and screens.
-/// Only the server is a stand-in: Jordan's saves take 3 s, Sam's first save
-/// fails, Quinn's first save is refused, and a pull to refresh on Home brings
-/// a new reaction from Jordan on Day 3.
 private struct MultiUserCompetitionReactionsTestLabView: View {
     @State private var store: StoreOf<MainTabFeature>
 
-    /// Once per process, as in the sharing lab: the marks persist otherwise.
     private static let resetReactionsSeen: Void = {
         UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
         UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
@@ -1906,7 +1793,6 @@ private final class MultiUserCompetitionReactionsTestLabServer: @unchecked Senda
     private let lock = NSLock()
     private var revision: UInt64 = 0
     private var calls: [CompetitionID: Int] = [:]
-    /// Yours: 😤 on Riley's Day 3, sent while that match was live.
     private var own: [CompetitionReactionKey: CompetitionReactionKind] = [
         CompetitionReactionKey(
             competitionID: MultiUserCompetitionTestLabFixtures.reactionRileyID,
@@ -1956,13 +1842,11 @@ private final class MultiUserCompetitionReactionsTestLabServer: @unchecked Senda
         }
         switch id {
         case Fixtures.reactionJordanID:
-            // Long enough to see the chips disabled while it saves.
             try await Task.sleep(for: .seconds(3))
         case Fixtures.reactionSamID where call == 1:
             try await Task.sleep(for: .seconds(1))
             throw CompetitionRemoteFailure.operationFailed
         case Fixtures.reactionQuinnID where call == 1:
-            // The server says no (reaction_not_allowed).
             throw CompetitionRemoteFailure.forbidden
         default:
             break
@@ -1974,13 +1858,6 @@ private final class MultiUserCompetitionReactionsTestLabServer: @unchecked Senda
     }
 }
 
-/// Practice through the real Home, match screen and result. Start answers
-/// after 80 ms with a live practice; End Practice deletes it.
-/// `-practiceLab <state>` picks what Home starts with (see
-/// `MultiUserCompetitionPracticeTestLabServer.Setup`); `-practiceLabFinished YES`
-/// is `-practiceLab won`. `-practiceLabFailStarts N` / `-practiceLabFailEnds N`
-/// reject the first N starts or ends; `-practiceLabNotifications YES` reports
-/// notifications as not yet asked, so the prompt can show.
 private struct MultiUserCompetitionPracticeTestLabView: View {
     @State private var store: StoreOf<MainTabFeature>
 
@@ -2047,22 +1924,16 @@ private struct MultiUserCompetitionPracticeTestLabView: View {
 
 private final class MultiUserCompetitionPracticeTestLabServer: @unchecked Sendable {
     enum Setup: String {
-        /// "No matches yet"; Start gives a live practice on Day 2.
         case empty = ""
-        /// "No matches yet"; Start gives tomorrow's practice, as on an iPhone.
         case startsScheduled = "starts-scheduled"
-        /// "Nothing live right now": a finished real week, so no Practice Match.
         case afterRecords = "after-records"
         case scheduled
         case tallying
         case won
         case lost
         case tied
-        /// The live practice beside a real live match (Jordan).
         case withLiveMatch = "with-live-match"
-        /// The live practice beside a real match that starts later (Priya).
         case withScheduledMatch = "with-scheduled-match"
-        /// "No matches yet", then Sam's real challenge arrives 8 s after launch.
         case challengeArrives = "challenge-arrives"
     }
 
@@ -2075,8 +1946,6 @@ private final class MultiUserCompetitionPracticeTestLabServer: @unchecked Sendab
     private var practice: LocalCompetitionPresentation?
     private var failedStarts: Int
     private var failedEnds: Int
-    /// A rejected command, carried until the next successful one, as the
-    /// remote client's `publication(adding:)` does.
     private var rejected: CompetitionID?
 
     init(hub: LocalCompetitionPublicationHub, setup: Setup, failedStarts: Int, failedEnds: Int) {
@@ -2173,7 +2042,6 @@ private final class MultiUserCompetitionPracticeTestLabServer: @unchecked Sendab
     }
 }
 
-/// Someone's challenge link opened on this iPhone: "Challenge Maya?".
 private struct MultiUserCompetitionChallengeLinkTestLabView: View {
     @State private var status: CompetitionFeature.ChallengeSheetStatus = .ready
     @State private var isPresented = true
@@ -2217,7 +2085,6 @@ private struct MultiUserCompetitionAccountTestLabView: View {
             displayName: "Alex"
         ),
     ]
-    /// Hermes has a photo; Alex has one too, but the block hides it.
     @State private var photoServer = ProfilePhotoTestLabServer(
         ownProfileID: MultiUserCompetitionTestLabFixtures.ownProfileID,
         photos: [
@@ -2318,7 +2185,6 @@ private struct MultiUserCompetitionAccountTestLabView: View {
         .accessibilityIdentifier("multiuser.account.root")
     }
 
-    /// The Test Lab's stand-in for Home's photo lookup.
     private func loadPhotos() {
         let server = photoServer
         let owners = [MultiUserCompetitionTestLabFixtures.ownProfileID, MultiUserCompetitionTestLabFixtures.hermesProfileID]
@@ -2382,16 +2248,12 @@ enum MultiUserCompetitionTestLabFixtures {
     static let expiredID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-000000000007")!
     )
-    /// The signed-in lab account's own code.
     static let ownProfileID = UUID(
         uuidString: "a1000000-0000-4000-8000-000000000099"
     )!
-    /// Muted in the Account lab, with a photo.
     static let hermesProfileID = UUID(
         uuidString: "a1000000-0000-4000-8000-0000000000c1"
     )!
-    /// Original illustrated fixtures, served through the same visibility filter.
-    /// Riley is intentionally absent to show the initial fallback on the win close-up.
     @MainActor static let judgesPhotos = ProfilePhotoTestLabServer(
         ownProfileID: ownProfileID,
         photos: [
@@ -2401,7 +2263,6 @@ enum MultiUserCompetitionTestLabFixtures {
             UUID(uuidString: "c3000000-0000-4000-8000-00000000000c")!: ProfilePhotoTestLabServer.illustratedPortrait(3),
         ]
     )
-    /// Feature round: Sam has a photo, Jordan none, and Riley's is reported.
     static let featureRoundPhotos = ProfilePhotoTestLabServer(
         ownProfileID: ownProfileID,
         photos: [
@@ -2415,15 +2276,12 @@ enum MultiUserCompetitionTestLabFixtures {
     static let expiredRecipientID = UUID(
         uuidString: "A1000000-0000-4000-8000-000000000008"
     )!
-    /// Jordan's finished week before the live one: Jordan holds the belt.
     static let jordanPastID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-000000000009")!
     )
-    /// A finished week with a real name, for Share Result's Show/Hide name.
     static let caseyID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-00000000000A")!
     )
-    /// An archived win decided at 2 decimals against the longest allowed name.
     static let longNameID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-00000000000D")!
     )
@@ -2438,8 +2296,6 @@ enum MultiUserCompetitionTestLabFixtures {
     static let nudgePriyaID = nudgeID(8)
     static let nudgeLongNameID = nudgeID(9)
     static let nudgeKenjiID = nudgeID(10)
-    /// The sleep scenario: Jordan's live match (Day 3, the third night not
-    /// synced on their side) and Riley's finished one, as Rings + Sleep.
     static func addingSleep(_ publication: LocalCompetitionPublication) -> LocalCompetitionPublication {
         let opponentID = UUID(uuidString: "00000000-0000-4000-8000-00000000BEEF")!
         func match(_ id: CompetitionID, own: [Int], theirs: [Int]) -> CompetitionSleepMatch {
@@ -2452,10 +2308,8 @@ enum MultiUserCompetitionTestLabFixtures {
                 }
             )
         }
-        // Jordan's Day 3 is today (Sun Aug 16, 1 AM in Los Angeles): night 3
-        // began 6 pm Saturday, 7 hours before now.
         func reading(_ night: Int, asleep: Double, awake: Double, onset: Double, source: SleepSource) -> CompetitionSleepReading {
-            let usual = 310.0 // 11:10 PM
+            let usual = 310.0
             let duration = SleepScore.durationPoints(minutesAsleep: asleep)
             let bedtime = SleepScore.bedtimePoints(onsetMinutes: onset, usualOnsetMinutes: usual)
             let interruptions = SleepScore.interruptionPoints(awakeMinutes: awake)
@@ -2541,14 +2395,12 @@ enum MultiUserCompetitionTestLabFixtures {
     static let blockLongNameID = blockID(3)
     static let blockPriyaID = blockID(4)
     static let blockJordanID = blockID(5)
-    /// The claim sheet's challenge: `claimPreview` is this one.
     static let blockClaimID = pendingID
     static let blockedMorgan = AuthenticatedProfile(
         id: UUID(uuidString: "c1000000-0000-4000-8000-0000000000b4")!,
         displayName: "Morgan"
     )
 
-    /// Who sent each incoming challenge in the block lab.
     static func blockSender(_ id: CompetitionID) -> AuthenticatedProfile? {
         func profile(_ suffix: String, _ name: String) -> AuthenticatedProfile {
             AuthenticatedProfile(
@@ -2569,8 +2421,6 @@ enum MultiUserCompetitionTestLabFixtures {
         CompetitionID(UUID(uuidString: String(format: "C1000000-0000-4000-8000-%012d", n))!)
     }
 
-    /// Four challenges to you, one from you and a live match. A closed
-    /// incoming challenge leaves Home, as `list_challenges` drops it.
     static func blockPublication(
         revision: UInt64,
         closed: Set<CompetitionID>,
@@ -2632,7 +2482,6 @@ enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    /// `friendsPublication` with your challenge to Priya waiting.
     static var challengeFriendPublication: LocalCompetitionPublication {
         let base = friendsPublication
         let toPriya = presentation(
@@ -2664,7 +2513,6 @@ enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    /// Maya live, Sam starting, one finished week with Dev.
     static var friendsPublication: LocalCompetitionPublication {
         func identity(_ byte: UInt8) -> String {
             "remote-profile:v1:" + String(format: "d1000000-0000-4000-8000-0000000000%02x", byte)
@@ -2776,8 +2624,6 @@ enum MultiUserCompetitionTestLabFixtures {
             refreshedAt: evaluatedAt.addingTimeInterval(-600),
             opponentUpdatedAt: evaluatedAt.addingTimeInterval(-3_600)
         )
-        // A second live match that ends a day after Jordan's, with a
-        // refresh problem of its own.
         let secondActive = presentation(
             id: secondActiveID,
             opponentName: "Riley",
@@ -2788,7 +2634,6 @@ enum MultiUserCompetitionTestLabFixtures {
             currentDayOrdinal: 2,
             terminal: nil,
             startDay: 14,
-            // 13 h old: Riley's match offers a nudge.
             opponentUpdatedAt: evaluatedAt.addingTimeInterval(-46_800)
         )
         let expired = presentation(
@@ -2898,7 +2743,6 @@ enum MultiUserCompetitionTestLabFixtures {
             startDay: 1,
             opponentIdentity: active.opponentIdentity
         )
-        // Same week as Former competitor; Casey won only Sunday.
         let caseyTerminal = LocalCompetitionTerminalPresentation(
             userPoints: 2_692,
             opponentPoints: 2_800,
@@ -2920,7 +2764,6 @@ enum MultiUserCompetitionTestLabFixtures {
             currentDayOrdinal: nil,
             terminal: caseyTerminal
         )
-        // The week before Casey's: you trailed by 90 after Saturday and won by 0.30.
         let longNameCompletedAt = completedAt.addingTimeInterval(-604_800)
         let longNameTerminal = LocalCompetitionTerminalPresentation(
             userPoints: 2_104.30,
@@ -2949,8 +2792,6 @@ enum MultiUserCompetitionTestLabFixtures {
             terminal: longNameTerminal,
             startDay: 6
         )
-        // Reactions only on Jordan, Morgan and Former competitor: other UI
-        // tests count cards and match their labels.
         func reactions(
             _ id: CompetitionID,
             received: CompetitionReaction
@@ -3011,8 +2852,6 @@ enum MultiUserCompetitionTestLabFixtures {
         CompetitionID(UUID(uuidString: String(format: "B1000000-0000-4000-8000-%012d", n))!)
     }
 
-    /// Ten real matches, one per nudge state. Now is Sun Aug 16, 1:00 AM
-    /// in Los Angeles (5:00 PM in Tokyo).
     static func nudgePublication(
         revision: UInt64,
         source: CompetitionPublicationSource
@@ -3025,14 +2864,12 @@ enum MultiUserCompetitionTestLabFixtures {
             updatedAgo: TimeInterval?,
             zone: String = "America/Los_Angeles"
         ) -> LocalCompetitionPresentation {
-            // Today is Aug 16 in both zones.
             let startDay = 17 - day
             return presentation(
                 id: id,
                 opponentName: name,
                 lifecycle: day == 7 ? .endsToday : .active(dayOrdinal: day),
                 userPoints: 1_020,
-                // Never uploaded: no score either.
                 opponentPoints: updatedAgo == nil ? 0 : 990,
                 days: activeDays(
                     startDay: startDay,
@@ -3074,7 +2911,6 @@ enum MultiUserCompetitionTestLabFixtures {
         let competitions = [
             live(nudgeJordanID, "Jordan", day: 3, updatedAgo: 1 * hour),
             live(nudgeRileyID, "Riley", day: 2, updatedAgo: 13 * hour),
-            // Never uploaded: stale since Day 1 began.
             live(nudgeSamID, "Sam", day: 2, updatedAgo: nil),
             live(nudgeCaseyID, "Casey", day: 7, updatedAgo: 20 * hour),
             tallying(nudgeMorganID, "Morgan", .awaitingOpponentCheck),
@@ -3117,13 +2953,6 @@ enum MultiUserCompetitionTestLabFixtures {
         CompetitionID(UUID(uuidString: String(format: "C1000000-0000-4000-8000-%012d", n))!)
     }
 
-    /// Reactions in every state. Now is Sun Aug 16, 1:00 AM in Los Angeles.
-    /// Live: Jordan (Day 3, 😤 on your Day 2), Sam (Day 2, none), Casey
-    /// (Day 7), Former competitor (Day 4, 👏 on your Day 1), a long name
-    /// (Day 2, 🔥 on your Day 1) and Morgan tallying (🔥 on your Day 6).
-    /// Recent results: Riley (👏 on the result and 🔥 on your Day 5), Quinn
-    /// (none) and Former competitor (🫡 on the result). The simulated fixture
-    /// carries none.
     static func reactionsPublication(
         revision: UInt64,
         source: CompetitionPublicationSource,
@@ -3165,7 +2994,6 @@ enum MultiUserCompetitionTestLabFixtures {
             _ name: String,
             day: Int
         ) -> LocalCompetitionPresentation {
-            // Today, Aug 16, is Day `day`.
             let startDay = 17 - day
             return presentation(
                 id: id,
@@ -3187,7 +3015,6 @@ enum MultiUserCompetitionTestLabFixtures {
             owner: [Double],
             other: [Double]
         ) -> LocalCompetitionPresentation {
-            // The totals are the days' sums, so the summary line agrees.
             let user = owner.reduce(0, +)
             let opponent = other.reduce(0, +)
             let completedAt = evaluatedAt.addingTimeInterval(-20 * hour)
@@ -3300,7 +3127,6 @@ enum MultiUserCompetitionTestLabFixtures {
         UUID(uuidString: "A1000000-0000-4000-8000-00000000000C")!
     )
 
-    /// Day 2 against the Pacer: 486 to 452 after Day 1, nothing yet today.
     static func practicePresentation() -> LocalCompetitionPresentation {
         let schedule = schedule(startDay: 15)
         let days = try! schedule.calendar.sevenDayWindow(startingOn: schedule.startDay)
@@ -3327,7 +3153,6 @@ enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    /// Tomorrow's practice, Mon Aug 17 to Sun Aug 23, as Start Tomorrow makes it.
     static func practiceScheduledPresentation(
         difficulty: OpponentDifficulty = .pacer,
         opponentName: String? = nil
@@ -3346,7 +3171,6 @@ enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    /// Priya's match starting tomorrow, Mon Aug 17 (labNow is Sun Aug 16).
     static func scheduledTomorrowPresentation() -> LocalCompetitionPresentation {
         presentation(
             id: scheduledID,
@@ -3361,7 +3185,6 @@ enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    /// Aug 8 to 14 has ended; the last reads are still settling.
     static func practiceTallyingPresentation() -> LocalCompetitionPresentation {
         presentation(
             id: practiceID,
@@ -3380,8 +3203,6 @@ enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    /// A practice week, Aug 8 to 14, still on Home: you won 2,692 to 2,550,
-    /// lost 2,692 to 2,800, or tied 2,692 all.
     static func practiceResultPresentation(
         _ outcome: CompetitionOutcome = .win
     ) -> LocalCompetitionPresentation {
@@ -3417,8 +3238,6 @@ enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    /// One live match per what-it-takes state, all under real-match scoring
-    /// (200% per ring). The Today day is the lab clock's day, Aug 16.
     static func whatItTakesPublication() -> LocalCompetitionPublication {
         func rings(
             _ move: Double, _ moveGoal: Double, _ exercise: Double, _ stand: Double,
@@ -3448,7 +3267,6 @@ enum MultiUserCompetitionTestLabFixtures {
             let startDay = 16 - (day - 1)
             let schedule = schedule(startDay: startDay)
             let window = try! schedule.calendar.sevenDayWindow(startingOn: schedule.startDay)
-            // Earlier days share the rest of each total evenly.
             let earlier = Double(max(1, day - 1))
             let days = window.enumerated().map { offset, competitionDay in
                 let ordinal = offset + 1
@@ -3485,36 +3303,26 @@ enum MultiUserCompetitionTestLabFixtures {
             )
         }
         let competitions = [
-            // The approved mockup: 39 to take the lead, either ring alone.
             match(1, "Sam", day: 5, user: 1_112, opponent: 1_150, today: 215,
                   opponentToday: 248, accepted: rings(410, 600, 24, 8)),
-            // Neither ring covers 50 alone, so it splits; a 64-character name.
             match(2, "Bartholomew Alexander Christopherson-Montgomery of Westminster",
                   day: 3, user: 1_000, opponent: 1_049, today: 395,
                   opponentToday: 300, accepted: rings(1_020, 600, 52.5, 6)),
-            // Move Time in minutes.
             match(3, "Morgan", day: 4, user: 900, opponent: 938, today: 640.0 / 3,
                   opponentToday: nil, accepted: rings(20, 30, 24, 8, moveMinutes: true)),
-            // Level by a fraction, Move capped, and they're at today's 600.
             match(4, "Devon", day: 6, user: 1_000, opponent: 1_000.2, today: 300,
                   opponentToday: 600, accepted: rings(1_200, 600, 15, 6)),
-            // Last day, out of reach with room left in Move.
             match(5, "Priya", day: 7, user: 2_010, opponent: 2_390, today: 390,
                   opponentToday: 400, accepted: rings(540, 600, 60, 12)),
-            // Level, but you've already scored today's 600.
             match(6, "Quinn", day: 6, user: 2_390, opponent: 2_390, today: 600,
                   opponentToday: 420, accepted: rings(1_200, 600, 60, 24)),
-            // Behind, but your rings moved since the accepted reading: no panel.
             match(7, "Harper", day: 5, user: 1_000, opponent: 1_100, today: 215,
                   opponentToday: 300, accepted: rings(410, 600, 24, 8),
                   latest: rings(500, 600, 24, 8)),
-            // Behind, and today's reading hasn't synced yet: no panel.
             match(8, "Avery", day: 2, user: 400, opponent: 700, today: nil,
                   opponentToday: 300, accepted: nil, latest: rings(300, 600, 10, 4)),
-            // You lead: no panel.
             match(9, "Jordan", day: 3, user: 1_450, opponent: 1_440, today: 430,
                   opponentToday: 450, accepted: rings(900, 500, 45, 12)),
-            // Behind with points left today, but Move and Exercise are at 200%.
             match(10, "Riley", day: 5, user: 1_000, opponent: 1_020, today: 450,
                   opponentToday: 300, accepted: rings(1_200, 600, 60, 6)),
         ]
@@ -3532,21 +3340,6 @@ enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    /// Every belt state from one history (now is Sun Aug 16, Los Angeles):
-    /// - Sam, Jul 4 to Aug 14: W L L W T W. You took it, Sam took it, Sam kept
-    ///   it, you took it back, a tie kept it and a win made 3 weeks. Live again.
-    /// - The 64-character name, Jul 25 to Aug 14: L T L, a 3-week reign. Live again.
-    /// - Riley: you won Aug 1 to 7; Aug 8 to 14 is tallying, so the live
-    ///   Aug 15 match waits for it and shows no chip.
-    /// - Morgan: two ties, so nobody holds it.
-    /// - Former competitor: a win, then the account was deleted mid-match.
-    /// `heroOnly` keeps Sam's as the one live match, so Home draws the hero card.
-    /// `ceremonies` swaps in one person per belt event, none of them live:
-    /// - Avery: a first win. Earned.
-    /// - Sam: L L T L, then you won. Taken from a 4-week reign with 2 defenses.
-    /// - Riley: W W T W, then Riley won. Lost a 4-week reign with 2 defenses.
-    /// - Jordan: W W W W. Defended, the 3rd title defense.
-    /// - Casey took a vacant belt, Dana defended, Taylor tied: no ceremony.
     static func beltPublication(heroOnly: Bool, ceremonies: Bool = false) -> LocalCompetitionPublication {
         func id(_ byte: UInt8) -> CompetitionID {
             CompetitionID(UUID(uuidString: String(format: "A3000000-0000-4000-8000-0000000000%02X", byte))!)
@@ -3724,11 +3517,6 @@ enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    /// The round's features on one Home. Now is Sun Aug 16, 1:00 AM in Los
-    /// Angeles. Sam: last week won (the belt, 👏 on the result) and Day 2 live,
-    /// updated 13 hours ago, with 🔥 on your Day 1. Jordan: tallying, waiting
-    /// on Jordan's last check, 😤 on your Day 6. Riley: Day 2, fresh. And a
-    /// practice match on Day 2.
     static func featureRoundPublication(
         revision: UInt64,
         ownReactions: [CompetitionReactionKey: CompetitionReactionKind]
@@ -3844,8 +3632,6 @@ enum MultiUserCompetitionTestLabFixtures {
         CompetitionID(UUID(uuidString: String(format: "A4000000-0000-4000-8000-0000000000%02X", byte))!)
     }
 
-    /// Now is Sun Aug 16: Day 1 is today for the live matches, Monday for
-    /// the rest. Morgan holds the belt 4–1; you hold Jordan's at 2–0–1.
     static func versusPublication(
         revision: UInt64,
         accepted: Set<CompetitionID>
@@ -4033,25 +3819,18 @@ enum MultiUserCompetitionTestLabFixtures {
 
     private static let evaluatedAt = Date(timeIntervalSince1970: 1_786_867_200)
 
-    /// The final-day Live Activity's samples (`-liveActivityPreviewSample`):
-    /// Day 7 is Sun Aug 16, and it's 6:05 PM in Los Angeles. Each sample is
-    /// the same match on the last day and, after midnight, tallying.
     static func liveActivitySample(
         _ name: String
     ) -> (live: LocalCompetitionPresentation, tallying: LocalCompetitionPresentation) {
         let now = Date(timeIntervalSince1970: 1_786_928_700)
-        let you = now.addingTimeInterval(-25 * 60)  // 5:40 PM
-        let them = now.addingTimeInterval(-3 * 60)  // 6:02 PM
+        let you = now.addingTimeInterval(-25 * 60)
+        let them = now.addingTimeInterval(-3 * 60)
         let losAngeles = "America/Los_Angeles"
         let sample: (name: String, user: Double, opponent: Double, zone: String, you: Date?, them: Date?) =
             switch name {
             case "behind": ("Sam", 2_166, 2_171.2, losAngeles, you, them)
-            // Level as shown, and neither side has an Updated time.
             case "square": ("Sam", 2_190.4, 2_190.2, losAngeles, nil, nil)
-            // An account deleted mid-match, with only your Updated time.
             case "former": ("Former competitor", 1_980, 2_015, losAngeles, you, nil)
-            // A 64-character name, the most points a week allows, a New York
-            // match seen from Los Angeles, and only their Updated time.
             case "long": ("Bartholomew Alexander Christopherson-Montgomery of Westminster",
                           4_180, 4_195, "America/New_York", nil, them)
             default: ("Sam", 2_190.4, 2_171.2, losAngeles, you, them)
@@ -4094,7 +3873,6 @@ enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    /// All seven days scored. By default you won Sunday (512) only and lost by 108.
     private static func completedDays(
         startDay: Int = 13,
         owner: [Double] = [420, 380, 300, 512, 400, 350, 330],
@@ -4126,8 +3904,6 @@ enum MultiUserCompetitionTestLabFixtures {
         )
         let owner: [Double?] = [500, 520, 430, 500, 520, 430, 500]
         let opponent: [Double?] = [480, 510, 450, 490, 505, 440, 470]
-        // Rings that score exactly the owner points with no ring over 200%,
-        // so a real match could produce them.
         func rings(_ move: Double, _ exercise: Double, _ stand: Double, standGoal: Double) -> ActivitySnapshot {
             ActivitySnapshot(
                 moveMode: .activeEnergyKilocalories,
@@ -4165,10 +3941,6 @@ enum MultiUserCompetitionTestLabFixtures {
     }
 }
 
-/// The Lock Screen card live, gone stale at midnight, and tallying, at the
-/// card's 160 pt height; then the Dynamic Island's expanded, compact and
-/// minimal looks on black. The cards come from the planner, so they use the
-/// app's real words.
 private struct LiveActivityPreviewView: View {
     private let client = CompetitionLiveActivityClient.live
     private let attributes: MatchActivityAttributes
@@ -4177,7 +3949,6 @@ private struct LiveActivityPreviewView: View {
 
     init() {
         let defaults = UserDefaults.standard
-        // `-liveActivityPreviewSample behind|square|former|long` picks the match.
         let sample = MultiUserCompetitionTestLabFixtures.liveActivitySample(
             defaults.string(forKey: "liveActivityPreviewSample") ?? "lead"
         )
@@ -4185,7 +3956,6 @@ private struct LiveActivityPreviewView: View {
         let timeZone = TimeZone(identifier: "America/Los_Angeles")!
         _live = State(initialValue: CompetitionLiveActivityPlanner.content(sample.live, locale: locale, timeZone: timeZone)!)
         tallying = CompetitionLiveActivityPlanner.content(sample.tallying, locale: locale, timeZone: timeZone)!
-        // `-liveActivityPreviewSecondsLeft 60` lets a UI test watch the card go stale.
         let secondsLeft = defaults.double(forKey: "liveActivityPreviewSecondsLeft")
         var attributes = CompetitionLiveActivityPlanner.attributes(sample.live)!
         attributes.endsAt = Date().addingTimeInterval(secondsLeft > 0 ? secondsLeft : (5 * 60 + 45) * 60)
@@ -4229,7 +3999,6 @@ private struct LiveActivityPreviewView: View {
             .padding(16)
         }
         .background(Theme.panel)
-        // A sample left by an earlier run never stays on the Lock Screen.
         .task { await endSamples() }
     }
 
@@ -4282,7 +4051,6 @@ private struct LiveActivityPreviewView: View {
             .accessibilityIdentifier("liveActivity.preview.minimal")
     }
 
-    /// The Smart Stack on a 41 mm Apple Watch.
     private var smallCard: some View {
         MatchActivitySmallView(attributes: attributes, state: live)
             .padding(8)
@@ -4303,8 +4071,6 @@ private struct LiveActivityPreviewView: View {
         _ = await client.start(attributes, live, attributes.endsAt)
     }
 
-    /// Changes the mocks now and the running card after
-    /// `-liveActivityPreviewUpdateDelay`, so a recording can leave the app first.
     private func update(_ change: (inout MatchActivityAttributes.ContentState) -> Void) {
         change(&live)
         let state = live
@@ -4318,15 +4084,10 @@ private struct LiveActivityPreviewView: View {
     }
 }
 
-/// You and Sam, ten finished weeks: the rivalry history page's sample data.
-/// Per day, Move, Exercise and Stand percents, which are also the ring
-/// points; a day's points are their sum. Internal, so tests read the same
-/// weeks the Test Lab shows.
 enum CompetitionRivalryFixture {
     static let samIdentity = "remote-profile:v1:c5000000-0000-4000-8000-000000000001"
     private static let zone = "America/Los_Angeles"
 
-    /// Start (month, day) in 2026, then your seven days and Sam's.
     private static let data: [(month: Int, day: Int, you: String, sam: String)] = [
         (8, 3,
          "155,58,95 107,121,73 95,56,77 85,68,87 84,108,83 34,129,85 88,99,93",
@@ -4360,8 +4121,6 @@ enum CompetitionRivalryFixture {
          "162,108,105 161,63,90 128,34,116 128,43,96 113,49,98 109,66,100 101,80,89"),
     ]
 
-    /// The first `count` weeks, oldest first, the first `lastYear` of them a
-    /// year earlier, in 2025. The newest is completed, the rest archived.
     static func weeks(_ count: Int, now: Date, lastYear: Int = 0) -> [LocalCompetitionPresentation] {
         let calendar = try! CompetitionCalendar(timeZoneIdentifier: zone)
         return data.prefix(count).enumerated().map { index, week in
@@ -4426,8 +4185,6 @@ enum CompetitionRivalryFixture {
         }
     }
 
-    /// Ten weeks seen on Sat Nov 7 or five on Fri Sep 18, noon in Los
-    /// Angeles: the last week has left Home, so the page offers Challenge Sam.
     static func now(weeks: Int) -> Date {
         Date(timeIntervalSince1970: weeks >= 10 ? 1_794_081_600 : 1_789_758_000)
     }
@@ -4449,11 +4206,6 @@ enum CompetitionRivalryFixture {
     }
 }
 
-/// Your October, from the proposals page's example week: you took
-/// Sam's belt Oct 4–10 (Sam won Sep 20–26), defended it Oct 11–17 and
-/// Oct 25–31 (2,612–2,502), and lost Oct 18–24 to Alex (2,418–2,530). Seen
-/// Sun Nov 1, 6 pm in Los Angeles. Ring points split each day 38/28/34, so
-/// the rings closed come from your own values. Internal, for the tests.
 enum CompetitionMonthFixture {
     static let samIdentity = "remote-profile:v1:c6000000-0000-4000-8000-000000000001"
     static let alexIdentity = "remote-profile:v1:c6000000-0000-4000-8000-000000000002"
@@ -4461,7 +4213,6 @@ enum CompetitionMonthFixture {
     static let now = Date(timeIntervalSince1970: 1_793_584_800)
     private static let zone = "America/Los_Angeles"
 
-    /// Sunday starts, then your days and theirs.
     private static let data: [(month: Int, day: Int, sam: Bool, you: [Double], them: [Double])] = [
         (9, 20, true, [300, 320, 310, 280, 330, 300, 290], [330, 310, 320, 300, 340, 310, 300]),
         (10, 4, true, [380, 350, 360, 340, 400, 370, 330], [350, 360, 330, 350, 360, 340, 320]),
@@ -4470,7 +4221,6 @@ enum CompetitionMonthFixture {
         (10, 25, true, [412, 365, 301, 434, 420, 330, 350], [394, 395, 329, 400, 362, 312, 310]),
     ]
 
-    /// Oldest first; the newest is completed, the rest archived.
     static func weeks() -> [LocalCompetitionPresentation] {
         let calendar = try! CompetitionCalendar(timeZoneIdentifier: zone)
         return data.enumerated().map { index, week in
@@ -4551,12 +4301,6 @@ enum CompetitionMonthFixture {
     }
 }
 
-/// Home mounted on the real `CompetitionClient.remote` coordinator against an
-/// in-memory stand-in server:
-/// - Pull-to-refresh #1 reproduces the video's transient failure + realtime
-///   wake-up recovery (must never flash "Couldn’t update scores").
-/// - Pull-to-refresh #2 fails persistently (must show "Couldn’t update scores"
-///   and keep it on screen).
 private struct MultiUserCompetitionTransientRefreshTestLabView: View {
     @State private var store: StoreOf<MainTabFeature>?
 
@@ -4592,8 +4336,6 @@ private struct MultiUserCompetitionTransientRefreshTestLabView: View {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
         let calendar = try CompetitionCalendar(timeZoneIdentifier: "America/Los_Angeles")
-        // Compute a live Day 4 schedule from wall clock `Date()`, since
-        // `RemoteCompetitionRuntime` advances its clock against `Date()`.
         let realNow = Date()
         let startInstant = realNow.addingTimeInterval(-3 * 86_400)
         var laCalendar = Calendar(identifier: .gregorian)
@@ -4750,15 +4492,12 @@ private actor TransientRefreshLabServer {
 
     private func listCompetitions() throws -> [CompetitionDescriptor] {
         listCount += 1
-        // listCount == 1: initial start() bootstrap (cursor 3).
         if listCount == 1 {
             return [try descriptor(nextServerSequence: 4)]
         }
-        // Pull-to-refresh #1 (both initial attempt and retry/wakeup): cursor 4.
         if !completedTransientRecovery {
             return [try descriptor(nextServerSequence: 5)]
         }
-        // Pull-to-refresh #2+: cursor 5 (persistent failure).
         return [try descriptor(nextServerSequence: 6)]
     }
 
@@ -4809,9 +4548,6 @@ private actor TransientRefreshLabServer {
         }
 
         if cursor.lastSeenServerSequence == 3 && transientFailuresRemaining > 0 {
-            // Fail across both attempts of the initial pass (exceeding a single
-            // 1 s retry) while scheduling a realtime wakeup mid-pass whose
-            // follow-up sync succeeds — matching the recording's 4.4s -> 5.2s flash.
             transientFailuresRemaining -= 1
             if !scheduledWakeup {
                 scheduledWakeup = true
@@ -4846,7 +4582,6 @@ private actor TransientRefreshLabServer {
             )
         }
 
-        // Persistent outage on subsequent pull-to-refresh.
         throw CompetitionRemoteFailure.operationFailed
     }
 }

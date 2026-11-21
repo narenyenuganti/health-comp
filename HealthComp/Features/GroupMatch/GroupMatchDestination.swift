@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
 
-/// Which screen a group match draws.
 enum GroupMatchScreen: Equatable {
     case invite, lobby, liveFreeForAll, liveDoubles, result
 }
@@ -11,8 +10,6 @@ extension GroupMatchPresentation {
         switch lifecycle {
         case .pending:
             viewer.invite == .invited ? .invite : .lobby
-        // Everyone is in but Day 1 is tomorrow, so anyone can still back out.
-        // Nothing is edited in place: a match that didn't start stays a read-only lobby.
         case .scheduled, .declined, .expired, .cancelled:
             .lobby
         case .active, .endsToday, .tallying:

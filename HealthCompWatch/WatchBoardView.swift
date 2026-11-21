@@ -1,13 +1,9 @@
 import SwiftUI
 import WatchKit
 
-/// The card with two or more matches, else the Board or Nothing to show.
-/// `drawn` trails the store, so a delivery with the wrist down doesn't touch
-/// the screen until you look.
 struct WatchRootView: View {
     @ObservedObject var model: WatchSnapshotModel
 
-    /// Over the root: a match's Board from the card, or a duel's week.
     enum Screen: Hashable { case board(UUID), week(UUID) }
 
     @Environment(\.scenePhase) private var scenePhase
@@ -49,7 +45,6 @@ struct WatchRootView: View {
         }
     }
 
-    /// Drops what left the snapshot, and a pushed Board once the card is gone.
     static func pruned(_ path: [Screen], drawn: CompetitionWidgetSnapshot?, at date: Date) -> [Screen] {
         let pages = drawn?.pages(at: date) ?? []
         return path.filter { screen in
@@ -60,8 +55,6 @@ struct WatchRootView: View {
         }
     }
 
-    /// The tapped alert's Board over the card; with one match it is the root.
-    /// Waits for the match to be drawn, until the wrist drops.
     private func openTappedAlert() {
         guard let id = model.tappedAlert else { return }
         let pages = drawn?.pages(at: Date()) ?? []
@@ -71,8 +64,6 @@ struct WatchRootView: View {
     }
 }
 
-/// The root (`screen` nil) or one pushed screen. Its own view, so a pushed
-/// screen follows `drawn` and `path` as they change.
 private struct WatchScreen: View {
     @ObservedObject var model: WatchSnapshotModel
     let screen: WatchRootView.Screen?
@@ -106,7 +97,6 @@ private struct WatchScreen: View {
             .animation(Motion.fade, value: min(pages.count, 2))
         case let .board(id)?:
             if let match = pages.first(where: { $0.id == id }) {
-                // The back button reaches below the safe area on 40 mm.
                 board(match, at: date, isCurrent: path.last == screen)
                     .padding(.top, 12)
             } else {
@@ -121,7 +111,6 @@ private struct WatchScreen: View {
         }
     }
 
-    /// A pushed match that left with the clock.
     private func gone(at date: Date) -> some View {
         Color.clear.onAppear {
             let kept = WatchRootView.pruned(path, drawn: drawn, at: date)
@@ -129,7 +118,6 @@ private struct WatchScreen: View {
         }
     }
 
-    /// A tap on a duel that has started opens its week.
     private func board(_ match: CompetitionWidgetSnapshot.Match, at date: Date, isCurrent: Bool) -> some View {
         let hasWeek = match.hasWeek(at: date)
         return WatchBoardPage(model: model, match: match, date: date, isCurrent: isCurrent)
@@ -141,8 +129,6 @@ private struct WatchScreen: View {
     }
 }
 
-/// Two or more matches, one row each in the Board's order: name, one line
-/// and the number that matters. A row opens its Board.
 private struct WatchCard: View {
     @ObservedObject var model: WatchSnapshotModel
     let pages: [CompetitionWidgetSnapshot.Match]
@@ -194,11 +180,9 @@ private struct WatchCard: View {
     }
 }
 
-/// A duel day by day: your points in amber, theirs in ink, a dash for none.
 private struct WatchWeekView: View {
     let match: CompetitionWidgetSnapshot.Match
 
-    // Seven days and the header fit 40 mm at the default size; larger text scrolls.
     @ScaledMetric(relativeTo: .body) private var pointsSize: CGFloat = 15
     @ScaledMetric(relativeTo: .footnote) private var dayWidth: CGFloat = 24
 
@@ -251,16 +235,12 @@ private struct WatchWeekView: View {
     }
 }
 
-/// Who's ahead, by how much, on what day.
 private struct WatchBoardPage: View {
     @ObservedObject var model: WatchSnapshotModel
     let match: CompetitionWidgetSnapshot.Match
     let date: Date
-    /// On top: a Board under a pushed screen isn't being looked at.
     let isCurrent: Bool
 
-    /// How far the first-result clock has run. First sight itself is derived
-    /// from the store, so the rest state lands in the same update as the data.
     private enum Stage: Comparable { case done, verdictHeld, cardLeaving, card }
 
     @Environment(\.scenePhase) private var scenePhase
@@ -278,13 +258,11 @@ private struct WatchBoardPage: View {
     private var cardText: (headline: String, line: String, detail: [String])? {
         voiceOver ? nil : match.beltCardText
     }
-    /// VoiceOver skips the card, so its words join the label while the result stands.
     private var spokenCard: String? {
         guard voiceOver, let card = match.beltCardText else { return nil }
         return ([card.line] + card.detail).map { $0 + "." }.joined(separator: " ")
     }
 
-    /// Your bars and number wait for the clock; the lead goes first on it.
     private var numberRests: Bool { isFirstSight || stage >= .cardLeaving }
     private var verdictRests: Bool { isFirstSight || stage > .done }
     private var barsRest: Bool { numberRests && !reduceMotion }
@@ -330,28 +308,22 @@ private struct WatchBoardPage: View {
         }
     }
 
-    /// The first-result clock, once per match per device: card if earned, then
-    /// bars, verdict and number. Seen is marked at t=0, so a dropped wrist
-    /// never replays it.
     @MainActor
     private func reveal() async {
-        // The trigger can flip twice before `markSeen`; one clock, one haptic.
         guard stage == .done else { return }
         let card = match.belt?.card
         let showsCard = cardText != nil
         stage = showsCard ? .card : .verdictHeld
-        // A real frame at the rest state: Task.yield can merge with it.
         try? await Task.sleep(for: .milliseconds(50))
         model.markSeen(match.id)
         if showsCard {
             cardRuns = true
-            // The card's one wrist tap lands on its first beat.
             let firstBeat = reduceMotion ? 0 : 0.25
             try? await Task.sleep(for: .seconds(firstBeat))
             if case .lost = card { losses += 1 } else { wins += 1 }
             try? await Task.sleep(for: .seconds(WatchBeltCard.onScreen(reduceMotion: reduceMotion) - firstBeat))
             withAnimation(Motion.fade) { stage = .cardLeaving }
-            try? await Task.sleep(for: .seconds(0.2))  // one Motion.fade
+            try? await Task.sleep(for: .seconds(0.2))
             stage = .verdictHeld
             try? await Task.sleep(for: .milliseconds(50))
         }
@@ -363,8 +335,6 @@ private struct WatchBoardPage: View {
             if won, !showsCard, !reduceMotion { wins += 1 }
         }
     }
-
-    // MARK: Layouts
 
     private func board(_ status: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -398,8 +368,6 @@ private struct WatchBoardPage: View {
         .animation(Motion.fade, value: match.isStale(at: date))
     }
 
-    /// A group match: the standings, you in amber. No belt, no chase. Four seats
-    /// at large text run past a 40 mm screen, so it scrolls as the list does.
     private func groupBoard(_ group: CompetitionWidgetSnapshot.Group, status: String) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 6) {
@@ -491,14 +459,10 @@ private struct WatchBoardPage: View {
             .scoreRoll(points, id: match.id)
     }
 
-    /// Only out of rest: into it must land at once, or a live match going
-    /// final shows your number first.
     private var numberAnimation: Animation? {
         numberRests ? nil : reduceMotion ? Motion.fade : Motion.beat(1)
     }
 
-    /// The bars fade to a new day through the ZStack, and your won bars grow
-    /// on a first result.
     private func strip(_ status: String) -> some View {
         ZStack {
             CompetitionMatchStrip(match: match, date: date, height: 12, spacing: 4) { index, outcome, bar in
@@ -512,8 +476,6 @@ private struct WatchBoardPage: View {
         .animation(Motion.fade, value: status)
     }
 
-    /// In place of the lead line while you trail. The fill moves only from
-    /// the value last shown, never from empty, and no tap fires here.
     private func chaseBar(_ chase: (fill: Double, lead: String?, line: String, spoken: String)) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             if let lead = chase.lead {
@@ -534,7 +496,6 @@ private struct WatchBoardPage: View {
             }
             .frame(height: 12)
             .clipShape(SlantedBar())
-            // "213 of 268 today" gives way at accessibility sizes; VoiceOver still reads it.
             if chase.lead == nil || typeSize < .accessibility1 {
                 Text(chase.line)
                     .font(.footnote)
@@ -546,7 +507,6 @@ private struct WatchBoardPage: View {
     }
 
     private var lead: some View {
-        // A long name gives way in the middle, so the margin at the end stays.
         leadText
             .font(.footnote)
             .foregroundStyle(Theme.secondary)
@@ -572,7 +532,6 @@ private struct WatchBoardPage: View {
     }
 }
 
-/// The small belt under whoever holds it, with their defense count.
 private struct WatchBeltRow: View {
     let holder: CompetitionWidgetSnapshot.Belt.Holder
     let defenses: String?
@@ -595,16 +554,12 @@ private struct WatchBeltRow: View {
     }
 }
 
-/// The belt moment on the wrist. It covers the Board for about two seconds on
-/// the first result that moves the belt. Its copy and hold are the sanctioned
-/// numbers outside Motion.swift.
 private struct WatchBeltCard: View {
     let match: CompetitionWidgetSnapshot.Match
     let text: (headline: String, line: String, detail: [String])
     let runs: Bool
     let reduceMotion: Bool
 
-    /// Until the card starts to leave: its beats, then 1.2 s to read it.
     static func onScreen(reduceMotion: Bool) -> Double {
         (reduceMotion ? 0.2 : 0.75) + 1.2
     }
@@ -624,13 +579,12 @@ private struct WatchBeltCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             ZStack {
-                // The plate you see last week, then the new holder's over it.
                 WatchBeltPlate(gold: !isMine || defended != nil)
                 WatchBeltPlate(gold: isMine)
                     .opacity(runs ? 1 : 0)
                     .animation(beat(0), value: runs)
             }
-            .frame(maxWidth: 113, alignment: .leading)  // gives way to the words on small watches
+            .frame(maxWidth: 113, alignment: .leading)
             .padding(.bottom, 5)
             Text(text.headline)
                 .font(.score(size: 42))
@@ -667,7 +621,6 @@ private struct WatchBeltCard: View {
         .ignoresSafeArea(edges: .bottom)
     }
 
-    /// One slanted bar per defense; the newest grows on the first beat.
     private func pips(_ count: Int) -> some View {
         HStack(spacing: 3) {
             ForEach(0..<count, id: \.self) { index in
@@ -682,12 +635,9 @@ private struct WatchBeltCard: View {
     }
 }
 
-/// The Belt tab's mark at watch size, gold when you hold it, pewter when they
-/// do. The art's own colours, in the mark's 100×80 box with a strap stub each side.
 private struct WatchBeltPlate: View {
     let gold: Bool
 
-    /// The mark's own bars and block, so the plate follows the brand mark.
     private static let bars: [[CGPoint]] = (MarkPolygon.bars + [MarkPolygon.block])
         .map { $0.map { CGPoint(x: $0.0, y: $0.1) } }
 
@@ -697,7 +647,6 @@ private struct WatchBeltPlate: View {
         let strap = color(gold ? 0x241A0E : 0x1E1F22)
         let stitch = color(gold ? 0x8A6414 : 0x55575C)
         let frame = color(gold ? 0xC98A12 : 0x8A8C91)
-        // Gold is the mark's ring colours and amber; pewter is the art's own.
         let fills = gold
             ? [Theme.move, Theme.exercise, Theme.stand, Theme.youFill]
             : ([0x45464A, 0x66686C, 0x2C2D30, 0x74767B] as [UInt32]).map { color($0) }
@@ -721,7 +670,6 @@ private struct WatchBeltPlate: View {
     }
 }
 
-/// Says why there is no score.
 private struct WatchNothingView: View {
     let text: CompetitionWidgetEmptyText
 

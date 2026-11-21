@@ -1,12 +1,8 @@
 import ComposableArchitecture
 import Foundation
 
-/// The Friends screen, people search, adding someone, and removing,
-/// blocking or reporting them from their page.
 @Reducer
 struct FriendsFeature {
-    /// `cancel` takes back your request; `remove` ends a friendship. Both
-    /// are `remove_friend`.
     enum Change: Equatable, Sendable { case add, accept, decline, cancel, remove }
 
     enum ChangeFailure: Equatable, Sendable { case connection, unavailable, limit }
@@ -18,30 +14,19 @@ struct FriendsFeature {
         let failure: ChangeFailure
     }
 
-    /// Not `@ObservableState`, as `FriendSettingsFeature.State`.
     struct State: Equatable {
-        /// Nil until the server answers.
         var list: FriendsList?
         var loadFailed = false
         var query = ""
-        /// Bumped on every edit, so a wait or answer from an earlier visit
-        /// to the same text (mar → marc → mar) is still known as stale.
         var searchGeneration = 0
-        /// Nil under 3 characters and until the first answer.
         var results: [FriendPerson]?
         var isSearching = false
         var searchFailure: SearchFailure?
-        /// Everyone last seen, so their page can draw after they leave the
-        /// list or the results.
         var people: [UUID: FriendPerson] = [:]
         var inFlight: Set<UUID> = []
-        /// The part of `inFlight` that is a block or report: these finish
-        /// even after Friends closes, as Unblock does.
         var safetyInFlight: Set<UUID> = []
         var failure: PersonFailure?
-        /// Reported from this iPhone since sign-in.
         var reported: Set<UUID> = []
-        /// The Challenge sheet's Search People: focus the field once Friends shows.
         var focusesSearch = false
 
         var requestCount: Int { list?.incoming.count ?? 0 }
@@ -59,7 +44,6 @@ struct FriendsFeature {
             self.failure = PersonFailure(id: person.id, failure: reason)
         }
 
-        /// One person's answer, everywhere they're drawn.
         mutating func apply(_ relationship: FriendRelationship, to person: FriendPerson) {
             var person = person
             person.relationship = relationship
@@ -85,7 +69,6 @@ struct FriendsFeature {
             self.list = list
         }
 
-        /// The list says who is what; anyone else is no longer anything to you.
         mutating func merge(_ list: FriendsList) {
             self.list = list
             loadFailed = false
@@ -104,29 +87,22 @@ struct FriendsFeature {
         case requested
         case loaded(FriendsList?)
         case queryChanged(String)
-        /// The debounce for this searchable text, from this edit, ended.
         case searchDebounced(String, generation: Int)
         case searchFinished(String, generation: Int, Result<[FriendPerson], CompetitionRemoteFailure>)
         case changeTapped(FriendPerson, Change)
         case changeFinished(FriendPerson, Result<FriendRelationship, CompetitionRemoteFailure>)
-        /// The screen left the stack.
         case closed
         case blockTapped(FriendPerson)
         case blockFinished(FriendPerson, Result<AuthenticatedProfile, CompetitionRemoteFailure>)
-        /// Report, then block when asked: once blocked they can't be reported.
         case reportTapped(FriendPerson, andBlock: Bool)
-        /// Nil when the report was saved.
         case reportFinished(FriendPerson, andBlock: Bool, failure: CompetitionRemoteFailure?)
         case searchFocusRequested(Bool)
     }
 
-    /// `safety` is Block and Report: sign-out cancels it, closing doesn't.
     enum CancelID { case load, search, change, safety }
 
     static let searchDebounce = Duration.milliseconds(300)
 
-    /// What is sent, or nil under the server's 3 characters: trimmed, and a
-    /// leading @ (usernames only) doesn't count. Code points, as the server does.
     static func searchableQuery(_ query: String) -> String? {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let counted = trimmed.hasPrefix("@") ? trimmed.dropFirst() : Substring(trimmed)
@@ -140,7 +116,6 @@ struct FriendsFeature {
         Reduce { state, action in
             switch action {
             case .requested:
-                // A load could read before a change; the last change reloads.
                 guard state.inFlight.isEmpty else { return .none }
                 return .run { send in
                     await send(.loaded(try? await competitionClient.listFriends()))
@@ -151,7 +126,6 @@ struct FriendsFeature {
                 if let list {
                     state.merge(list)
                 } else if state.list == nil {
-                    // A failed refresh keeps whatever was shown.
                     state.loadFailed = true
                 }
                 return .none
@@ -168,10 +142,6 @@ struct FriendsFeature {
                 }
                 state.isSearching = true
                 let generation: Int = state.searchGeneration
-                // No cancelInFlight: it cancels when the new effect's task
-                // starts, so a busy main thread could let an older keystroke
-                // cancel the newest one and leave the spinner up. Every wait
-                // ends instead, and only the one for what's typed searches.
                 return .run { send in
                     try await clock.sleep(for: Self.searchDebounce)
                     await send(.searchDebounced(searchable, generation: generation))
@@ -200,7 +170,6 @@ struct FriendsFeature {
                     state.results = people
                     state.people.merge(people.map { ($0.id, $0) }) { _, new in new }
                 case .failure(.invalidQuery):
-                    // Over 40 characters, or something search can't take.
                     state.results = []
                 case .failure(.searchRateLimited):
                     state.results = nil
@@ -235,7 +204,6 @@ struct FriendsFeature {
                 )
 
             case let .changeFinished(person, result):
-                // stop empties this, so a late answer never reaches the next account.
                 guard state.inFlight.remove(person.id) != nil else { return .none }
                 switch result {
                 case let .success(relationship):
@@ -246,9 +214,6 @@ struct FriendsFeature {
                 return state.inFlight.isEmpty ? .send(.requested) : .none
 
             case .closed:
-                // A cancelled change may still have landed, so Home's badge
-                // reloads after one; reopening reloads anyway.
-                // A block or report finishes and reloads by itself.
                 let interrupted: Bool = !state.inFlight.subtracting(state.safetyInFlight).isEmpty
                 state.query = ""
                 state.results = nil
@@ -266,8 +231,6 @@ struct FriendsFeature {
                 guard state.inFlight.insert(person.id).inserted else { return .none }
                 state.safetyInFlight.insert(person.id)
                 state.failure = nil
-                // Once sent, the server may apply it, so its answer must land
-                // wherever the user has gone: only sign-out cancels it.
                 return .merge(
                     .cancel(id: CancelID.load),
                     .run { send in
@@ -288,8 +251,6 @@ struct FriendsFeature {
                 state.safetyInFlight.remove(person.id)
                 switch result {
                 case .success:
-                    // Blocking ends the friendship and any request, and drops
-                    // them from search.
                     state.apply(.none, to: person)
                     state.results?.removeAll { $0.id == person.id }
                 case let .failure(failure):
@@ -301,8 +262,6 @@ struct FriendsFeature {
                 guard state.inFlight.insert(person.id).inserted else { return .none }
                 state.safetyInFlight.insert(person.id)
                 state.failure = nil
-                // As a block: Report and Block goes on to the block after
-                // Friends closes.
                 return .run { send in
                     do {
                         try await competitionClient.reportProfile(person.id)
@@ -321,8 +280,6 @@ struct FriendsFeature {
                 guard state.inFlight.remove(person.id) != nil else { return .none }
                 state.safetyInFlight.remove(person.id)
                 if let failure {
-                    // Not blocked either: the report comes first, so Try Again
-                    // does both.
                     state.fail(person, failure)
                     return .none
                 }

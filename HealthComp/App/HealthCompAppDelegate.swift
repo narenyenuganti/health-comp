@@ -23,7 +23,6 @@ final class HealthCompAppDelegate: NSObject,
             UIApplication.LaunchOptionsKey: Any
         ]? = nil
     ) -> Bool {
-        // Before the Test Lab return: its fixtures reach the watch too.
         CompetitionWatchSync.shared.activate()
 #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--judges-decision") {
@@ -60,8 +59,6 @@ final class HealthCompAppDelegate: NSObject,
         pushRegistrationHub.publishFailure()
     }
 
-    /// Nothing shows while the app is open, as before this method existed;
-    /// a Friends push reloads Friends.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
@@ -85,14 +82,10 @@ final class HealthCompAppDelegate: NSObject,
             categoryIdentifier: content.categoryIdentifier,
             userInfo: content.userInfo
         ) {
-            // In the background, without opening the app. iOS keeps it
-            // running until this returns; the next open shows what you sent.
             do {
                 guard let send = CompetitionReactionAlert.send else { throw CancellationError() }
                 try await send(action.recipientUserID, action.reaction)
             } catch {
-                // Offline, signed out or another account: say so, and keep
-                // the tap that opens the match.
                 let notice = UNMutableNotificationContent()
                 notice.title = "Reaction not sent"
                 notice.body = "Open the match to send it again."
@@ -111,6 +104,5 @@ final class HealthCompAppDelegate: NSObject,
 }
 
 extension Notification.Name {
-    /// A Friends push arrived while the app was open.
     static let healthCompFriendsPushReceived = Notification.Name("healthcomp.friendsPushReceived")
 }

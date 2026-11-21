@@ -595,7 +595,6 @@ function decodeAttestation(value: Uint8Array) {
   if (authData.length < 88 || authData.length > 4_096) {
     fail("invalid_attestation_authenticator_length");
   }
-  // Preserve Apple's AT-only sample while accepting AT+ED extension payloads.
   const flags = authData[32];
   if (flags !== 0x40 && flags !== 0xc0) {
     fail("invalid_attestation_authenticator_flags");
@@ -723,7 +722,6 @@ function decodeAssertion(value: Uint8Array) {
   const signature = object.signature as Buffer;
   const legacy = authData.length === 37 &&
     (authData[32] === 0x00 || authData[32] === 0x40);
-  // Published iOS 27 assertions retain AT alongside the extension-data flag.
   const extended = authData.length > 37 && authData.length <= 1_024 &&
     (authData[32] === 0x80 || authData[32] === 0xc0);
   if (!legacy && !extended) fail("invalid_assertion_authenticator_data");
@@ -770,7 +768,6 @@ export function verifyAppAttestAssertion(input: {
   try {
     const clientDataHash = sha256(input.clientData);
     const nonce = sha256(Buffer.concat([decoded.authData, clientDataHash]));
-    // App Attest signs the nonce; createVerify hashes that message internally.
     const verifier = createVerify("SHA256");
     verifier.update(nonce);
     if (!verifier.verify(publicKey, decoded.signature)) {

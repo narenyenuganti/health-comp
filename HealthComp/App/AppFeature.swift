@@ -52,11 +52,7 @@ struct AppFeature {
         var pendingTeardown: PendingTeardown?
         var authEpoch: UInt64
         var isAuthenticationMonitoring: Bool
-        /// The newest claim link that arrived before sign-in finished.
         var pendingChallengeSequence: UInt64?
-        /// Set when a new account's name is submitted: claim links up to
-        /// this sequence arrived before the account existed. Kept through
-        /// mount failure and Try Again.
         var newAccountClaimLinksThrough: UInt64?
 
         var hasPendingChallenge: Bool { pendingChallengeSequence != nil }
@@ -290,8 +286,6 @@ struct AppFeature {
                         )
                     }
                     becomeSignedOut(state: &state, message: nil)
-                    // The session ended while the app was closed; no runtime
-                    // is running yet, so nothing can rewrite the widgets.
                     return .run { _ in
                         try? await competitionWidgetSnapshotClient.clear()
                     }
@@ -313,9 +307,6 @@ struct AppFeature {
                     state.phase = .bootstrappingProfile
                     state.account.isRequestInFlight = false
                     state.account.message = nil
-                    // The prior owner's event stream may have ended during
-                    // retirement. Bind monitoring to the now-active owner;
-                    // queued events retain their original ownership envelope.
                     return .merge(
                         bootstrapProfile(nil, epoch: epoch),
                         state.isAuthenticationMonitoring ? authenticationEvents() : .none
@@ -345,7 +336,6 @@ struct AppFeature {
                     state.profile = nil
                     state.profileStoragePaths = nil
                     state.mainTab = nil
-                    // A name typed before a failed submit and Try Again stays.
                     state.account = AccountFeature.State(
                         mode: .settingUpProfile,
                         displayName: state.account.displayName
@@ -364,7 +354,6 @@ struct AppFeature {
 
             case let .authenticationEvent(event):
                 return handleAuthenticationEvent(event, state: &state)
-
 
             case let .profileStorageResponse(epoch, profile, response):
                 guard epoch == state.authEpoch,
@@ -411,8 +400,6 @@ struct AppFeature {
                 }
                 if pendingTeardown.reason == .profileConflict,
                    reason == .sessionEnded, stage == .finishUserSignOut {
-                    // A terminal session permits local retirement, but is not
-                    // a receipt for a successful remote logout.
                     pendingTeardown.reason = .sessionEnded
                 }
                 switch stage {
@@ -482,11 +469,8 @@ struct AppFeature {
                 return .none
 
             case let .routeReceived(envelope):
-                // Only Welcome reacts here; MainTab claims the link later.
                 guard case .claimInvite = envelope.route else { return .none }
                 switch state.phase {
-                // Every teardown ends on Welcome or Try Again, so a link
-                // that lands during one is kept for them.
                 case .launching, .signedOut, .bootstrappingProfile,
                      .settingUpProfile, .launchFailure, .tearingDown:
                     state.pendingChallengeSequence = max(
@@ -512,8 +496,6 @@ struct AppFeature {
 
             case let .account(.delegate(.displayNameSubmitted(name))):
                 guard state.phase == .settingUpProfile else { return .none }
-                // This name creates the account, so any link already here
-                // can't be for it.
                 if let sequence = state.pendingChallengeSequence {
                     state.newAccountClaimLinksThrough = max(
                         state.newAccountClaimLinksThrough ?? 0,
@@ -605,7 +587,6 @@ struct AppFeature {
                         reason: .profileConflict, stopRuntime: false, profileID: nil
                     )
                 }
-                // No profile yet: only the session to end, as for a conflict.
                 if state.phase == .settingUpProfile, state.pendingTeardown == nil,
                    state.profile == nil, state.profileStoragePaths == nil, state.mainTab == nil,
                    authenticationClient.signOutCurrentSession != nil,
@@ -686,7 +667,6 @@ struct AppFeature {
         .ifLet(\.mainTab, action: \.mainTab) {
             MainTabFeature()
         }
-        // A route held for this profile must not reach the next one.
         .onChange(of: { $0.mainTab?.pendingRoute?.sequence }) { heldSequence, _ in
             Reduce { state, _ in
                 guard state.mainTab == nil, let heldSequence else { return .none }
@@ -695,8 +675,6 @@ struct AppFeature {
         }
     }
 
-    /// Names the step that failed, so a deleted account never reads as a
-    /// connection problem.
     static func teardownFailureMessage(
         reason: TeardownReason,
         stage: PendingTeardown.Stage
@@ -769,8 +747,6 @@ struct AppFeature {
         }
     }
 
-    /// Watches links without consuming them; the hub replays pending routes
-    /// to MainTab's own stream.
     private func observeRoutes() -> Effect<Action> {
         .run { send in
             for await envelope in competitionRoutingClient.routes() {
@@ -957,9 +933,6 @@ struct AppFeature {
                     } catch let mountError {
                         guard !Task.isCancelled else { throw mountError }
                         await competitionClient.stop()
-                        // An existing profile keeps its unsent scores and
-                        // practice journal for Try Again; only a root this
-                        // mount just created is removed.
                         guard paths.isNewlyCreated else { throw mountError }
                         do {
                             try await authenticatedProfileStorage.teardown(
@@ -1010,8 +983,6 @@ struct AppFeature {
             reason: reason,
             profileID: profileID,
             stopRuntime: stopRuntime,
-            // A rejected, unmounted account owns neither the retained profile
-            // nor its runtime. Recover only its authentication session.
             stage: reason == .profileConflict ? .finishUserSignOut : .prepareRuntime,
             isRunning: true
         )
@@ -1060,10 +1031,8 @@ struct AppFeature {
                 case .removeProfileStorage:
                     do {
                         try await profileTransitionGate.run {
-                            // Every signed-out path, with or without a profile.
                             try await competitionWidgetSnapshotClient.clear()
                             await CompetitionNotificationClient.deleteDonatedInteractions()
-                            // Device-local seen marks belong to the old profile's matches.
                             UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
                             UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
                             UserDefaults.standard.removeObject(forKey: CompetitionDismissedChallenges.storageKey)
@@ -1204,7 +1173,6 @@ struct AppFeature {
             state.mainTab = nil
             state.account = AccountFeature.State(
                 mode: .launchFailure,
-                // Kept for the name step after Try Again.
                 displayName: state.account.displayName
             )
             state.account.message = accountMessage(for: failure)

@@ -496,8 +496,6 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
         let postCount = await center.postCount
         let commitCount = await committer.callCount
         XCTAssertEqual(postCount, 1)
-        // The coordinator remembers the committed result, so the stale
-        // resubmission plans nothing and never reaches the committer.
         XCTAssertEqual(commitCount, 1)
     }
 
@@ -733,7 +731,6 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
                 ]
             )
         }
-        // Both journals in the newer snapshot predate the first commit.
         let newer = try twoAtMaximum(revision: 21)
         let coordinator = CompetitionNotificationCoordinator(
             planner: CompetitionNotificationPlanner(policy: .multiDecisionFixture),
@@ -773,8 +770,6 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
             ),
             preferences: .constant(mutedOpponentIdentities: []),
             commitDecisions: { competition, replan in
-                // Only the first commit appends; a newer snapshot arrives
-                // right after it, so the second match is never committed.
                 let result = try await commits.commit(competition, replan: replan)
                 if case .appended = result {
                     await box.coordinator?.submit(newer)
@@ -871,8 +866,6 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
     }
 
     func testCommitReplanHonorsSwitchedOffFamilies() async throws {
-        // Lead changes outrank close scores and the cap is one, so a replan
-        // that dropped the switches would spend the slot on the lead change.
         var policy = CompetitionNotificationPolicy.coordinatorFixture
         policy.isCloseScore = { _, _, _ in true }
         policy.priority = { family in
@@ -905,7 +898,6 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
                     return decisions.isEmpty ? .noDecision : .appended(decisions)
                 }
             )
-            // An earlier opponent lead makes today's owner lead a real change.
             await coordinator.submit(try multiDecisionSnapshot())
             return (
                 await commits.batches.flatMap { $0 },
@@ -921,7 +913,6 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
             }
         }
 
-        // Control: with every switch on, the lead change takes the slot.
         let allOn = try await commit(switchedOff: [])
         XCTAssertEqual(emittedFamilies(allOn.decisions), [.leadChange])
 
@@ -948,7 +939,6 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
             family: .whatItTakes
         )
         let calendar = try CompetitionCalendar(timeZoneIdentifier: "UTC")
-        // A UTC midnight; Day 1 noon is evaluatedAt.
         let startDay = try calendar.day(
             containing: Date(timeIntervalSinceReferenceDate: 1_987_200)
         )
@@ -988,7 +978,6 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
                 ]
             )
         }
-        // The fixture fires at midnight, which is already past at noon.
         var policy = CompetitionNotificationPolicy.coordinatorFixture
         policy.scheduledFireDate = { family, base, _ in
             family == .whatItTakes ? base.addingTimeInterval(19 * 3_600) : base
@@ -1018,7 +1007,6 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
         XCTAssertEqual(firstUpserts, 1)
         XCTAssertEqual(firstRemovals, 0)
 
-        // Switch off while the reminder is pending: it is removed, not re-upserted.
         switchedOff.setValue([.whatItTakes])
         await coordinator.submit(snapshot(2, takes))
         let offUpserts = await upserts()
@@ -1031,7 +1019,6 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
         let onUpserts = await upserts()
         XCTAssertEqual(onUpserts, 2, "switched back on")
 
-        // You lead: the value goes away and the pending reminder with it.
         await coordinator.submit(snapshot(4, nil))
         let leadRemovals = await removals()
         XCTAssertEqual(leadRemovals, 2, "you lead")
@@ -1177,7 +1164,6 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
                 readAt: Date(timeIntervalSinceReferenceDate: 2_000_000)
             ),
             terminalResult: nil,
-            // An earlier opponent lead makes today's lead a real change.
             emissionHistory: NotificationEmissionProjection(
                 recordedIDs: [
                     try NotificationEmissionRecorded.semanticID(
@@ -1336,7 +1322,6 @@ private actor NotificationCommitReturnGate {
     }
 }
 
-/// Appends only records it hasn't stored, like the runtime journals.
 private actor DedupingCommitStore {
     private var storedIDs: Set<String> = []
     private var firstAppendPending = true
@@ -1354,7 +1339,6 @@ private actor DedupingCommitStore {
         return .appended(novel)
     }
 
-    /// True once, right after the first append.
     func takeFirstAppend() -> Bool {
         guard didAppend, firstAppendPending else { return false }
         firstAppendPending = false

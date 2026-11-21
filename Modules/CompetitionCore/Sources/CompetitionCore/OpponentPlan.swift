@@ -2,11 +2,8 @@ import Foundation
 
 public struct OpponentGeneratorVersion: Codable, Hashable, Sendable {
     public static let v1 = Self(rawValue: 1)
-    /// Scales each day's final points to the owner's baseline daily points.
     public static let v2 = Self(rawValue: 2)
-    /// Whole-point BotWeek totals and reveal steps. Requires a bot-mode difficulty.
     public static let v3 = Self(rawValue: 3)
-    /// Samples a week and intraday reveal from a past rival's day/weekday distribution.
     public static let v4 = Self(rawValue: 4)
 
     public let rawValue: UInt32
@@ -45,8 +42,6 @@ public enum OpponentPlanError: Error, Equatable, Sendable {
     case insufficientRivalHistory(Int)
 }
 
-/// One scored calendar day from a past rival: Gregorian weekday `1...7`
-/// (Sunday = 1 ... Saturday = 7) and whole Activity ring points in `0...600`.
 public struct OpponentRivalSample: Codable, Equatable, Sendable {
     public let weekday: Int
     public let points: Int
@@ -63,7 +58,6 @@ public struct OpponentRivalSample: Codable, Equatable, Sendable {
     }
 }
 
-/// Empirical score distribution and weekday pattern of a past rival.
 public struct OpponentShadowProfile: Codable, Equatable, Sendable {
     public static let minimumSampleCount = 3
 
@@ -107,7 +101,6 @@ public struct OpponentShadowProfile: Codable, Equatable, Sendable {
         self.maxPoints = samples.map(\.points).max() ?? mu
     }
 
-    /// Shrunk mean and spread for Gregorian `weekday` (`1...7`, Sun...Sat).
     public func weekdayTarget(for weekday: Int) -> (mean: Int, spread: Int) {
         let matching = samples.filter { $0.weekday == weekday }
         let count = matching.count
@@ -126,7 +119,6 @@ public struct OpponentShadowProfile: Codable, Equatable, Sendable {
         return (blendedMean, blendedSpread)
     }
 
-    /// Seven bar heights (Monday through Sunday) scaled to `6...maxHeight`.
     public func weekdayBarHeights(maxHeight: Int = 28) -> [Int] {
         [2, 3, 4, 5, 6, 7, 1].map { weekday in
             let expected = weekdayTarget(for: weekday).mean
@@ -342,9 +334,6 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
         )
     }
 
-    /// Verifies that complete tally content is bound to this exact immutable
-    /// plan, including its commitment identity and every per-day final point.
-    /// Totals alone are deliberately insufficient.
     public func matches(_ content: CompleteWindowContent) -> Bool {
         guard content.opponentPlanVersion == contentIdentity,
               content.days.map(\.ordinal) == Array(1...7),
@@ -524,11 +513,6 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
         days: [OpponentDayPlan],
         opponentName: String? = nil
     ) -> Data {
-        // Commitment format v1, in order: domain, schema, generator, seed,
-        // difficulty, explicit schedule, then all days/checkpoints. Every
-        // integer is fixed-width big-endian, strings are UInt32-length-prefixed,
-        // and the commitment itself is deliberately excluded. Optional
-        // opponentName appends only when present so v1–v3 commitments are unchanged.
         var encoder = CanonicalBinaryEncoder()
         encoder.append(string: "healthcomp.opponent-plan")
         encoder.append(schemaVersion)
@@ -557,10 +541,7 @@ public struct OpponentPlanGenerationRequest: Codable, Equatable, Sendable {
     public let seed: UInt64
     public let generatorVersion: OpponentGeneratorVersion
     public let difficulty: OpponentDifficulty
-    /// Required by `.v2` and `.v3`, rejected by `.v1` and `.v4`. Never persisted:
-    /// the plan keeps every day's points, and its commitment covers them.
     public let baselineDailyPoints: Int?
-    /// Required by `.v4` (`.shadow`), rejected by `.v1`–`.v3`.
     public let shadowProfile: OpponentShadowProfile?
 
     public init(
@@ -805,7 +786,6 @@ public enum OpponentPlanGenerator {
             totals.append(min(bounds.upperBound, max(bounds.lowerBound, raw)))
         }
 
-        // Never match any contiguous 7-day slice or exact weekday tuple 100%.
         let samplePoints = profile.samples.map(\.points)
         var forbiddenSlices: [[Int]] = []
         if samplePoints.count >= 7 {
@@ -863,8 +843,8 @@ public enum OpponentPlanGenerator {
         finalPoints: Int
     ) throws -> [OpponentCheckpoint] {
         var dayRng = SplitMix64(seed: seed &+ (UInt64(ordinal) &* 0x9E3779B97F4A7C15))
-        let workoutSlot = 2 + Int(dayRng.next(upperBound: 5)) // 2...6 (~10 AM to ~8 PM)
-        let workoutPermille = 350 + Int(dayRng.next(upperBound: 251)) // 35%...60%
+        let workoutSlot = 2 + Int(dayRng.next(upperBound: 5))
+        let workoutPermille = 350 + Int(dayRng.next(upperBound: 251))
         let steadyPermille = 1_000 - workoutPermille
 
         var checkpoints: [OpponentCheckpoint] = []
@@ -985,8 +965,6 @@ private extension OpponentDifficulty {
                 checkpointCount: 8...10,
                 curve: .earlyBuild
             )
-        // v1 stays defined for every raw string so the existing case sweeps
-        // still generate. These ranges are the legacy sampler, not BotWeek.
         case .chill:
             return OpponentDifficultyV1Policy(
                 finalPoints: 180...360,
@@ -1020,9 +998,6 @@ private extension OpponentDifficulty {
         }
     }
 
-    /// v1's checkpoint counts and curves, with final points scaled to the
-    /// baseline: relaxed 45-60%, balanced 90-110%, challenging 110-130%,
-    /// rounded and capped at 600.
     func versionTwoPolicy(baseline: Int) -> OpponentDifficultyV1Policy {
         let percents: ClosedRange<Int>
         switch self {

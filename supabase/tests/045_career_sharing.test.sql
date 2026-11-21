@@ -3,7 +3,6 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
 
--- Results here are synthetic, so the frozen-window proofs can't hold. Rolled back.
 alter table public.competition_results drop constraint competition_result_frozen_window_check;
 alter table public.competition_results drop constraint competition_result_immutable_hash_check;
 
@@ -17,7 +16,6 @@ insert into auth.users(id) select pg_temp.uid(n) from generate_series(1,10) n;
 insert into public.profiles(id, auth_user_id, display_name, state)
   select pg_temp.pid(n), pg_temp.uid(n), 'Player ' || n, 'active' from generate_series(1,10) n;
 
--- Player 1's weeks, oldest first by start day.
 create function pg_temp.week(days_ago integer, a integer, b integer, a_points integer, b_points integer, fmt text default 'duel',
   cid uuid default gen_random_uuid())
 returns void language plpgsql as $$
@@ -49,12 +47,12 @@ end; $$;
 select pg_temp.week(70, 1, 2, 10000, 5000);
 select pg_temp.week(63, 1, 2, 12000, 5000);
 select pg_temp.week(56, 1, 2, 9000, 9000);
-select pg_temp.week(49, 2, 1, 15000, 9000);   -- Player 2 takes that belt back.
-select pg_temp.week(42, 3, 1, 8000, 25000);   -- Player 1 as participant b; best week.
-select pg_temp.week(35, 1, 5, 11000, 2000);   -- Player 5 deletes, retiring this belt.
+select pg_temp.week(49, 2, 1, 15000, 9000);
+select pg_temp.week(42, 3, 1, 8000, 25000);
+select pg_temp.week(35, 1, 5, 11000, 2000);
 select pg_temp.week(28, 1, 3, 13000, 4000);
-select pg_temp.week(21, 1, 6, 13000, 4000);   -- Player 6 will block player 1.
-select pg_temp.week(14, 1, 7, 300000, 1, 'three_way');  -- Group: never counts.
+select pg_temp.week(21, 1, 6, 13000, 4000);
+select pg_temp.week(14, 1, 7, 300000, 1, 'three_way');
 
 update public.profiles set state = 'deleting' where id = pg_temp.pid(5);
 
@@ -97,8 +95,6 @@ select is(public.set_career_sharing(false), '{"enabled": false}'::jsonb, 'turnin
 select pg_temp.as_user(2);
 select is(public.get_career_summary(pg_temp.pid(1)), null, 'and it disappears at once');
 
--- Who counts as "played with": a finished group's co-player does; a pending
--- invitee and a duel cancelled after acceptance but before day one do not.
 select pg_temp.as_user(1);
 select is(public.set_career_sharing(true), '{"enabled": true}'::jsonb, 'sharing back on');
 select pg_temp.as_user(7);
@@ -121,10 +117,9 @@ select is(public.get_career_summary(pg_temp.pid(1)), null, 'a pending invitee ca
 select pg_temp.as_user(10);
 select is(public.get_career_summary(pg_temp.pid(1)), null, 'an opponent from a duel cancelled before day one cannot');
 
--- Weeks that end together fold in uuid order, as the app's career does.
-select pg_temp.week(7, 8, 9, 9000, 1000, 'duel', '00000000-0000-4000-8000-000000000001');   -- win
-select pg_temp.week(7, 10, 8, 9000, 1000, 'duel', 'ffffffff-0000-4000-8000-000000000001');  -- loss, same day
-select pg_temp.week(0, 8, 9, 9000, 1000);                                                   -- win
+select pg_temp.week(7, 8, 9, 9000, 1000, 'duel', '00000000-0000-4000-8000-000000000001');
+select pg_temp.week(7, 10, 8, 9000, 1000, 'duel', 'ffffffff-0000-4000-8000-000000000001');
+select pg_temp.week(0, 8, 9, 9000, 1000);
 select is((private.career_summary(pg_temp.pid(8))->>'win_streak')::integer, 1, 'same-day weeks fold by uuid: win, loss, win is a streak of one');
 
 select ok(not has_function_privilege('anon', 'public.get_career_summary(uuid)', 'EXECUTE'), 'signed-out callers cannot read a career');

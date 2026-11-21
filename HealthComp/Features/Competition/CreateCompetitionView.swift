@@ -1,9 +1,6 @@
 import CompetitionCore
 import SwiftUI
 
-/// The drawer behind Home's + button: a friend, or someone else by search
-/// or their link; then the rules, the calendar's time zone and one private,
-/// single-use link.
 struct CreateCompetitionView: View {
     let status: CompetitionFeature.ChallengeSheetStatus
     let timeZoneIdentifier: String
@@ -11,19 +8,13 @@ struct CreateCompetitionView: View {
     @Binding var recipientCode: String
     let recipient: CompetitionFeature.InviteRecipient?
     let recipientStatus: CompetitionFeature.InviteRecipientStatus
-    /// Sleep beta: shown only while the beta is on.
     var withSleep: Binding<Bool>? = nil
     let senderName: String?
-    /// Your own challenge link; Share Your Link shows once it has loaded.
     var ownChallengeLink: URL? = nil
-    /// A FRIEND; empty omits the group.
     var friends: [FriendPerson] = []
-    /// Your matches, to dim a friend you can't challenge now.
     var competitions: [LocalCompetitionPresentation] = []
     var chooseFriend: ((FriendPerson) -> Void)? = nil
-    /// Opens people search; nil omits the row.
     var searchPeople: (() -> Void)? = nil
-    /// Practice against a bot in Duel; nil omits the section.
     var practice: CompetitionPracticeStart? = nil
     let findRecipient: () -> Void
     let create: () -> Void
@@ -35,20 +26,15 @@ struct CreateCompetitionView: View {
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
     @FocusState private var recipientCodeIsFocused: Bool
-    /// Paste Their Challenge Link was tapped: the link field and Find show.
     @State private var entersLink = false
-    /// Play a Bot was tapped: the bot paces (and rival Shadow) and Start Tomorrow show.
     @State private var picksBot = false
     @State private var botSelection: OpponentDifficulty = .pacer
     @State private var shadowRivalID: String?
     @State private var hasAttemptedPractice = false
 
-    /// Nobody chosen yet and no link or bot being picked: the groups.
     private var isPicking: Bool { recipient == nil && !entersLink && !picksBot }
 
     var body: some View {
-        // Accessibility sizes scroll the control with the text; pinned, they
-        // would squeeze both.
         let pinsControl = !dynamicTypeSize.isAccessibilitySize && !isPicking
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -107,7 +93,6 @@ struct CreateCompetitionView: View {
                 .background(Theme.ground)
             }
         }
-        // Here, so the inset and the rows under a new line move together.
         .moving(Motion.settle, value: status.controlPhase)
         .moving(Motion.settle, value: recipient?.displayName)
         .moving(Motion.settle, value: competitionRecipientErrorText(recipientStatus))
@@ -217,7 +202,6 @@ struct CreateCompetitionView: View {
 
     private var canGoBack: Bool { !isPicking && !isLocked }
 
-    /// Clearing the code clears the chosen person too.
     private func goBack() {
         recipientCodeIsFocused = false
         entersLink = false
@@ -237,13 +221,9 @@ struct CreateCompetitionView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
             if canGoBack {
-                // Back to the friend list: a wrong pick or a stray tap on
-                // Paste Their Challenge Link isn't a dead end.
                 CompetitionDrawerBackButton(action: goBack)
                     .accessibilityIdentifier("competition.create.back")
             } else {
-            // The opponent's slot: empty, then filled in neutral ink once
-            // the challenge is sent.
             ZStack {
                 SlantedBar()
                     .stroke(
@@ -289,11 +269,7 @@ struct CreateCompetitionView: View {
         }
     }
 
-    // MARK: Picker
-
     private var picker: some View {
-        // Accessibility sizes stack the avatar or icon above the text, so
-        // dividers start at the row's edge, as on Friends.
         let friendInset: CGFloat = dynamicTypeSize.isAccessibilitySize ? 14 : 66
         let actionInset: CGFloat = dynamicTypeSize.isAccessibilitySize ? 14 : 50
         return VStack(alignment: .leading, spacing: 22) {
@@ -461,9 +437,6 @@ struct CreateCompetitionView: View {
         }
     }
 
-    /// A friend you're already playing or challenging is dimmed and says so.
-    /// The whole row dims from ink, as one image, so the reason stays
-    /// readable and a photo never shows the initial behind it.
     private func friendRow(_ friend: FriendPerson) -> some View {
         let blocker: String? = friendChallengeBlocker(identity: friend.identity, competitions: competitions)
         let status: String? = friendStatusLine(
@@ -496,8 +469,6 @@ struct CreateCompetitionView: View {
         .accessibilityIdentifier("competition.create.friend.\(friend.id.uuidString.lowercased())")
     }
 
-    /// The icon sits above the title at accessibility sizes, as a friend's
-    /// avatar does, so neither squeezes the other.
     private func pickerRowLabel(_ title: String, systemImage: String, opens: Bool) -> some View {
         let stacks: Bool = dynamicTypeSize.isAccessibilitySize
         let layout: AnyLayout = stacks
@@ -540,8 +511,6 @@ struct CreateCompetitionView: View {
         .accessibilityIdentifier(id)
     }
 
-    // MARK: Chosen
-
     private var recipientSelection: some View {
         VStack(alignment: .leading, spacing: 12) {
             if entersLink {
@@ -562,8 +531,6 @@ struct CreateCompetitionView: View {
         .foregroundStyle(Theme.ink)
     }
 
-    /// Their challenge link, Find, and your own to share: as before friends.
-    /// Rings | Rings + Sleep, and what sleep changes.
     private func formatPicker(_ selection: Binding<Bool>) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             CompetitionSegments(
@@ -590,9 +557,6 @@ struct CreateCompetitionView: View {
         Text("Paste the challenge link they shared. Or send them yours so they can challenge you.")
             .font(.subheadline)
             .foregroundStyle(Theme.secondary)
-        // A long code wraps instead of clipping, and the reserved lines
-        // keep the field itself a 44 pt target (a one-line field fails
-        // both audits). Return runs Find rather than adding a line.
         TextField("Challenge link", text: codeBinding, axis: .vertical)
             .focused($recipientCodeIsFocused)
             .textInputAutocapitalization(.never)
@@ -639,8 +603,6 @@ struct CreateCompetitionView: View {
         return "Challenge someone"
     }
 
-    /// One slot: a new control crossfades over the last while height settles.
-    /// The group makes the incoming control ride the slot, not land ahead of it.
     private var controlSlot: some View {
         ZStack(alignment: .top) {
             control
@@ -653,7 +615,6 @@ struct CreateCompetitionView: View {
     @ViewBuilder
     private var control: some View {
         switch status {
-        // One arm, so the button stays put and BusyLabel keeps its clock.
         case .ready, .creating:
             createButton(title: "Create Challenge")
 
@@ -708,7 +669,6 @@ struct CreateCompetitionView: View {
             .accessibilityIdentifier("competition.create.configuration-error")
 
         case .failed(.recipientGone):
-            // A friend or someone you've played: never "No account has this link".
             Text(failureText(.recipientGone))
                 .font(.callout)
                 .foregroundStyle(Theme.secondary)
@@ -751,7 +711,6 @@ struct CreateCompetitionView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let challenge, !challenge.isPending {
-                // Accepted while the sheet was open.
                 Text(competitionStatusText(challenge, style: .row, locale: locale, timeZone: timeZone).line)
                     .font(.caption)
                     .foregroundStyle(Theme.secondary)
@@ -779,7 +738,6 @@ struct CreateCompetitionView: View {
 
     private func waitingText(_ challenge: LocalCompetitionPresentation?) -> String {
         let name = challenge?.opponentDisplayName ?? recipientName
-        // The share is optional: the challenge already reached them in the app.
         if let expiresAt = challenge?.pendingExpiresAt {
             return "\(name) gets it in HealthComp. Waiting for \(name). Expires \(moment(expiresAt))."
         }
@@ -804,8 +762,6 @@ struct CreateCompetitionView: View {
     }
 }
 
-/// Which control a challenge status draws, payloads collapsed: `status` itself
-/// changes on every publication, so nothing may key on it.
 enum ChallengeControlPhase: Hashable {
     case compose, existing, sent, accepted, failed
 }
@@ -833,14 +789,12 @@ extension LocalCompetitionPresentation {
     }
 }
 
-/// "Days run midnight to midnight, Pacific Time."
 func competitionTimeZoneText(_ identifier: String, locale: Locale = .current) -> String {
     let name = TimeZone(identifier: identifier)?
         .localizedName(for: .generic, locale: locale) ?? identifier
     return "Days run midnight to midnight, \(name)."
 }
 
-/// One string, so Copy carries the whole link.
 func competitionShareMessage(
     senderName: String?,
     link: CompetitionInviteShareLink
@@ -885,10 +839,8 @@ func competitionInviteFailureText(
     }
 }
 
-/// "Challenge Maya?": someone's challenge link, opened on this iPhone.
 struct ChallengeFromLinkView: View {
     let link: MainTabFeature.ChallengeFromLink
-    /// The + sheet's slot, which this sheet sends through.
     let status: CompetitionFeature.ChallengeSheetStatus
     let send: () -> Void
     let retry: () -> Void
@@ -940,11 +892,8 @@ struct ChallengeFromLinkView: View {
         .interactiveDismissDisabled(status == .creating)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.link.sheet")
-        // The success lands in MainTabView: this sheet may never render `.sent`.
         .sensoryFeedback(.error, trigger: status.controlPhase == .failed) { _, new in new }
         .sensoryFeedback(.error, trigger: linkFailed) { _, new in new }
-        // The content and control swap in place, so VoiceOver focus is lost:
-        // say what replaced them.
         .onChange(of: link.status) { _, newValue in
             switch newValue {
             case let .ready(name): announce("Challenge \(name)?")
@@ -971,7 +920,6 @@ struct ChallengeFromLinkView: View {
         link.status == .unavailable || link.status == .retryable
     }
 
-    /// Here `.sent` is still the sending row, until the sheet closes.
     private var controlPhase: ChallengeControlPhase {
         switch status.controlPhase {
         case .sent, .accepted: .compose
@@ -979,8 +927,6 @@ struct ChallengeFromLinkView: View {
         }
     }
 
-    /// One slot: a new control crossfades over the last while height settles.
-    /// The group makes the incoming control ride the slot, not land ahead of it.
     private var controlSlot: some View {
         ZStack(alignment: .top) {
             control
@@ -1053,7 +999,6 @@ struct ChallengeFromLinkView: View {
     @ViewBuilder
     private var control: some View {
         switch status {
-        // One arm, so the caption stays and the height holds.
         case .ready, .creating, .sent:
             VStack(alignment: .leading, spacing: 8) {
                 ZStack {

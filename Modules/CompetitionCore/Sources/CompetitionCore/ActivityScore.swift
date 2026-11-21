@@ -108,10 +108,6 @@ public struct ActivityScoringPolicy: Codable, Equatable, Sendable {
         pausedSummaryPolicy: .scoreReportedValuesWhenUnknown
     )
 
-    /// What the server scores for `healthcomp.activity-score.v1`: each ring
-    /// capped at 200%, the day at 600. Display only: remote genesis and
-    /// `remoteEvidence` stay on `.healthKitCompatibility`, and the wire clamps
-    /// separately in `RemoteScoringWireV1.quantizePercent`.
     public static let remoteWireV1 = ActivityScoringPolicy(
         uncheckedQuantization: .exactAggregate,
         perRingCap: 200,
@@ -379,9 +375,6 @@ public enum ActivityScoreCalculator {
             return .unavailable(unavailableReasons)
         }
 
-        // An unrepresentable percentage is numerically saturated here. This
-        // prevents finite division overflow without asserting an Apple per-ring
-        // policy: an overflow-sized ring already guarantees the 600-point day cap.
         var percentages: [Double] = []
         percentages.reserveCapacity(3)
         for (reading, _, _, _) in readings {

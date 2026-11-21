@@ -3,8 +3,6 @@ import SwiftUI
 import XCTest
 @testable import HealthComp
 
-/// The person page's numbers, against the rivalry history page's sample:
-/// you and Sam, ten finished weeks (the Test Lab's `rivalry` fixture).
 final class CompetitionRivalryTests: XCTestCase {
     private let locale = Locale(identifier: "en_US")
     private let zone = TimeZone(identifier: "America/Los_Angeles")!
@@ -82,7 +80,6 @@ final class CompetitionRivalryTests: XCTestCase {
         XCTAssertEqual(year.weeks.map(\.id), weeks.suffix(5).map(\.id))
 
         let rows = competitionRivalryRecords(year.weeks, opponentName: "Sam", now: now, year: year.year, locale: locale)
-        // No first match: that's All time's.
         XCTAssertEqual(rows.map(\.label), [
             "Best week", "Best day", "Day record", "Closest finish", "Biggest comeback",
         ])
@@ -98,12 +95,10 @@ final class CompetitionRivalryTests: XCTestCase {
             competitionAllTimeBestWeekNote(all: weeks, year: year.weeks, locale: locale),
             "All time still shows your 2,223 week from September 2025."
         )
-        // All time is unchanged by the years.
         XCTAssertEqual(
             competitionRivalryRecords(weeks, opponentName: "Sam", now: now, locale: locale).map(\.value),
             competitionRivalryRecords(ten, opponentName: "Sam", now: now, locale: locale).map(\.value)
         )
-        // Your best week this year is your best ever: no note.
         let allThisYear = try XCTUnwrap(competitionYearWeeks(ten, now: now, timeZone: zone))
         XCTAssertEqual(allThisYear.weeks.count, 10)
         XCTAssertNil(competitionAllTimeBestWeekNote(all: ten, year: allThisYear.weeks, locale: locale))
@@ -128,13 +123,10 @@ final class CompetitionRivalryTests: XCTestCase {
             completedAt: .distantPast, archivedAt: .distantPast
         )
         let weeks = starts.indices.map { match(id: UInt8(10 + $0), lifecycle: finished, now: .distantPast, start: starts[$0]) }
-        // Wed Jan 20, 2027: Dec 28 – Jan 3 ends in 2027.
         let january = Date(timeIntervalSince1970: 1_800_475_200)
         XCTAssertEqual(competitionYearWeeks(weeks, now: january, timeZone: zone)?.weeks.map(\.id), weeks.suffix(3).map(\.id))
         XCTAssertNil(competitionYearWeeks(Array(weeks.dropLast()), now: january, timeZone: zone))
-        // Thu Dec 31, 2026: only two weeks end in 2026.
         XCTAssertNil(competitionYearWeeks(weeks, now: Date(timeIntervalSince1970: 1_798_747_200), timeZone: zone))
-        // 10 PM on Dec 31 in Los Angeles is already 2027 in UTC.
         let lateDecember = Date(timeIntervalSince1970: 1_798_783_200)
         let fixture = CompetitionRivalryFixture.weeks(10, now: lateDecember, lastYear: 5)
         XCTAssertEqual(competitionYearWeeks(fixture, now: lateDecember, timeZone: zone)?.year, 2026)
@@ -166,7 +158,6 @@ final class CompetitionRivalryTests: XCTestCase {
             competitionFormAccessibilityText([.loss, .win, .win], opponentName: "Sam"),
             "Last 3: 2 wins, 1 loss. You won the last 2."
         )
-        // Capped at the last ten.
         XCTAssertTrue(
             competitionFormAccessibilityText(Array(repeating: .loss, count: 12), opponentName: "Sam")
                 .hasPrefix("Last 10: 0 wins, 10 losses.")
@@ -217,7 +208,6 @@ final class CompetitionRivalryTests: XCTestCase {
 
     func testButtonAndTopFollowTheLastWeekOffHome() {
         let seen = CompetitionMotionSeen()
-        // Nov 3: the last week (Oct 26 – Nov 1) is still on Home.
         let onHome = Date(timeIntervalSince1970: 1_793_736_000)
         let weeks = CompetitionRivalryFixture.weeks(10, now: onHome)
         let unseen = competitionUnseenResult(weeks, now: onHome, seen: seen)
@@ -322,7 +312,6 @@ final class CompetitionRivalryTests: XCTestCase {
             personPlace: Binding(get: { place }, set: { place = $0 })
         )
 
-        // Verdict › Your record with Sam › a week › its Records.
         stack.wrappedValue += [.person("sam")]
         XCTAssertEqual(place, CompetitionPersonPlace(depth: 1))
         stack.wrappedValue += [.records("sam")]
@@ -331,7 +320,6 @@ final class CompetitionRivalryTests: XCTestCase {
         XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .person("sam"), .competition(week)])
         XCTAssertFalse(place.showsRecords)
 
-        // Your record with Sam again pops back to the page: one level.
         stack.wrappedValue += [.person("sam")]
         XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .person("sam")])
         XCTAssertEqual(path, [verdict])
@@ -363,13 +351,11 @@ final class CompetitionRivalryTests: XCTestCase {
         XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .profile("sam")])
         XCTAssertEqual(person, "sam")
 
-        // All Weeks, then a week from it, then Sam's photo again: back to one page.
         stack.wrappedValue += [.person("sam"), .competition(week)]
         XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .profile("sam"), .person("sam"), .competition(week)])
         open(.profile("sam"))
         XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .profile("sam")])
 
-        // Your own photo from up there replaces Sam's pages, and a belt row sits on yours.
         stack.wrappedValue += [.person("sam"), .competition(week)]
         open(.ownProfile)
         XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .ownProfile])
@@ -377,7 +363,6 @@ final class CompetitionRivalryTests: XCTestCase {
         stack.wrappedValue += [.profile("dev")]
         XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .ownProfile, .profile("dev")])
 
-        // A week above someone's ledger, then Your record with them: one level.
         stack.wrappedValue = [.competition(verdict), .profile("sam"), .competition(week), .person("sam")]
         XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .profile("sam")])
 

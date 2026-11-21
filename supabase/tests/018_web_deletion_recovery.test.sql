@@ -9,8 +9,6 @@ insert into public.profiles(id,auth_user_id,display_name,state)
 values ('f4000000-0000-4000-8000-000000000001',
   'f3000000-0000-4000-8000-000000000001','Synthetic recovery','active');
 
--- Model a restored snapshot directly, including states that may have changed
--- since the recovery point. No real user or Apple authorization is involved.
 insert into private.apple_deletion_web_requests(
   request_id,state_digest,verifier_digest,nonce,profile_id,auth_user_id,
   apple_client_id,redirect_uri,phase,expires_at)
@@ -42,7 +40,6 @@ values ('f5000000-0000-4000-8000-000000000001',1,'account_anonymized',
 do $$ begin
   perform vault.create_secret('synthetic-code', 'healthcomp_web_deletion_code:'||repeat('2',64));
   perform vault.create_secret('synthetic-orphan', 'healthcomp_web_deletion_code:'||repeat('f',64));
-  -- Similar spelling must not match an SQL LIKE underscore wildcard.
   perform vault.create_secret('synthetic-unrelated', 'healthcompXwebXdeletionXcode:unrelated');
   perform vault.create_secret('synthetic-durable-refresh-token',
     private.account_deletion_secret_name('f4000000-0000-4000-8000-000000000002'));

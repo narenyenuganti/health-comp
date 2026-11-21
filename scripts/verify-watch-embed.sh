@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Usage: verify-watch-embed.sh <HealthComp.app>
-# Xcode's embed validation passes a wrong companion id, id prefix or version,
-# and those only surface at upload.
 set -euo pipefail
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 key() { plutil -extract "$2" raw -o - "$1/Info.plist" 2>/dev/null || fail "$3_$2_missing"; }

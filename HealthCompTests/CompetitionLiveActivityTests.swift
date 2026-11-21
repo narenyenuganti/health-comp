@@ -15,13 +15,10 @@ final class CompetitionLiveActivityTests: XCTestCase {
         ISO8601DateFormatter().date(from: text)!
     }
 
-    /// Folds U+202F and other spaces, as in the formatting checks.
     private func normalized(_ text: String?) -> String? {
         text?.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     }
 
-    /// Sam, Day 1 = Sun Nov 1 2026 in `zone`, so Day 7 is Sat Nov 7 and an
-    /// LA match ends at 2026-11-08T08:00Z.
     private func sam(
         _ n: Int = 1,
         name: String = "Sam",
@@ -109,7 +106,6 @@ final class CompetitionLiveActivityTests: XCTestCase {
         XCTAssertEqual(state.phase, .live)
 
         XCTAssertEqual(startedID(steps([sam()], now: "2026-11-08T07:59:00Z")), key(1))
-        // A stored publication replanned after midnight.
         XCTAssertEqual(steps([sam()], now: "2026-11-08T08:00:00Z"), [])
         XCTAssertEqual(steps([sam(lifecycle: .active(dayOrdinal: 6))]), [])
     }
@@ -175,7 +171,6 @@ final class CompetitionLiveActivityTests: XCTestCase {
         XCTAssertEqual(state.title, "Final score pending")
         XCTAssertNil(state.timing)
         XCTAssertNil(staleDate)
-        // Never starts a card on a pending match.
         XCTAssertEqual(steps([tallying], now: "2026-11-08T07:00:00Z"), [])
     }
 
@@ -233,7 +228,6 @@ final class CompetitionLiveActivityTests: XCTestCase {
         XCTAssertEqual(probe.starts, [key(1)])
         XCTAssertEqual(probe.started, ["older", key(1)])
 
-        // Started once: a swiped-away card doesn't come back.
         probe.running = []
         await activities.reconcileLatest()
         XCTAssertEqual(probe.starts, [key(1)])
@@ -242,13 +236,11 @@ final class CompetitionLiveActivityTests: XCTestCase {
         await activities.endAll()
         XCTAssertEqual(probe.ends, [key(1)])
         XCTAssertEqual(probe.started, ["older"])
-        // endAll drops the publication: nothing to replan.
         await activities.reconcileLatest()
         XCTAssertEqual(probe.starts, [key(1)])
     }
 }
 
-/// Records what the actor asks ActivityKit to do.
 final class LiveActivityProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var _running: [CompetitionLiveActivitySnapshot] = []

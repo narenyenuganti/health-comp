@@ -9,40 +9,26 @@ enum RemoteCompetitionCacheFailure: Error, Equatable, Sendable {
     case invalidDocument
 }
 
-/// What this phone last read from Health for one real match. It stays on
-/// this device: exact values and goals never go into wire payloads.
 struct RemoteOwnerActivity: Codable, Equatable, Sendable {
     struct Day: Codable, Equatable, Sendable {
         let ordinal: Int
-        /// Nil: Health had no summary.
         let latestSnapshot: ActivitySnapshot?
-        /// The reading behind the accepted row.
         let acceptedSnapshot: ActivitySnapshot?
-        /// The row it produced.
         let acceptedClientRevision: Int64?
-        /// The reading behind a revision still waiting for the server, so
-        /// it can become the accepted reading once that revision lands.
         var pendingSnapshot: ActivitySnapshot? = nil
         var pendingClientRevision: Int64? = nil
     }
 
-    /// Last read attempt.
     let checkedAt: Date
     let checkFailure: ActivityQueryFailureReason?
-    /// Last completed read; `days` come from it.
     let readAt: Date?
-    /// Started days only.
     let days: [Day]
 }
 
 struct RemoteCompetitionCacheEntry: Codable, Equatable, Sendable {
     let descriptor: CompetitionDescriptor
     let lastSeenServerSequence: Int64
-    // ponytail: owner activity rides in the 1 MiB inventory file, ~2–4 KB per match; move it to its own file if a profile nears ~250 listed matches.
     let ownerActivity: RemoteOwnerActivity?
-    /// Move, Exercise and Stand by server sequence, for score rows journaled
-    /// before rows kept them. Nil until a finished match has been checked;
-    /// empty when nothing was missing.
     let ringBackfill: [Int64: [Int]]?
 
     init(
@@ -329,8 +315,6 @@ actor JSONRemoteCompetitionCacheStore: RemoteCompetitionCacheStore {
             .completeUntilFirstUserAuthentication,
             to: fileURL
         )
-        // Exact Health values must not leave this iPhone, backups included.
-        // Set after every save: the rename replaces the file.
         var backupURL = fileURL
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
@@ -526,8 +510,6 @@ struct RemoteCompetitionRuntimeOutcome: Equatable, Sendable {
     }
 }
 
-/// Owns the profile-scoped reconciliation boundary between the server's
-/// competition inventory and the durable Core journals on this device.
 actor RemoteCompetitionRuntime {
     private let profileID: UUID
     private let store: any CompetitionEventStore
@@ -561,7 +543,6 @@ actor RemoteCompetitionRuntime {
         self.outboxStore = outboxStore
         self.cacheStore = cacheStore
         self.now = now
-        // With group matches, each family drains its own share of the outbox.
         self.syncCoordinator = outboxStore.map { outboxStore in
             CompetitionSyncCoordinator(
                 profileID: profileID,
@@ -601,24 +582,17 @@ actor RemoteCompetitionRuntime {
         }
     }
 
-    /// Group matches, apart from the duel inventory: refreshed, your days
-    /// uploaded and the final window attested. A failure here keeps the
-    /// cached read model and never touches a duel.
     func synchronizeGroupMatches() async -> [GroupMatchReadModel] {
         guard !isStopped, let groupMatches else { return [] }
         return await groupMatches.run()
     }
 
-    /// The last good group list on disk, for a publication before the
-    /// network answers.
     func cachedGroupMatches() async -> [GroupMatchReadModel] {
         await groupMatchStore?.readModel() ?? []
     }
 
     func stop() async {
         isStopped = true
-        // Both at once: the two drains share App Attest's one-at-a-time gate,
-        // so whichever holds it must be cancelled for the other to finish.
         let group = groupSyncCoordinator, duel = syncCoordinator
         async let groupStopped: Void = { await group?.stop() }()
         async let duelStopped: Void = { await duel?.stop() }()
@@ -709,8 +683,6 @@ actor RemoteCompetitionRuntime {
                 discoveryFailure: Self.failure(from: error)
             )
         }
-        // The server just answered, so uploads backed off while offline go
-        // now instead of after their retry time.
         await syncCoordinator?.wake(ignoringBackoff: true)
         await groupSyncCoordinator?.wake(ignoringBackoff: true)
 
@@ -731,12 +703,8 @@ actor RemoteCompetitionRuntime {
                 default: nil
                 }
             })
-            // Group entries aren't duels: the duel presence check can't see
-            // group rows and would discard their uploads.
             for entry in try await outboxStore?.entries() ?? [] {
                 if let groupMatchStore, await groupMatchStore.owns(entry) { continue }
-                // A finished match takes no more uploads, so its parked and
-                // acknowledged entries would only grow the outbox forever.
                 if finishedIDs.contains(entry.payload.competitionID) {
                     switch entry.state {
                     case .permanentFailure, .attestationAcknowledged:
@@ -754,7 +722,6 @@ actor RemoteCompetitionRuntime {
             let localIDs = Set(journalIDs).union(nextCacheByID.keys).union(queuedIDs)
             var deletedIDs: [UUID] = []
             for rawID in localIDs.subtracting(listedIDs).sorted(by: { $0.uuidString < $1.uuidString }) {
-                // An omitted page or a network error is not proof of deletion.
                 guard try await !remoteAPI.competitionExists(rawID) else {
                     throw RemoteCompetitionRuntimeFailure.discoveryUnavailable
                 }
@@ -1088,9 +1055,6 @@ actor RemoteCompetitionRuntime {
         }
     }
 
-    /// A finished match's ring values for rows journaled before rows kept
-    /// them: its whole feed read once more, then never again. Display only, so
-    /// a failed read waits for the next refresh instead of failing the match.
     private func ringBackfill(
         descriptor: CompetitionDescriptor,
         journal: LoadedCompetitionJournal,
@@ -1126,10 +1090,6 @@ actor RemoteCompetitionRuntime {
         return rings
     }
 
-    /// Appends events derived from server state and the clock. The sync
-    /// coordinator and notification records write to the same journal while
-    /// this pass waits on the network, and their events never change what
-    /// these say, so a cursor race just retries at the new cursor.
     private func appendReloadingCursor(
         _ events: [CompetitionDomainEvent],
         to competitionID: CompetitionID,
@@ -1250,10 +1210,6 @@ actor RemoteCompetitionRuntime {
         }
 #endif
         let evaluatedAt = now()
-        // The outbox can deliver while this sync runs, and stores each
-        // accepted row before dropping its entry. Reading the outbox and then
-        // the ledger shows every spent revision in one of the two, so a new
-        // reading never reuses one (the server rejects a reused revision).
         let existingOutboxEntries = try await outboxStore.entries()
         guard let current = try await store.load(configuration.competitionID) else {
             throw RemoteCompetitionRuntimeFailure.storageUnavailable
@@ -1274,10 +1230,6 @@ actor RemoteCompetitionRuntime {
                 }
             }
         }
-        // A rejection a retry can fix (an auth blip, a revision that lost a
-        // race) no longer stands for its reading, so that reading is queued
-        // again under a new revision. Only a closed window keeps it, since
-        // no retry can land there. Every revision still counts as spent.
         var pendingRequests: [CompetitionScoreRevisionRequest] = []
         var retryableRejections: [CompetitionOutboxEntry] = []
         for entry in existingOutboxEntries {
@@ -1298,7 +1250,6 @@ actor RemoteCompetitionRuntime {
                 pendingRequests.append(request)
             }
         }
-        // The revision each started day's reading is queued under.
         var queuedRevisionByOrdinal: [Int: Int64] = [:]
 
         for (offset, result) in read.days.enumerated() {
@@ -1379,9 +1330,6 @@ actor RemoteCompetitionRuntime {
                 .scoreRevision(request),
                 enqueuedAt: evaluatedAt
             )
-            // The new revision outranks this day's rejected ones, so they
-            // can go without a later reading reusing their revisions.
-            // Cleanup only: a failure here costs nothing.
             for entry in retryableRejections {
                 guard case let .scoreRevision(rejected) = entry.payload,
                       rejected.dayOrdinal == ordinal
@@ -1421,9 +1369,6 @@ actor RemoteCompetitionRuntime {
         )
     }
 
-    /// Pairs each started day's reading with the accepted row it produced.
-    /// A reading the server hasn't accepted yet keeps the earlier accepted
-    /// reading, so the panel can still split the accepted points.
     private static func ownerActivity(
         read: ActivityWindowRead,
         window: CompetitionActivityWindow,
@@ -1455,7 +1400,6 @@ actor RemoteCompetitionRuntime {
                 acceptedRevision = row.clientRevision
             } else if let row, let earlier,
                       earlier.pendingClientRevision == row.clientRevision {
-                // An earlier run's reading that has landed since.
                 accepted = earlier.pendingSnapshot
                 acceptedRevision = row.clientRevision
             } else if let row, let earlier,
@@ -1463,9 +1407,6 @@ actor RemoteCompetitionRuntime {
                 accepted = earlier.acceptedSnapshot
                 acceptedRevision = row.clientRevision
             }
-            // ponytail: remembers only the newest queued reading per day; an
-            // older queued revision landing after a newer one was queued
-            // loses its split (the rows then fall back to the latest reading).
             let queued = queuedRevisions[ordinal].flatMap { $0 == acceptedRevision ? nil : $0 }
             days.append(RemoteOwnerActivity.Day(
                 ordinal: ordinal,
@@ -1514,8 +1455,6 @@ actor RemoteCompetitionRuntime {
             rows = Array(repeating: nil, count: 7)
         }
         let acceptedRevisions = rows.map { $0?.clientRevision ?? 0 }
-        // Health reads day 7 by this device's own date, so a player west of
-        // the frozen calendar keeps scoring until their own midnight.
         var deviceZone = TimeZone.current
         if let environment, let zone = TimeZone(identifier: await environment.context().timeZoneIdentifier) {
             deviceZone = zone
@@ -1525,9 +1464,6 @@ actor RemoteCompetitionRuntime {
             configuration.bestAvailableDeadline
         )
         let existingEntries = try await outboxStore.entries()
-        // Stable locks the window, so it also needs this pass's Health read
-        // and no upload of this match still on its way. A rejected upload
-        // only stops counting once a newer accepted row replaced it.
         let uploadsSettled = !existingEntries.contains { entry in
             guard case let .scoreRevision(request) = entry.payload,
                   request.competitionID == configuration.competitionID.rawValue
@@ -1591,8 +1527,6 @@ actor RemoteCompetitionRuntime {
             days: finalizationDays
         )
         var queuedRequests: [CompetitionAttestationRequest] = []
-        // Only an attestation a retry can't help (the window is already
-        // closed) stands in for one that was rejected; others are sent again.
         var standingRequests: [CompetitionAttestationRequest] = []
         var retryableRejections: [CompetitionOutboxEntry] = []
         for entry in existingEntries {
@@ -1654,8 +1588,6 @@ actor RemoteCompetitionRuntime {
             .finalWindowAttestation(request),
             enqueuedAt: now()
         )
-        // The new attestation replaces the rejections it retries, so they
-        // don't pile up. Cleanup only: a failure here costs nothing.
         for entry in retryableRejections {
             try? await outboxStore.remove(
                 entry.semanticEventID,
@@ -1768,9 +1700,6 @@ actor RemoteCompetitionRuntime {
                 policy: .healthKitCompatibility
             ) {
             case let .available(score):
-                // Wheelchair status Not Set (or an unreadable one) is
-                // `.unknown`, which the wire rejects for a scored day. The
-                // stand ring's value is the same number, so send stand hours.
                 return RemoteEvidence(
                     moveMode: snapshot.moveMode.rawValue,
                     standMode: snapshot.standMode == .unknown
@@ -1876,7 +1805,6 @@ actor RemoteCompetitionRuntime {
             throw RemoteCompetitionRuntimeFailure.serverContractMismatch
         }
 
-        // Legacy invitations added an accepted invitee; bound invitations first record pending membership.
         let lifecycleIndex: Int
         switch invitee.state {
         case .accepted:
@@ -1946,7 +1874,6 @@ actor RemoteCompetitionRuntime {
             do {
                 _ = try await store.create(expectedGenesis)
             } catch CompetitionEventStoreError.identityAlreadyExists {
-                // A concurrent synchronizer won the create race.
             }
             guard let created = try await store.load(competitionID),
                   created.journal.genesis == expectedGenesis
@@ -2053,8 +1980,6 @@ actor RemoteCompetitionRuntime {
                     throw RemoteCompetitionRuntimeFailure
                         .serverContractMismatch
                 }
-                // Each device persists only its owner's attestation. The
-                // opponent's attestation remains server-owned result input.
                 guard attestation.participantProfileID
                         == configuration.owner.profileID
                 else { return nil }
@@ -2267,7 +2192,6 @@ actor RemoteCompetitionRuntime {
         else {
             throw RemoteCompetitionRuntimeFailure.serverContractMismatch
         }
-        // Nothing new since the last pass: no request at all.
         guard initialCursor < descriptor.serverCursor else { return [] }
         var cursor = initialCursor
         var snapshot: Int64?
@@ -2280,9 +2204,6 @@ actor RemoteCompetitionRuntime {
                 ),
                 200
             )
-            // A change that lands after the list call (an opponent's upload,
-            // or one of ours) moves the snapshot past the listed cursor. This
-            // pass stops at the listed cursor; the next one reads the rest.
             guard page.competitionID == descriptor.competitionID,
                   page.afterServerSequence == cursor,
                   page.snapshotServerSequence >= descriptor.serverCursor,
@@ -2370,7 +2291,6 @@ actor RemoteCompetitionRuntime {
         do {
             _ = try await store.create(expectedGenesis)
         } catch CompetitionEventStoreError.identityAlreadyExists {
-            // A concurrent synchronizer won the create race. Validate below.
         }
         guard let loaded = try await store.load(competitionID),
               loaded.journal.genesis == expectedGenesis,
@@ -2388,8 +2308,6 @@ actor RemoteCompetitionRuntime {
         _ history: [CompetitionChange],
         descriptor: CompetitionDescriptor
     ) throws -> [CompetitionChange] {
-        // Names may change between membership and acceptance. Keep the original gap-free
-        // server sequence for configuration/cursors; only bootstrap matching ignores names.
         let participantIDs = Set(descriptor.participants.map(\.profileID))
         return try history.filter { change in
             guard case let .profilePresentation(presentation) = change.payload else { return true }

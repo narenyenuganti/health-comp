@@ -327,7 +327,6 @@ final class OpponentPlanTests: XCTestCase {
     }
 
     func testVersionTwoScalesDailyFinalsToTheBaselinePerDifficulty() throws {
-        // v1's curves: relaxed builds late, balanced is linear, challenging builds early.
         let lateBuild: (Int, Int) -> Int = { final, p in final * p * p / 100_000_000 }
         let linear: (Int, Int) -> Int = { final, p in final * p / 10_000 }
         let earlyBuild: (Int, Int) -> Int = { final, p in

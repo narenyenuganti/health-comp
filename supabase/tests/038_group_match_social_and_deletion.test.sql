@@ -1,5 +1,4 @@
 begin;
--- Included inside each group test transaction; no product fixture state persists.
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
@@ -44,7 +43,6 @@ begin
  update public.competitions set start_day=current_date-days_ago,invitation_expires_at=now()-interval '20 days',
    best_available_deadline=(current_date-days_ago+9)::timestamp at time zone 'UTC' where id=cid;
 end; $$;
--- Real submission path: fixed semantic identity and evaluation time allow exact replay.
 create function pg_temp.score(cid uuid,person integer,day integer,rev bigint,points integer default 30000) returns jsonb language plpgsql as $$
 declare evaluated timestamptz; d text;
 begin
@@ -78,14 +76,12 @@ select pg_temp.make_match('ffa','three_way',2); select pg_temp.make_live(pg_temp
 select pg_temp.as_user(1);
 select throws_ok($$select public.nudge_competition_participant(pg_temp.gid('ffa'),pg_temp.pid(2))$$,'P0002','competition_not_found','FFA has no nudge');
 select throws_ok($$select public.set_competition_reaction(pg_temp.gid('ffa'),1,'fire',null)$$,'22023','invalid_reaction','bots have no target profile');
--- Old installations never receive group pushes, including already queued work.
 update public.device_installations set supports_group_matches=false where profile_id=pg_temp.pid(3);
 
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 select public.lease_competition_notification_work(100,180);
 select ok(not exists(select 1 from private.competition_notification_work w where w.recipient_profile_id=pg_temp.pid(3) and w.state='leased'),'lease refuses group work when capability removed');
 update public.device_installations set supports_group_matches=true where profile_id=pg_temp.pid(3);
--- Pending lineup names come only from group RPCs; photo access has its own acceptance rule.
 select pg_temp.as_user(1);
 insert into gm values('photos',(public.create_group_match('three_way',jsonb_build_array(
  jsonb_build_object('kind','human','profile_id',pg_temp.pid(1)),
@@ -99,7 +95,6 @@ insert into private.account_blocks values(pg_temp.pid(1),pg_temp.pid(6),now());
 select throws_ok($$select public.preview_group_match(pg_temp.gid('photos'))$$,'P0001','group_match_unavailable','all-pairs block hides preview');
 delete from private.account_blocks;
 select pg_temp.as_user(1); select public.cancel_group_match(pg_temp.gid('photos'));
--- Exercise the real deletion token state machine, not a hand-edited participant row.
 select pg_temp.make_match('delete-pending');
 select pg_temp.make_match('delete-scheduled'); select pg_temp.accept_all(pg_temp.gid('delete-scheduled'));
 select pg_temp.make_match('delete-live','three_way',2); select pg_temp.make_live(pg_temp.gid('delete-live'),1);

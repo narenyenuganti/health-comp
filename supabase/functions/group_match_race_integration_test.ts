@@ -5,13 +5,10 @@ import {
   submitScoreRevisionHandler,
 } from "./submit-score-revision/index.ts";
 
-// An explicit URL prevents these mutating tests from finding another local project.
 const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL");
 const claims = (id: string, role = "authenticated") =>
   JSON.stringify({ sub: id, role });
 
-// A losing call may fail only with a raised domain error (P0001); a deadlock
-// (40P01), lock timeout or other exception is a regression the end state hides.
 function assertOnlyDomainErrors(results: PromiseSettledResult<unknown>[]) {
   for (const result of results) {
     if (result.status === "rejected") {
@@ -176,7 +173,6 @@ Deno.test({
       );
       assertEquals((await score(3)).code, "competition_terminal");
 
-      // Exercise the actual edge handler and SQL authorize/grant/submit chain; only Apple crypto is synthetic.
       for (const terminalState of ["left", "finalized"]) {
         const match = (await create()).competition_id;
         await rpc(1, "accept_group_match", { competition_id: match });
@@ -318,7 +314,6 @@ Deno.test({
         assertEquals(fresh.body.code, "competition_terminal");
       }
     } finally {
-      // Leave no deliverable work that could interfere with the next notification test.
       await sql`update private.competition_notification_work set state='discarded',lease_token=null,lease_expires_at=null,leased_apns_token_sha256=null,completed_at=now(),updated_at=now() where recipient_profile_id=any(${profiles}::uuid[]) and state in ('pending','leased')`;
       await sql.end();
     }

@@ -13,8 +13,6 @@ public enum ActivityRefreshTrigger: String, Codable, Equatable, Sendable {
     case reconciliationProbe
 }
 
-/// A deliberately closed, privacy-safe classification. It never contains an
-/// HealthKit error description and never claims that read access was denied.
 public enum ActivityQueryFailureReason: String, Codable, Equatable, Sendable {
     case protectedDataUnavailable
     case healthDataUnavailable
@@ -34,8 +32,6 @@ public enum ActivityRefreshReadStatus: Codable, Equatable, Sendable {
     }
 }
 
-/// Per-day mapping failures remain closed and non-diagnostic. Adapter error
-/// strings and authorization inferences never enter the durable journal.
 public enum ActivityUnavailableReason: String, Codable, Equatable, Sendable {
     case sourceDataUnavailable
     case unsupportedActivityConfiguration

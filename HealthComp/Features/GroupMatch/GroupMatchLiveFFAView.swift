@@ -2,8 +2,6 @@ import CompetitionCore
 import ComposableArchitecture
 import SwiftUI
 
-/// Live free-for-all: the lead line to the next place up, the standings,
-/// what it takes, and the week.
 struct GroupMatchLiveFFAView: View {
     let match: GroupMatchPresentation
     let store: StoreOf<GroupMatchFeature>
@@ -103,7 +101,6 @@ struct GroupMatchLiveFFAView: View {
             if seat.isBot { GroupMatchTag("BOT") }
             if match.hasLeft(seat) { GroupMatchTag("LEFT") }
         }
-        // A thin bar: amber as text, which holds contrast on the panel.
         let bar = Capsule()
             .fill(Theme.hairline)
             .frame(height: 4)
@@ -118,9 +115,6 @@ struct GroupMatchLiveFFAView: View {
             .fixedSize()
         return Group {
             if isLarge {
-                // Stacked so the name keeps the width: place, avatar and
-                // name, then the tags, then the points with their bar beside
-                // them, so the bar reads as a meter and not an underline.
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 12) {
                         if showsScores { place }
@@ -176,14 +170,10 @@ struct GroupMatchLiveFFAView: View {
 }
 
 extension GroupMatchPresentation {
-    /// "Outscore Sam by 49 from here to take 1st." and who's closest behind
-    /// you. The gap is the current one, today's points included.
-    /// Nil unless you're chasing someone today.
     var whatItTakes: (target: String, points: String, chaser: String?)? {
         guard liveDay != nil, !hasLeft(viewer), case let .chasing(_, gap, behind) = lead,
               let place = standingRows.first(where: { behind.contains($0.subject) })?.place
         else { return nil }
-        // Whole points that pass them, not just tie.
         let points = Self.pointsText(gap / 100 * 100 + 100)
         let names = behind.map(name(of:)).formatted(.list(type: .and))
         let standings = projection.standings
@@ -201,8 +191,6 @@ extension GroupMatchPresentation {
     }
 }
 
-/// What both live screens share: the status row, the ••• menu with Leave
-/// Match, and the push into one day.
 struct GroupMatchLiveScreen<Content: View>: View {
     let match: GroupMatchPresentation
     let store: StoreOf<GroupMatchFeature>
@@ -276,7 +264,6 @@ struct GroupMatchLiveScreen<Content: View>: View {
     }
 }
 
-/// "● LIVE · DAY 4 OF 7 … ENDS WEDNESDAY NIGHT"
 struct GroupMatchStatusRow: View {
     let match: GroupMatchPresentation
 
@@ -317,8 +304,6 @@ struct GroupMatchStatusRow: View {
     }
 }
 
-/// "You're 2nd. 48 behind Sam.", the points in bold amber. Once you've
-/// left: "You left on Day 4. Your 1,664 stays in."
 struct GroupMatchLeadLine: View {
     let match: GroupMatchPresentation
 
@@ -342,7 +327,6 @@ struct GroupMatchLeadLine: View {
     }
 }
 
-/// Ink text with its last `points` in bold amber: amber is always you.
 struct GroupMatchHighlightedText: View {
     let text: String
     let points: String?

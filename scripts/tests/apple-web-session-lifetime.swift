@@ -117,8 +117,6 @@ enum AppleWebSessionLifetimeTests {
                 await capture { try await fixture.client.authenticate(requestURL, scheme) }
             }
             await fixture.started.wait()
-            // The cancellation handler's MainActor task cannot run until this
-            // actor yields. The callback must still observe cancellation first.
             task.cancel()
             fixture.complete(.success(callbackURL))
             let result = await task.value

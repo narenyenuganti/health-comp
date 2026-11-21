@@ -2,14 +2,6 @@ import CompetitionCore
 import Foundation
 import SwiftUI
 
-// Sleep beta: "Rings + Sleep" duels. Each night is worth up to 100 points
-// (time asleep 50, bedtime consistency 30, wake-ups 20, as Apple's Sleep
-// Score splits it) on top of the rings' 600. Nights live
-// beside the ring score, read and written through list_sleep_scoring and
-// submit_sleep_night, and are folded into a match's presentation in one
-// place, `addingSleep`, so every screen after it sees the combined score.
-
-/// Phone-local settings for the beta.
 enum SleepBeta {
     static let enabledKey = "healthcomp.sleepBeta.enabled"
     static let sourceKey = "healthcomp.sleepBeta.source"
@@ -31,12 +23,9 @@ extension SleepSourcePreference {
     }
 }
 
-/// Your own night as this phone read it: its three parts and what they came from.
 struct CompetitionSleepReading: Equatable, Sendable {
     let night: SleepNight
-    /// 6 pm the evening before, so onsets read as clock times.
     let windowStart: Date
-    /// Your usual bedtime from the nights before, in minutes after 6 pm.
     let usualOnsetMinutes: Double?
     let readAt: Date
 
@@ -47,11 +36,9 @@ struct CompetitionSleepReading: Equatable, Sendable {
     var usualBedtime: Date? { usualOnsetMinutes.map { windowStart.addingTimeInterval($0 * 60) } }
 }
 
-/// Both players' nights in one Rings + Sleep match, by day ordinal, in points.
 struct CompetitionSleepPresentation: Equatable, Sendable {
     var owner: [Int: Double] = [:]
     var opponent: [Int: Double] = [:]
-    /// What this phone read for your nights, for the night sheet.
     var ownerReadings: [Int: CompetitionSleepReading] = [:]
 
     var ownerTotal: Double { owner.values.reduce(0, +) }
@@ -61,9 +48,6 @@ struct CompetitionSleepPresentation: Equatable, Sendable {
 extension LocalCompetitionPresentation {
     var isSleepMatch: Bool { sleep != nil }
 
-    /// Adds both players' nights to every day, both totals and the verdict.
-    /// The server's result is rings-only; in a sleep match the outcome is
-    /// the combined score's.
     func addingSleep(
         _ match: CompetitionSleepMatch,
         viewer: UUID,
@@ -123,16 +107,11 @@ extension LocalCompetitionPresentation {
     }
 
     private static func outcome(_ user: Double, _ opponent: Double) -> CompetitionOutcome {
-        // Hundredths, the server's unit, so float noise never splits a tie.
         let a = (user * 100).rounded(), b = (opponent * 100).rounded()
         return a > b ? .win : a < b ? .loss : .tie
     }
 }
 
-/// Your nights for the days of a match that have begun, read from Health:
-/// one window per day, 6 pm the evening before to 6 pm that day. Each
-/// night's usual bedtime comes from the 13 nights before it, so `samples`
-/// should reach back 13 days before Day 1.
 func competitionOwnSleep(
     days: [CompetitionDay],
     through ordinal: Int,
@@ -143,8 +122,6 @@ func competitionOwnSleep(
     var readings: [Int: CompetitionSleepReading] = [:]
     for (index, day) in days.prefix(max(0, min(ordinal, 7))).enumerated() {
         guard let window = SleepScore.window(for: day) else { continue }
-        // ponytail: earlier nights are whole 24 h steps back, so a DST change
-        // shifts them an hour; fine for a bedtime median.
         let onsets = (1...SleepScore.historyNights).compactMap { back -> Double? in
             let earlier = DateInterval(
                 start: window.start.addingTimeInterval(-Double(back) * 86_400),
@@ -163,13 +140,11 @@ func competitionOwnSleep(
     return readings
 }
 
-/// "7h 18m".
 func competitionSleepDurationText(_ minutes: Double) -> String {
     let total = Int(minutes.rounded())
     return "\(total / 60)h \(String(format: "%02d", total % 60))m"
 }
 
-/// The ring panel's fourth row: "Sleep · 7h 18m asleep", or why there's no night.
 func competitionSleepRow(
     _ day: LocalCompetitionDayPresentation,
     locale: Locale = .current
@@ -193,7 +168,6 @@ func competitionSleepRow(
     )
 }
 
-/// One night of a Rings + Sleep match: what Health had, its points and theirs.
 struct CompetitionNightDrawer: View {
     let competition: LocalCompetitionPresentation
     let ordinal: Int
@@ -252,7 +226,6 @@ struct CompetitionNightDrawer: View {
         .accessibilityIdentifier("competition.night")
     }
 
-    /// "Fell asleep 11:42 PM, usual 11:20 PM".
     private func bedtimeText(_ reading: CompetitionSleepReading) -> String {
         let time = Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)
         guard let bedtime = reading.bedtime else { return "" }
@@ -262,7 +235,6 @@ struct CompetitionNightDrawer: View {
         return "Fell asleep \(bedtime.formatted(time)), usual \(usual.formatted(time))"
     }
 
-    /// One part of the night's score: what it measured, then its points.
     private func part(_ title: String, _ detail: String, _ points: Double, of maximum: Int) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             SlantedBar()

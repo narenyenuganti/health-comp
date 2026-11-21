@@ -11,9 +11,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Local only: the macOS log store is admin-only, so a standard account (the Mac mini's
-# `agent`) can set this to a booted simulator's UDID and run the same harness there,
-# where it can read its own log. CI leaves it unset and runs on the host.
 simulator="${HEALTHCOMP_DIAGNOSTICS_SIMULATOR:-}"
 if [[ -n "$simulator" ]]; then
   export SDKROOT=iphonesimulator

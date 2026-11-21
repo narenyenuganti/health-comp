@@ -15,13 +15,10 @@ final class CompetitionWidgetSnapshotTests: XCTestCase {
         ISO8601DateFormatter().date(from: text)!
     }
 
-    /// Folds U+202F and other spaces, as in the formatting checks.
     private func normalized(_ text: String?) -> String? {
         text?.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     }
 
-    /// A week of Los Angeles midnights starting on `start` (October or
-    /// November 2026).
     private func match(
         _ id: Int,
         name: String = "Sam",
@@ -66,7 +63,6 @@ final class CompetitionWidgetSnapshotTests: XCTestCase {
         )
     }
 
-    // Nov 1, 2026 is the US DST change; noon PST.
     private var nov1Noon: Date { at("2026-11-01T20:00:00Z") }
 
     func testStateAdvancesAtMatchCalendarMidnightsWithoutTheApp() {
@@ -329,8 +325,6 @@ final class CompetitionWidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(Snapshot.load(from: url), current)
     }
 
-    // MARK: Writer
-
     private func temporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -407,7 +401,6 @@ final class CompetitionWidgetSnapshotTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
         try await client.clear()
         XCTAssertEqual(reloads.value, 3)
-        // After a clear the same snapshot is new again.
         await client.write(snapshot, [])
         XCTAssertEqual(Snapshot.load(from: url), snapshot)
         XCTAssertEqual(reloads.value, 4)

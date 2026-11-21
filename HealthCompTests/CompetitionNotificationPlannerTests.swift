@@ -355,7 +355,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             return plan.emissionDecisions.filter { $0.record.family == .leadChange }.count
                 + plan.suppressionRecords.filter { $0.family == .leadChange }.count
         }
-        // 412.4 vs 412.3 reads "412" and "412": no lead to announce.
         XCTAssertEqual(try leadChangeFamilies(412.4, 412.3), 0)
         XCTAssertEqual(try leadChangeFamilies(500, 412.3), 1)
     }
@@ -723,8 +722,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         }
     }
 
-    // MARK: - PR 5: notifications
-
     private let enUS = Locale(identifier: "en_US")
     private let fresh = CompetitionNotificationEvaluationFreshness.freshCompletedRefresh(
         attemptID: "fixture-attempt",
@@ -849,9 +846,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         XCTAssertEqual(alone, [decisions[0].request])
     }
 
-    // MARK: Belt sentence
-
-    /// The body of the single result notification this evaluation emits.
     private func resultBody(_ competitions: [CompetitionNotificationCompetitionSnapshot]) throws -> String? {
         let policy = enUSPolicy()
         let evaluation = snapshot(competitions)
@@ -861,7 +855,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             .immediateRequests(for: decisions, in: evaluation).first?.content.body
     }
 
-    /// A finished week with the same person a week earlier, already notified.
     private func earlierWeek(
         name: String = "Sam",
         outcome: CompetitionOutcome
@@ -1109,7 +1102,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
     }
 
     func testFirstLeaderIsSilentAndOnlyAChangeNotifies() throws {
-        // Close-score copy is off so the lead change takes the match's slot.
         var policy = CompetitionNotificationPolicy.liveV1
         policy.isCloseScore = { _, _, _ in false }
 
@@ -1165,7 +1157,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             )]))
         }
 
-        // Alex ended Day 1 ahead and still leads: no "Alex took the lead".
         let stillAlex = try dayTwo(
             dayOne: .init(ordinal: 1, ownerAcceptedPoints: 100, opponentRevealedPoints: 200),
             today: .init(ordinal: 2, ownerAcceptedPoints: 150, opponentRevealedPoints: 120)
@@ -1173,7 +1164,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         XCTAssertFalse(stillAlex.emissionDecisions.contains { $0.record.family == .leadChange })
         XCTAssertFalse(stillAlex.suppressionRecords.contains { $0.family == .leadChange })
 
-        // Alex ended Day 1 ahead and you pass him on Day 2: that is news.
         let youPass = try dayTwo(
             dayOne: .init(ordinal: 1, ownerAcceptedPoints: 100, opponentRevealedPoints: 200),
             today: .init(ordinal: 2, ownerAcceptedPoints: 300, opponentRevealedPoints: 50)
@@ -1183,7 +1173,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             [.leader(dayOrdinal: 2, leader: .owner)]
         )
 
-        // Day 1's end can't be told: the Day 2 leader is a silent baseline.
         let unknown = try dayTwo(
             dayOne: .init(ordinal: 1, ownerAcceptedPoints: 100, opponentRevealedPoints: nil),
             today: .init(ordinal: 2, ownerAcceptedPoints: 300, opponentRevealedPoints: 50)
@@ -1322,7 +1311,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             "Last day · Today is the last day of your matches with Priya."
         )
 
-        // The zone is named only when its midnight offset differs from the phone's.
         func reminder(zone: String, dayEnd: String) -> String {
             var built = self.message(.scheduled(.whatItTakes), nil, nil)
             built.whatItTakes = takes(dayOrdinal: 5, points: 39)
@@ -1359,8 +1347,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
     private func normalized(_ text: String) -> String {
         text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     }
-
-    // MARK: - PR 13: notification choices
 
     func testEveryMessageFamilyMapsToItsSwitchOrIsAlwaysOn() {
         let families: [(CompetitionNotificationMessageFamily, CompetitionNotificationChoice?)] = [
@@ -1473,7 +1459,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         let resultPlan = try plan(snapshot([finished]))
         XCTAssertEqual(resultPlan.emissionDecisions.map(\.request.reactionTarget), [.result])
 
-        // A close score posts without them, and a muted match posts nothing.
         let close = try liveMatch(
             "25", day: 5, owner: 1_210, opponent: 1_200,
             recorded: [(.leadChange, .leader(dayOrdinal: 4, leader: .opponent))]
@@ -1523,10 +1508,7 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             )?.reaction.target,
             .result
         )
-        // A tap on the alert still opens its match past the recipient key.
         XCTAssertEqual(CompetitionReactionAlert.route(userInfo: userInfo), .competition(id))
-        // A plain tap, an unknown category, a payload without a match or an
-        // alert that names no recipient sends nothing.
         XCTAssertNil(CompetitionReactionAlert.request(
             actionIdentifier: "com.apple.UNNotificationDefaultActionIdentifier",
             categoryIdentifier: CompetitionReactionAlert.category(.result),
@@ -1641,9 +1623,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         })
     }
 
-    // MARK: - PR 14: what it takes reminder
-
-    /// Noon (or another hour) on match day `day`; the fixture starts on a UTC midnight.
     private func matchTime(day: Int, hour: Double = 12) -> Date {
         Date(timeIntervalSinceReferenceDate: 1_036_800 + Double(day - 1) * 86_400 + hour * 3_600)
     }
@@ -1678,7 +1657,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         XCTAssertEqual(request.dateComponents.hour, 19)
         XCTAssertEqual(request.dateComponents.date, matchTime(day: 5, hour: 19))
         XCTAssertEqual(request.content.title, "39 to take the lead from Alex")
-        // The zone suffix depends on the phone's zone; testLiveV1CopyForEveryFamily pins it.
         XCTAssertTrue(request.content.body.hasPrefix(
             "About 240 kcal of Move or 12 min of Exercise. Day 5 ends at midnight"
         ), request.content.body)
@@ -1696,7 +1674,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
                                        whatItTakes: takes(dayOrdinal: 4, points: 39))
         XCTAssertEqual(takesRequests(try plan(snapshot([mismatched], evaluatedAt: matchTime(day: 5)))), [])
 
-        // A later day's value is still in the future, so only the day check drops it.
         let ahead = try liveMatch("01", day: 5, owner: 1_112, opponent: 1_150,
                                   whatItTakes: takes(dayOrdinal: 6, points: 39))
         XCTAssertEqual(takesRequests(try plan(snapshot([ahead], evaluatedAt: matchTime(day: 5)))), [])

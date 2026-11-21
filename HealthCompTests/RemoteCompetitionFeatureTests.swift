@@ -29,7 +29,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.inviteRecipientStatus = .idle
             $0.inviteRecipient = .init(recipient)
         }
-        // Native fields may send their unchanged value again when focus ends.
         await store.send(.inviteRecipientCodeChanged(recipient.id.uuidString))
         await store.send(.inviteRecipientCodeChanged("another code")) {
             $0.inviteRecipientCode = "another code"
@@ -43,7 +42,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
     @MainActor
     func testInvalidAccountCodeNeverCreatesAnInvitation() async {
         let store = TestStore(initialState: CompetitionFeature.State()) { CompetitionFeature() }
-        // An empty code does nothing.
         await store.send(.findInviteRecipientTapped)
         await store.send(.inviteRecipientCodeChanged("not-an-account-code")) {
             $0.inviteRecipientCode = "not-an-account-code"
@@ -170,7 +168,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         let publication = CompetitionPublication.remote(revision: 1, competitions: [existing])
         await store.send(.publication(publication)) { $0.publication = publication }
         XCTAssertEqual(store.state.challengeSheetStatus, .alreadyChallenged(existing))
-        // Create isn't offered, so it can't send a second request.
         await store.send(.createInviteTapped)
         XCTAssertEqual(recorder.requestCount, 1)
     }
@@ -190,7 +187,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.send(.createInviteTapped) {
             $0.inviteCreations[.sheet] = Creation(recipient: .challengeLink(code), idempotencyKey: key, status: .creating)
         }
-        // Reset since it was opened: the same answer as any unknown link.
         await store.receive(.createInviteResponse(.sheet, idempotencyKey: key, .failure(.recipientUnavailable))) {
             $0.inviteCreations[.sheet] = nil
             $0.inviteRecipient = nil
@@ -222,9 +218,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.send(.createInviteTapped) {
             $0.inviteCreations[.sheet] = Creation(recipient: .profile(Self.recipient.id), idempotencyKey: key, status: .creating)
         }
-        // The server refuses an id learned through a link that was reset.
-        // No link is on screen, so the sheet keeps them and says so, giving
-        // no reason.
         await store.receive(.createInviteResponse(.sheet, idempotencyKey: key, .failure(.recipientUnavailable))) {
             $0.inviteCreations[.sheet]?.status = .failed(.recipientGone)
         }
@@ -297,7 +290,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.receive(.friends(.requested))
         await store.receive(.friends(.loaded(FriendsList())))
         await store.finish()
-        // Their pending challenge to you, or yours to them, was cancelled.
         XCTAssertEqual(recorder.reconcileTriggers, [.pullToRefresh])
     }
 
@@ -393,7 +385,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.send(.publication(publication)) {
             $0.publication = publication
             $0.inviteLinks = [stillPending: .ready(link, minimumRevision: 1)]
-            // The sheet keeps its slot until it closes.
             $0.inviteCreations[.rematch(of: parentID)] = nil
             $0.inviteCreations[.rematch(of: otherParent)] = nil
         }
@@ -607,7 +598,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.inviteCreations[.rematch(of: parentID)]?.status = .failed(.recipientGone)
         }
         XCTAssertEqual(store.state.rematchState(for: Self.presentation(parentID)), .failed(.recipientGone))
-        // No button, and a stray tap sends nothing.
         await store.send(.rematchTapped(parentID))
         XCTAssertEqual(recorder.requestCount, 1)
         await store.finish()
@@ -633,7 +623,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.send(.rematchTapped(parentID))
         await store.receive(.createInviteResponse(.rematch(of: parentID), idempotencyKey: firstKey, .failure(.activeMatchExists)))
         XCTAssertEqual(store.state.rematchState(for: Self.presentation(parentID)), .failed(.conflict))
-        // The conflicting match is gone from the dashboard, so the tap sends a fresh request.
         await store.send(.rematchTapped(parentID)) {
             $0.inviteCreations[.rematch(of: parentID)] = Creation(
                 recipient: .profile(Self.recipient.id), idempotencyKey: secondKey, status: .creating
@@ -733,7 +722,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.competitionClient = recorder.client
         }
         XCTAssertEqual(store.state.rematchState(for: parent), .received(incoming))
-        // Their challenge waits for an answer; a rematch of your own isn't sent.
         await store.send(.rematchTapped(parent.id))
         XCTAssertEqual(recorder.requestCount, 0)
         XCTAssertNil(store.state.inviteLinks[incoming.id])
@@ -765,8 +753,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         XCTAssertEqual(state.challengeSheetStatus, .ready)
     }
 
-    /// Motion keys on these, so a new publication must not change them and
-    /// a real change must.
     func testControlPhaseAndScreenKindKeys() {
         typealias Status = CompetitionFeature.ChallengeSheetStatus
         let id = CompetitionID(UUID())
@@ -872,7 +858,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.inviteLinks[id] = .ready(link, minimumRevision: 6)
         }
         XCTAssertFalse(String(reflecting: store.state).contains(rawToken))
-        // A link in memory isn't asked for again.
         await store.send(.inviteLinkNeeded(id))
 
         let missing = CompetitionID(UUID())
@@ -1101,7 +1086,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             CompetitionFeature()
         } withDependencies: { $0.competitionClient = client }
         await store.send(.nudgeTapped(id)) { $0.nudges[id] = .sending }
-        // A second tap while sending sends nothing.
         await store.send(.nudgeTapped(id))
         gate.continuation.yield()
         await store.receive(.nudgeResponse(id, tappedAt: now, .success(nudgedAt))) {
@@ -1186,7 +1170,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             )
         ) { CompetitionFeature() } withDependencies: { $0.competitionClient = client }
 
-        // Fire sets it; fire again removes it.
         await store.send(.reactionTapped(id, .day(2), .fire)) {
             $0.pendingReactions[key] = .some(.fire)
         }
@@ -1231,7 +1214,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         let control = store.state.reactionControl(for: id) { _ in }
         XCTAssertEqual(control.failed, [.day(2)])
         XCTAssertNil(control.selection(.day(2), in: store.state.publication!.dashboard.competitions[0]))
-        // Tapping again retries and clears the error line.
         await store.send(.reactionTapped(id, .day(2), .clap)) {
             $0.pendingReactions[key] = .some(.clap)
             $0.reactionFailures = []
@@ -1300,7 +1282,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.send(.nudgeTapped(id)) { $0.nudges[id] = .sending }
         for await _ in started.stream { break }
         await store.send(.stop) { $0.nudges = [:] }
-        // The suspended request finishing after sign-out changes nothing.
         gate.continuation.yield()
         await store.finish()
         XCTAssertEqual(store.state.nudges, [:])
@@ -1332,7 +1313,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         let sam = Self.recipient.id
         var client = InviteCreationRecorder(results: []).client
         client.block = { _ in .remote(revision: 0) }
-        // The server no longer lists the photo of someone you blocked.
         client.loadProfilePhotos = { _ in [] }
         var initial = CompetitionFeature.State(
             publication: .remote(revision: 1, competitions: [Self.presentation(id)])
@@ -1361,12 +1341,10 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         client.loadBlockedProfiles = { try answers.withValue { $0.removeFirst() }.get() }
         let store = TestStore(initialState: CompetitionFeature.State()) { CompetitionFeature() }
             withDependencies: { $0.competitionClient = client }
-        // A first-load failure leaves the section hidden.
         await store.send(.blockedPeopleRequested)
         await store.receive(.blockedPeopleResponse(nil))
         await store.send(.blockedPeopleRequested)
         await store.receive(.blockedPeopleResponse([alex])) { $0.blockedPeople = [alex] }
-        // A failed refresh keeps the list shown.
         await store.send(.blockedPeopleRequested)
         await store.receive(.blockedPeopleResponse(nil))
         await store.finish()
@@ -1397,7 +1375,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.unblocksInFlight = []
             $0.unblockFailed = sam.id
         }
-        // The next load clears the error.
         await store.send(.blockedPeopleRequested) { $0.unblockFailed = nil }
         await store.receive(.blockedPeopleResponse([sam]))
         XCTAssertEqual(unblocked.value, [alex.id])
@@ -1408,7 +1385,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
     func testUnblockDropsAListLoadThatStartedBeforeIt() async {
         let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
         var client = InviteCreationRecorder(results: []).client
-        // The load read before the unblock and answers after it.
         client.loadBlockedProfiles = {
             try await Task.sleep(for: .seconds(30))
             return [alex]
@@ -1424,7 +1400,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.unblocksInFlight = []
             $0.blockedPeople = []
         }
-        // No blockedPeopleResponse([alex]) arrives to bring the row back.
         await store.finish()
     }
 
@@ -1479,10 +1454,8 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             }
         await store.send(.challengeLinkRequested)
         await store.receive(.challengeLinkResponse(url)) { $0.challengeLink = url }
-        // Loaded again each time it's shown, so a reset elsewhere shows.
         await store.send(.challengeLinkRequested)
         await store.receive(.challengeLinkResponse(resetURL)) { $0.challengeLink = resetURL }
-        // A failed refresh keeps the link shown.
         await store.send(.challengeLinkRequested)
         await store.receive(.challengeLinkResponse(nil))
 
@@ -1564,7 +1537,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
                 $0.competitionInviteLinkClient = links
             }
 
-        // Failure says so and loads the link again to show the server's.
         await store.send(.challengeLinkResetConfirmed) { $0.challengeLinkIsResetting = true }
         await store.receive(.challengeLinkResetResponse(nil)) {
             $0.challengeLinkIsResetting = false
@@ -1573,7 +1545,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.receive(.challengeLinkRequested)
         await store.receive(.challengeLinkResponse(old))
 
-        // Success shows the new link and clears the error.
         await store.send(.challengeLinkResetConfirmed) {
             $0.challengeLinkIsResetting = true
             $0.challengeLinkResetFailed = false
@@ -1583,8 +1554,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.challengeLink = new
         }
 
-        // A reset whose answer was lost but that did happen: the reload shows
-        // the new link and drops the error.
         await store.send(.challengeLinkResetConfirmed) { $0.challengeLinkIsResetting = true }
         await store.receive(.challengeLinkResetResponse(nil)) {
             $0.challengeLinkIsResetting = false
@@ -1598,13 +1567,11 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
 
         await store.finish()
 
-        // Signing out clears the reset state with the link.
         var resetting = initial
         resetting.challengeLinkIsResetting = true
         resetting.challengeLinkResetFailed = true
         let stopped = TestStore(initialState: resetting) { CompetitionFeature() }
             withDependencies: { $0.competitionClient = client }
-        // A confirm or a load while a reset is running does nothing.
         await stopped.send(.challengeLinkResetConfirmed)
         await stopped.send(.challengeLinkRequested)
         await stopped.send(.stop) {
@@ -1628,7 +1595,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         client.resolveInviteRecipient = { _ in recipient }
         let store = TestStore(initialState: CompetitionFeature.State()) { CompetitionFeature() }
             withDependencies: { $0.competitionClient = client }
-        // A link is kept as its code; only a 1.0.2 account code is an id.
         for (input, found) in [
             ("healthcomp://challenge/Xb3kP9qL2mN8vR4tY6wZ1a",
              CompetitionFeature.InviteRecipient(link: code, displayName: "Maya")),
@@ -1682,7 +1648,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         XCTAssertEqual(state.challengeSheetStatus, .challengedYou(incoming))
         state.publication = .remote(revision: 2, competitions: [scheduled])
         XCTAssertEqual(state.challengeSheetStatus, .inMatch(scheduled))
-        // A tallying match no longer blocks a new challenge, as on the server.
         state.publication = .remote(revision: 3, competitions: [tallying])
         XCTAssertEqual(state.challengeSheetStatus, .ready)
     }
@@ -1703,7 +1668,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         XCTAssertEqual(state.rematchState(for: parent), .inMatch(active))
         state.publication = .remote(revision: 2, competitions: [parent, incoming])
         XCTAssertEqual(state.rematchState(for: parent), .challengedYou(incoming))
-        // Their rematch of this match is .received, not .challengedYou.
         let rematch = Self.presentation(
             CompetitionID(UUID()),
             lifecycle: .pending(direction: .incoming, createdAt: .distantPast, expiresAt: nil),
@@ -1712,7 +1676,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         )
         state.publication = .remote(revision: 3, competitions: [parent, rematch])
         XCTAssertEqual(state.rematchState(for: parent), .received(rematch))
-        // A cancelled child counts as no child.
         let cancelled = Self.presentation(
             CompetitionID(UUID()),
             lifecycle: .cancelled(at: .distantPast),

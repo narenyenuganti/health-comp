@@ -1,21 +1,14 @@
 import CompetitionCore
 import SwiftUI
 
-/// The week as paired bars: yours on top, split into Move, Exercise and
-/// Stand, over the opponent's single neutral bar, both on a full-day track.
-/// Accessibility sizes switch to stacked rows instead of shrinking text.
 struct CompetitionWeekChart: View {
     let days: [LocalCompetitionDayPresentation]
     let currentDayOrdinal: Int?
-    /// The projection's time, so dates agree with "Today" and "Day 4 of 7".
     let now: Date
     let opponentName: String
     var showsDates = false
-    /// False holds your bars at the slash; turning true grows them, row by row.
     var isGrown = true
-    /// Makes each day that has started open its breakdown.
     var selectDay: ((LocalCompetitionDayPresentation) -> Void)?
-    /// A clap beside each of their finished days, while day reactions are open.
     var clap: CompetitionDayClap?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -23,7 +16,6 @@ struct CompetitionWeekChart: View {
     var body: some View {
         VStack(spacing: dynamicTypeSize >= .xxLarge ? 12 : 6) {
             ForEach(days, id: \.ordinal) { day in
-                // Beside the row, not in it, so the row's tap still opens the day.
                 HStack(spacing: 6) {
                     dayRow(day)
                     if let clap {
@@ -70,7 +62,6 @@ struct CompetitionWeekChart: View {
         }
     }
 
-    /// Empty on days you can't clap, so the columns stay aligned.
     @ViewBuilder
     private func clapSlot(_ day: LocalCompetitionDayPresentation, _ clap: CompetitionDayClap) -> some View {
         if competitionDayIsClappable(day, currentDayOrdinal: currentDayOrdinal) {
@@ -120,16 +111,12 @@ struct CompetitionWeekChart: View {
     }
 }
 
-/// One match's claps from the Week list, through the reactions call: one per
-/// day, as in the day drawer.
 struct CompetitionDayClap {
-    /// What you sent to a day, pending included; nil when nothing.
     let sent: (Int) -> CompetitionReactionKind?
     let isPending: (Int) -> Bool
     let send: (Int) -> Void
 }
 
-/// Their finished days with a score: today waits until it ends.
 func competitionDayIsClappable(
     _ day: LocalCompetitionDayPresentation,
     currentDayOrdinal: Int?
@@ -139,7 +126,6 @@ func competitionDayIsClappable(
         && day.opponentRevealedPoints != nil
 }
 
-/// "Clap for Sam’s Tuesday"
 func competitionClapLabel(
     opponentName: String,
     day: CompetitionDay,
@@ -148,8 +134,6 @@ func competitionClapLabel(
     "Clap for \(opponentName)’s \(weekdayName(day, locale: locale))"
 }
 
-/// 👏 until you've sent something, then what you sent. Once sent, a tap opens
-/// the day, where all four reactions stay.
 private struct DayClapButton: View {
     let sent: CompetitionReactionKind?
     let isPending: Bool
@@ -196,11 +180,6 @@ private struct DayClapButton: View {
     }
 }
 
-/// The week at a glance: one bar per day in the color of whoever won it,
-/// amber for you, ink for them and grey for a tie. A day with no data is
-/// striped and an upcoming day is an outline. Today, once either side has
-/// points, is wider and split at the slash: your share in amber, theirs in
-/// ink, with both numbers under it. Before that it stays dashed.
 struct CompetitionWeekStrip: View {
     let days: [LocalCompetitionDayPresentation]
     let currentDayOrdinal: Int?
@@ -208,22 +187,17 @@ struct CompetitionWeekStrip: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.launchStage) private var launchStage
 
-    /// Today's column, as wide as this many other days.
     private static let todayWeight: CGFloat = 2.6
 
     var body: some View {
         WeightedRow(weights: days.map { isSplit($0) ? Self.todayWeight : 1 }, spacing: 6) {
             ForEach(Array(days.enumerated()), id: \.element.ordinal) { index, day in
                 VStack(spacing: 6) {
-                    // At launch the bars grow left to right behind the scores.
                     bar(day)
                         .frame(height: isSplit(day) ? 14 : 10)
-                        // Taller today stays centred on the other bars.
                         .padding(.vertical, isSplit(day) ? -2 : 0)
                         .scaleEffect(x: launchStage == .waiting ? 0 : 1, anchor: .leading)
                         .moving(Motion.grow(index, of: days.count), value: launchStage)
-                    // Seven columns can't hold larger weekday text; the bars
-                    // still read in order.
                     if dynamicTypeSize < .xxLarge {
                         label(day)
                             .font(.caption2.weight(.bold).width(.condensed).monospacedDigit())
@@ -234,7 +208,6 @@ struct CompetitionWeekStrip: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        // Only a real change: nothing draws in on appear.
         .animation(Motion.fade, value: days.map(outcome))
         .animation(Motion.fade, value: days.map(leaderColor))
         .accessibilityHidden(true)
@@ -253,7 +226,6 @@ struct CompetitionWeekStrip: View {
     private func label(_ day: LocalCompetitionDayPresentation) -> some View {
         let weekday = Text(weekdayText(day.day)).textCase(.uppercase)
         if isSplit(day) {
-            // Held together under the bar, so no number reads as a neighbour's.
             HStack(spacing: 5) {
                 Text(competitionPointsText(day.ownerAcceptedPoints)).foregroundStyle(Theme.you)
                 weekday.foregroundStyle(Theme.ink)
@@ -284,9 +256,6 @@ struct CompetitionWeekStrip: View {
     }
 }
 
-/// Today's points inside today's dashed frame, split at a slash: yours in
-/// amber, theirs in ink. The frame keeps it one day, not two bars. The split
-/// settles across when either side syncs.
 private struct TodaySplitBar: View {
     let you: Double
     let them: Double
@@ -313,7 +282,6 @@ private struct TodaySplitBar: View {
     }
 }
 
-/// Children side by side, each as wide as its share of `weights`.
 private struct WeightedRow: Layout {
     let weights: [CGFloat]
     let spacing: CGFloat
@@ -349,10 +317,6 @@ private struct WeightedRow: Layout {
     }
 }
 
-/// Your bar (Move, Exercise and Stand or Roll when the days carry a ring
-/// split) and the other person's single bar.
-/// From xxLarge text, named rows replace the bars, so the legend steps
-/// aside.
 struct CompetitionRingLegend: View {
     let days: [LocalCompetitionDayPresentation]
     let opponentName: String
@@ -371,7 +335,6 @@ struct CompetitionRingLegend: View {
                     HStack(spacing: 12) { others }
                 }
             }
-            // A one-line legend is otherwise too short for VoiceOver's target.
             .frame(minHeight: 34)
             .contentShape(.accessibility, Rectangle())
             .foregroundStyle(Theme.secondary)
@@ -421,14 +384,8 @@ struct CompetitionRingLegend: View {
     }
 }
 
-/// The running margin after each day that has ended, from 0 before Day 1,
-/// in whole points as the scoreboard shows them. A side with no score counts
-/// 0 that day, as the totals do. Today waits until it ends.
 struct CompetitionLeadLine: Equatable {
-    /// `margins[k]` is your margin after Day k; `margins[0]` is 0.
     let margins: [Double]
-    /// Where the lead changed hands, in days from the start: 2.4 is part way
-    /// along Day 3. Through a tie it is the day of the tie.
     let changes: [Double]
 }
 
@@ -458,7 +415,6 @@ func competitionLeadLine(
     return CompetitionLeadLine(margins: margins, changes: changes)
 }
 
-/// A numbered moment on the lead line, at the margin after Day `index`.
 struct CompetitionLeadMoment: Equatable {
     let index: Int
     let day: CompetitionDay
@@ -466,8 +422,6 @@ struct CompetitionLeadMoment: Equatable {
     let text: String
 }
 
-/// Two at most, in order: the biggest lead they held, then your best day.
-/// Your best day steps aside when it is the same day, so markers never stack.
 func competitionLeadMoments(
     _ line: CompetitionLeadLine,
     days: [LocalCompetitionDayPresentation],
@@ -475,7 +429,6 @@ func competitionLeadMoments(
 ) -> [CompetitionLeadMoment] {
     let ended = Array(days.prefix(line.margins.count - 1))
     var moments: [CompetitionLeadMoment] = []
-    // The first of equal minimums and maximums: the earliest day.
     if let low = line.margins.indices.dropFirst().min(by: { line.margins[$0] < line.margins[$1] }),
        line.margins[low] < 0 {
         moments.append(CompetitionLeadMoment(
@@ -498,9 +451,6 @@ func competitionLeadMoments(
     return moments
 }
 
-/// A marker's height: on the line, unless it would cover a lead-change slash
-/// (26 pt tall on the axis). Then it moves clear on its own side of the axis,
-/// or the other side when there's no room.
 func competitionLeadMomentY(
     at point: CGPoint,
     axis: CGFloat,
@@ -508,7 +458,6 @@ func competitionLeadMomentY(
     height: CGFloat,
     radius: CGFloat = 12
 ) -> CGFloat {
-    // The slash's half extents, its 12 degree lean included, plus the radius.
     let reachX = 1.5 + 13 * tan(12 * CGFloat.pi / 180) + radius
     let reachY = 13 + radius
     guard abs(point.y - axis) < reachY,
@@ -520,26 +469,18 @@ func competitionLeadMomentY(
     return above >= radius ? above : below
 }
 
-/// The lead after each day as one line: amber above the axis while you lead,
-/// ink below while they do, a slash at every change. False `isDrawn` holds it
-/// at the start; turning true draws it out once.
 struct CompetitionLeadLineView: View {
     let line: CompetitionLeadLine
     let days: [LocalCompetitionDayPresentation]
     let currentDayOrdinal: Int?
     let opponentName: String
     var isDrawn = true
-    /// The sticker's "You ahead" above the line and "Sam ahead" under it, in
-    /// place of the title.
     var sideLabels: (you: String, them: String)?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    /// A quiet week still gets room, so 10 points never reads as a rout.
     private static let minimumScale = 50.0
     private static let unusedScale = 10.0
-    /// The end label grows with its text, and stays inside the chart's
-    /// frame when the line ends at the top or bottom of the scale.
     @ScaledMetric(relativeTo: .footnote) private var endLabelWidth: CGFloat = 48
     @ScaledMetric(relativeTo: .footnote) private var endLabelHalfHeight: CGFloat = 9
 
@@ -584,7 +525,6 @@ struct CompetitionLeadLineView: View {
         }
     }
 
-    /// The Week page's markers; the sticker keeps the bare line.
     private var moments: [CompetitionLeadMoment] {
         guard sideLabels == nil else { return [] }
         return competitionLeadMoments(line, days: days, opponentName: opponentName)
@@ -667,7 +607,6 @@ struct CompetitionLeadLineView: View {
                     .scaleEffect(isDrawn ? 1 : 0)
                     .moving(arrival(Double(lastDay)), value: isDrawn)
                     .position(end)
-                // Over the line, moved clear of the slashes (competitionLeadMomentY).
                 ForEach(moments.indices, id: \.self) { index in
                     let moment = moments[index]
                     let point = CGPoint(x: x(Double(moment.index)), y: y(line.margins[moment.index]))
@@ -695,8 +634,6 @@ struct CompetitionLeadLineView: View {
         }
     }
 
-    /// Lands as the line's head reaches its day, like the slashes. Reduce
-    /// Motion: there from the start.
     private func momentMarker(_ index: Int, _ moment: CompetitionLeadMoment, at point: CGPoint) -> some View {
         CompetitionLeadMomentBadge(number: index + 1, isYours: moment.isYours)
             .scaleEffect(isDrawn ? 1 : 0)
@@ -717,12 +654,10 @@ struct CompetitionLeadLineView: View {
         StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)
     }
 
-    /// Lands as the line's head passes, on the mark's stagger envelope.
     private func arrival(_ day: Double) -> Animation {
         Motion.grow(Int(day.rounded()), of: lastDay + 1)
     }
 
-    // One label per day under its stretch of the line.
     private var weekdays: some View {
         HStack(spacing: 0) {
             ForEach(days, id: \.ordinal) { day in
@@ -757,7 +692,6 @@ struct CompetitionLeadLineView: View {
     }
 }
 
-/// A moment's number in your amber or their ink, on the line and in its legend.
 private struct CompetitionLeadMomentBadge: View {
     let number: Int
     let isYours: Bool
@@ -774,13 +708,10 @@ private struct CompetitionLeadMomentBadge: View {
     }
 }
 
-/// "ROLL" when any day's accepted snapshot counts Roll hours, else "STAND".
 func competitionStandTitle(_ days: [LocalCompetitionDayPresentation]) -> String {
     days.contains { $0.ownerAcceptedSnapshot?.standMode == .rollHours } ? "ROLL" : "STAND"
 }
 
-/// The day at the left, then your bar over theirs. Both bars fill the same
-/// track from the same edge, so who took the day reads from length alone.
 private struct HeadToHeadDayRow: View {
     let day: LocalCompetitionDayPresentation
     let isToday: Bool
@@ -828,15 +759,12 @@ private struct HeadToHeadDayRow: View {
         competitionOwnerChartState(day)
     }
 
-    /// Their words carry their name, since the line alone doesn't say whose it is.
     private var opponentText: String {
         day.opponentRevealedPoints.map { competitionPointsText($0) }
             ?? (day.opponentReportedNoData
                 ? "No data from \(opponentName)" : "\(opponentName) not synced")
     }
 
-    /// A track and its number, or a word in the track's place. The number
-    /// column has one width, so every track ends at the same x.
     private func line<Track: View>(
         _ text: String,
         points: Double?,
@@ -870,7 +798,6 @@ private struct HeadToHeadDayRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // Day winners stay bright; the other number steps back.
     private var ownerColor: Color {
         guard let owner = day.ownerAcceptedPoints else { return Theme.faint }
         guard !isToday, let opponent = day.opponentRevealedPoints else {
@@ -934,8 +861,6 @@ private struct StackedDayRow: View {
     }
 }
 
-/// The weekday (or "Today") over the date, or over "Day 4" where the list
-/// leaves dates out.
 private struct DayLabel: View {
     let day: LocalCompetitionDayPresentation
     let isToday: Bool
@@ -960,19 +885,15 @@ private struct DayLabel: View {
     }
 }
 
-/// A whole day's track, 0 to the daily maximum, filled from the left: your
-/// rings in order, or their one ink bar. Dashed is a score with a gap in it.
 private struct DayTrack: View {
     let segments: [(color: Color, points: Double)]
     var isDashed = false
     var isGrown = true
-    /// 600, or 700 in a Rings + Sleep match.
     var maximum = ActivityScore.maximumDailyPoints
 
     var body: some View {
         GeometryReader { proxy in
             let unit = proxy.size.width / maximum
-            // Width, not scale, so the 12 degree edge holds.
             let growth: CGFloat = isGrown ? 1 : 0
             HStack(spacing: 1.5) {
                 ForEach(segments.indices, id: \.self) { index in
@@ -996,8 +917,6 @@ private struct DayTrack: View {
     }
 }
 
-/// Each ring's scored share (value / goal, 0 when unusable), capped at
-/// `perRingCap` percent when the match caps rings.
 func competitionRingShares(
     _ snapshot: ActivitySnapshot,
     perRingCap: Double?
@@ -1012,16 +931,12 @@ func competitionRingShares(
     }
 }
 
-/// Splits an accepted day score by each ring's scored share of the accepted
-/// snapshot, so the bar's length stays exactly the accepted points. Without a
-/// snapshot the day is one amber bar: your score, unsplit.
 func ringSegments(
     _ day: LocalCompetitionDayPresentation
 ) -> [(color: Color, points: Double)] {
     guard case let .score(points) = competitionOwnerChartState(day) else {
         return []
     }
-    // Sleep is its own segment, after the rings.
     let sleep = day.ownerSleepPoints ?? 0
     let night: [(color: Color, points: Double)] = sleep > 0 ? [(Theme.sleep, sleep)] : []
     let rings = max(0, points - sleep)
@@ -1038,7 +953,6 @@ func ringSegments(
     } + night
 }
 
-/// A day is no data when either score is missing, or when both read 0.
 func competitionDayOutcome(
     _ day: LocalCompetitionDayPresentation,
     currentDayOrdinal: Int?
@@ -1052,7 +966,6 @@ func competitionDayOutcome(
     )
 }
 
-/// "Day 7", "Days 5 and 7" or "Days 3, 5, and 7"; nil for none or four or more.
 func competitionDayListText(_ ordinals: Set<Int>, locale: Locale = .current) -> String? {
     let sorted = ordinals.sorted()
     switch sorted.count {
@@ -1074,15 +987,11 @@ private func chartCellText(_ state: CompetitionChartState) -> String {
     }
 }
 
-/// Their side: the number, "No data" when they sent the day without a
-/// score, otherwise "Not synced".
 private func competitionOpponentCellText(_ day: LocalCompetitionDayPresentation) -> String {
     day.opponentRevealedPoints.map { competitionPointsText($0) }
         ?? (day.opponentReportedNoData ? "No data" : "Not synced")
 }
 
-/// A competition calendar day as UTC midnight, so it never shifts with the
-/// phone's zone.
 private func competitionDayDate(_ day: CompetitionDay) -> Date? {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = competitionDayTimeZone
@@ -1093,7 +1002,6 @@ private func competitionDayDate(_ day: CompetitionDay) -> Date? {
 
 private let competitionDayTimeZone = TimeZone(identifier: "UTC")!
 
-/// Short weekday for a competition calendar day, e.g. "Wed".
 func weekdayText(_ day: CompetitionDay, locale: Locale = .current) -> String {
     guard let date = competitionDayDate(day) else {
         return "\(day.month)/\(day.day)"
@@ -1105,7 +1013,6 @@ func weekdayText(_ day: CompetitionDay, locale: Locale = .current) -> String {
     return calendar.shortWeekdaySymbols[index]
 }
 
-/// Full weekday for a competition calendar day, e.g. "Wednesday".
 func weekdayName(_ day: CompetitionDay, locale: Locale = .current) -> String {
     guard let date = competitionDayDate(day) else {
         return "\(day.month)/\(day.day)"
@@ -1117,9 +1024,6 @@ func weekdayName(_ day: CompetitionDay, locale: Locale = .current) -> String {
     return calendar.weekdaySymbols[index]
 }
 
-/// The day style for a competition calendar day: "Thu, Oct 29". The year
-/// shows when the day's calendar year isn't the viewer's current year;
-/// UTC is only for drawing the day.
 func competitionDayText(
     _ day: CompetitionDay,
     weekday: Bool = true,
@@ -1139,7 +1043,6 @@ func competitionDayText(
     )
 }
 
-/// The week style for two competition calendar days: "Oct 28 – Nov 3".
 func competitionWeekText(
     _ first: CompetitionDay,
     _ last: CompetitionDay,

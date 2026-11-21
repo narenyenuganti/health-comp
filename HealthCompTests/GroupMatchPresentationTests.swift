@@ -23,7 +23,6 @@ final class GroupMatchPresentationTests: XCTestCase {
         )
     }
 
-    /// Four-way on Day 1 with these scores; missing players are unsynced.
     private func dayOne(
         _ points: [Player: Int],
         format: GroupMatchFormat = .fourWay,
@@ -53,16 +52,12 @@ final class GroupMatchPresentationTests: XCTestCase {
         )
     }
 
-    // MARK: Banter
-
     func testBanterShowsFromDayThreeAndPostsOnceAt8PMMatchTime() throws {
         let match = fixture(.banter)
         let line = try XCTUnwrap(match.banter)
         XCTAssertFalse(line.isEmpty)
-        // Quiet on Days 1 and 2, whatever the scores.
         XCTAssertNil(try dayOne([.you: 0, .sam: 60_000, .priya: 0, .leo: 0]).banter)
 
-        // Lab now is 1 AM Sunday in Los Angeles; Day 4's line posts at 8 PM there.
         let snapshot = CompetitionNotificationPlanningSnapshot(
             publicationRevision: 1,
             evaluatedAt: MultiUserCompetitionTestLabFixtures.labNow,
@@ -89,8 +84,6 @@ final class GroupMatchPresentationTests: XCTestCase {
             authorization: .authorized, mutedOpponentIdentities: []
         ).desiredScheduledRequests.isEmpty, "not after 8 PM")
     }
-
-    // MARK: Projections
 
     func testTiedFirstSharesThePlaceAndTheNextIsThird() {
         XCTAssertEqual(fixture(.resultFFATied).standingRows.map(\.place), [1, 1, 3, 4])
@@ -150,7 +143,6 @@ final class GroupMatchPresentationTests: XCTestCase {
     }
 
     func testALeaveCutoffReachesScoring() throws {
-        // Leo left after Day 1 with nothing synced: that day is a banked zero, not pending.
         let match = try dayOne([.you: 500, .sam: 300, .priya: 100], leaveCutoffs: [.leo: 1])
         XCTAssertFalse(match.projection.isProvisional)
         XCTAssertEqual(match.dayWinners(ordinal: 1), .winners([.seat(Player.you.seatID)]))
@@ -203,8 +195,6 @@ final class GroupMatchPresentationTests: XCTestCase {
         }
     }
 
-    // MARK: Routing
-
     func testEachLifecycleOpensItsScreen() {
         XCTAssertEqual(fixture(.lobbyHost).screen, .lobby)
         XCTAssertEqual(fixture(.lobbyDeclined).screen, .lobby)
@@ -227,8 +217,6 @@ final class GroupMatchPresentationTests: XCTestCase {
         store.assert { $0.path = [match.id] }
     }
 
-    // MARK: Staying out of duels
-
     func testAGroupMatchReachesNoDuelSurface() {
         let duels = MultiUserCompetitionTestLabFixtures.publication(archivedIDs: []).dashboard
         let mixed = LocalCompetitionDashboard(
@@ -239,8 +227,6 @@ final class GroupMatchPresentationTests: XCTestCase {
         let now = MultiUserCompetitionTestLabFixtures.labNow
         XCTAssertFalse(competitionHomeLayout(duels, now: now).isEmpty)
         XCTAssertEqual(competitionHomeLayout(mixed, now: now), competitionHomeLayout(duels, now: now))
-        // Glance shows the live one through its own field, with no belt or
-        // chase; the duel entries are unchanged.
         let glance = CompetitionWidgetSnapshot(dashboard: mixed)
         let duelGlance = CompetitionWidgetSnapshot(dashboard: duels)
         XCTAssertEqual(glance.matches.filter { $0.group == nil }, duelGlance.matches)
@@ -299,8 +285,6 @@ final class GroupMatchPresentationTests: XCTestCase {
         )
     }
 
-    // MARK: Commands
-
     func testACommandPublishesThroughTheParentAndClearsInFlight() async {
         let match = fixture(.liveFFA)
         let command = GroupMatchCommand.leave(match.id)
@@ -350,7 +334,6 @@ final class GroupMatchPresentationTests: XCTestCase {
         let store = TestStore(initialState: CompetitionFeature.State()) {
             CompetitionFeature()
         } withDependencies: {
-            // Answers even when cancelled, as a request already sent would.
             $0.competitionClient = Self.client { _ in
                 try? await Task.sleep(nanoseconds: 3_600_000_000_000)
                 return late

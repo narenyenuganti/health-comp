@@ -1,8 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
 
-/// Waiting for every seat to accept, everyone in before Day 1, or closed
-/// because someone didn't accept or withdrew.
 struct GroupMatchLobbyView: View {
     let match: GroupMatchPresentation
     let store: StoreOf<GroupMatchFeature>
@@ -42,8 +40,6 @@ struct GroupMatchLobbyView: View {
 
     private var isHost: Bool { match.viewer.number == 1 }
 
-    // MARK: Waiting
-
     private var waiting: some View {
         GroupMatchPage {
             ViewThatFits(in: .horizontal) {
@@ -77,7 +73,6 @@ struct GroupMatchLobbyView: View {
             }
         } actions: {
             failure
-            // No match link this round: seats are named at creation.
             if isHost {
                 quietCommand("Cancel Match", .cancel(match.id), identifier: "competition.group.lobby.cancel")
             } else {
@@ -90,7 +85,6 @@ struct GroupMatchLobbyView: View {
         if case .scheduled = match.lifecycle { true } else { false }
     }
 
-    /// Day 1 as the match's own calendar has it.
     private var startDay: String? {
         guard let schedule = match.schedule,
               let start = try? schedule.calendar.startOfDay(schedule.startDay),
@@ -107,12 +101,10 @@ struct GroupMatchLobbyView: View {
         if isScheduled, let startDay {
             Text("Starts \(startDay)")
         } else if case let .pending(_, createdAt, expiresAt?) = match.lifecycle {
-            // An invite lasts days, so its creation is close enough to now for the format.
             Text("Answer by \(competitionMomentText(expiresAt, now: createdAt, locale: locale, timeZone: timeZone))")
         }
     }
 
-    /// "You vs three", or "You + Priya vs Sam + Leo" in doubles.
     private var versusTitle: Text {
         let you = Text("You").foregroundStyle(Theme.you)
         let vs = Text("vs").foregroundStyle(Theme.secondary)
@@ -143,8 +135,6 @@ struct GroupMatchLobbyView: View {
             GroupMatchErrorLine(line)
         }
     }
-
-    // MARK: Didn't start
 
     private var closed: some View {
         GroupMatchPage {
@@ -198,10 +188,6 @@ struct GroupMatchLobbyView: View {
     }
 }
 
-// MARK: - Shared by the create, lobby and invite screens
-
-/// One job per screen: content that scrolls over its actions, which stay
-/// pinned unless the text is so large they would cover it.
 struct GroupMatchPage<Content: View, Actions: View>: View {
     @ViewBuilder let content: Content
     @ViewBuilder let actions: Actions
@@ -243,7 +229,6 @@ struct GroupMatchPage<Content: View, Actions: View>: View {
     }
 }
 
-/// A screen's big uppercase title and the line under it.
 struct GroupMatchHeading: View {
     let title: String
     let detail: String
@@ -267,8 +252,6 @@ struct GroupMatchHeading: View {
     }
 }
 
-/// Grouped rows on the panel. Put a `CompetitionRowDivider(inset: 0)`
-/// between rows.
 struct GroupMatchPanel<Content: View>: View {
     @ViewBuilder let content: Content
 
@@ -280,7 +263,6 @@ struct GroupMatchPanel<Content: View>: View {
     }
 }
 
-/// "Your team" in amber, "Their team" in ink.
 struct GroupMatchTeamLabel: View {
     let isYours: Bool
 
@@ -294,7 +276,6 @@ struct GroupMatchTeamLabel: View {
 
 enum GroupMatchSeatKind { case you, partner, them, bot, empty }
 
-/// A seat: avatar, name and whatever goes on the right.
 struct GroupMatchSeatRow<Trailing: View>: View {
     let name: String
     var photo: UUID? = nil
@@ -305,9 +286,7 @@ struct GroupMatchSeatRow<Trailing: View>: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // The circle stays 32 pt, so its initial stops growing where it would clip.
             avatar.dynamicTypeSize(...DynamicTypeSize.xLarge)
-            // At accessibility sizes the status goes under the name, which keeps the line.
             let layout = dynamicTypeSize.isAccessibilitySize
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(spacing: 12))
             layout {
@@ -331,19 +310,14 @@ struct GroupMatchSeatRow<Trailing: View>: View {
                 .strokeBorder(Theme.tertiary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
                 .frame(width: 32, height: 32)
                 .accessibilityHidden(true)
-        // The amber ring is yours alone; "Your team" marks a partner.
         default:
             PersonAvatar(name: name, photo: photo, size: 32, isYou: kind == .you, isBot: kind == .bot)
         }
     }
 }
 
-/// The lineup of a match that was sent: one panel, or one per team.
-/// Photos come only from what the viewer may already see; the server adds
-/// seats that have accepted.
 struct GroupMatchLineupPanels: View {
     let match: GroupMatchPresentation
-    /// Each row's identifier is this plus its seat number.
     let identifier: String
     var title: String? = nil
 
@@ -374,7 +348,6 @@ struct GroupMatchLineupPanels: View {
                         .fontWeight(label == "In" ? .bold : nil)
                         .foregroundStyle(label == "In" ? Theme.ink : Theme.secondary)
                 }
-                // Another person opens their profile, where they can be blocked or reported.
                 .modifier(CompetitionProfileTap(route: match.profileRoute(seat)))
                 .accessibilityElement(children: .combine)
                 .modifier(CompetitionProfileAction(route: match.profileRoute(seat), name: seat.name))
@@ -405,8 +378,6 @@ struct GroupMatchLineupPanels: View {
 }
 
 extension GroupMatchPresentation {
-    /// Another person's profile, where they can be blocked or reported. Never
-    /// you, a bot or a deleted account.
     func profileRoute(_ seat: GroupMatchSeat) -> CompetitionHomeRoute? {
         guard seat.id != viewerSeatID, let id = seat.profileID, seat.name != competitionFormerCompetitorName
         else { return nil }
@@ -414,8 +385,6 @@ extension GroupMatchPresentation {
     }
 }
 
-/// Why an action failed: the one style for it on every group screen, read
-/// out by VoiceOver when it appears, since the button's busy state just ends.
 struct GroupMatchErrorLine: View {
     let text: String
     var identifier = "competition.group.error"

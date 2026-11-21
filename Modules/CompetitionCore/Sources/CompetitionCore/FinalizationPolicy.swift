@@ -359,8 +359,6 @@ public struct TallyReconciliation: Codable, Equatable, Sendable {
         _ evidence: FinalReadEvidence,
         boundary: Date
     ) {
-        // Reads whose actual timestamp precedes the competition boundary are
-        // persisted as events but are absent from reconciliation decision state.
         guard evidence.readAt >= boundary else { return }
 
         revision += 1
@@ -369,8 +367,6 @@ public struct TallyReconciliation: Codable, Equatable, Sendable {
         evaluableOrdinalsEver.formUnion(evidence.evaluableOrdinals)
         acceptedScoreOrdinals.formUnion(evidence.acceptedScoreOrdinals)
 
-        // An incomplete read is absence of evidence. It is recorded as latest,
-        // but must not destroy a previously complete stability anchor.
         guard evidence.isCompleteWindowRead else { return }
 
         lastCompletePostBoundaryRead = evidence

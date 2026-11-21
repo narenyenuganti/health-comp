@@ -2,17 +2,11 @@ import Charts
 import CompetitionCore
 import SwiftUI
 
-// MARK: Rivalry stats
-
-/// What the person page shows at a number of finished weeks: nothing from
-/// one or two weeks, Records from five. The ledger (you blocked them, or
-/// their account is gone) keeps the record, form, belt title and weeks.
 struct CompetitionRivalryPieces: Equatable {
     var form = false
     var tape = false
     var rings = false
     var records = false
-    /// Weeks listed before "All N weeks"; nil lists them all.
     var weeksShown: Int?
 }
 
@@ -26,7 +20,6 @@ func competitionRivalryPieces(weeks: Int, isLedger: Bool) -> CompetitionRivalryP
     )
 }
 
-/// One person's finished weeks, oldest first. Practice never counts.
 func competitionRivalryWeeks(
     _ competitions: [LocalCompetitionPresentation],
     opponentIdentity: String
@@ -36,8 +29,6 @@ func competitionRivalryWeeks(
         .reversed())
 }
 
-/// "You won the last 2", "Sam won the last one" or "The last one was a tie".
-/// Outcomes oldest first.
 func competitionFormLine(_ outcomes: [CompetitionOutcome], opponentName: String) -> String? {
     guard let last = outcomes.last else { return nil }
     let who: String
@@ -50,7 +41,6 @@ func competitionFormLine(_ outcomes: [CompetitionOutcome], opponentName: String)
     return run == 1 ? "\(who) won the last one" : "\(who) won the last \(run)"
 }
 
-/// The strip as one element: "Last 10: 6 wins, 3 losses, 1 tie. You won the last 2."
 func competitionFormAccessibilityText(_ outcomes: [CompetitionOutcome], opponentName: String) -> String {
     let shown = outcomes.suffix(10)
     func count(_ outcome: CompetitionOutcome, _ one: String, _ many: String) -> String? {
@@ -64,8 +54,6 @@ func competitionFormAccessibilityText(_ outcomes: [CompetitionOutcome], opponent
     return "Last \(shown.count): \(tally).\(line)"
 }
 
-/// The belt over these weeks without the one whose Verdict hasn't been seen,
-/// so the page never gets ahead of the ceremony.
 func competitionPersonBelt(
     _ weeks: [LocalCompetitionPresentation],
     holdingBack held: CompetitionID?,
@@ -74,8 +62,6 @@ func competitionPersonBelt(
     competitionBelt(of: weeks.filter { $0.id != held }, isRetired: isRetired)
 }
 
-/// Days each of you won per ring (Move, Exercise, Stand): counts only, never
-/// the values or ring settings. Nil until a day has both sides' rings.
 func competitionRingDaysWon(_ weeks: [LocalCompetitionPresentation]) -> [(you: Int, them: Int)]? {
     var counts = Array(repeating: (you: 0, them: 0), count: 3)
     var counted = false
@@ -92,8 +78,6 @@ func competitionRingDaysWon(_ weeks: [LocalCompetitionPresentation]) -> [(you: I
     return counted ? counts : nil
 }
 
-/// One ring between the two of you. Weeks count only where every scored day
-/// kept its split; days, averages and bests use each day with both sides' rings.
 struct CompetitionRingRecord: Equatable {
     var weeksYou = 0
     var weeksThem = 0
@@ -105,7 +89,6 @@ struct CompetitionRingRecord: Equatable {
     var bestThem = 0.0
 }
 
-/// Move, Exercise and Stand, in that order. Nil until a day has both sides' rings.
 func competitionRingRecords(_ weeks: [LocalCompetitionPresentation]) -> [CompetitionRingRecord]? {
     guard let days = competitionRingDaysWon(weeks) else { return nil }
     let both = weeks.flatMap(\.days).compactMap { day -> (you: [Double], them: [Double])? in
@@ -132,15 +115,12 @@ func competitionRingRecords(_ weeks: [LocalCompetitionPresentation]) -> [Competi
     }
 }
 
-/// The decided week with the smallest margin; the later one on a tie.
 func competitionClosestFinish(_ weeks: [LocalCompetitionPresentation]) -> LocalCompetitionPresentation? {
     weeks.filter { $0.terminalResult.map { $0.outcome != .tie } ?? false }
         .reversed()
         .min { competitionMargin($0) < competitionMargin($1) }
 }
 
-/// The largest end-of-day deficit the winner overcame, from the end of day 4
-/// to the end of day 6; yours first, then theirs, each only once it happened.
 struct CompetitionComeback: Equatable {
     let weekID: CompetitionID
     let holder: CompetitionBeltHolder
@@ -172,7 +152,6 @@ func competitionComebacks(_ weeks: [LocalCompetitionPresentation]) -> [Competiti
     return [best[.you], best[.them]].compactMap { $0 }
 }
 
-/// Days won, lost and tied across all weeks, where both sides scored.
 func competitionDayRecord(_ weeks: [LocalCompetitionPresentation]) -> (won: Int, lost: Int, tied: Int)? {
     let days = weeks.flatMap(\.days).compactMap { day -> (Double, Double)? in
         guard let you = day.ownerAcceptedPoints, let them = day.opponentRevealedPoints else { return nil }
@@ -186,10 +165,8 @@ func competitionDayRecord(_ weeks: [LocalCompetitionPresentation]) -> (won: Int,
     )
 }
 
-/// One row of the Records screen. Each goes to whoever holds it.
 struct CompetitionRivalryRecord: Equatable {
     enum Value: Equatable {
-        /// You, then them: "2,223 / 2,190".
         case sides(you: String, them: String)
         case tally(won: Int, lost: Int, tied: Int)
         case text(String, holder: CompetitionBeltHolder?)
@@ -200,9 +177,6 @@ struct CompetitionRivalryRecord: Equatable {
     let detail: String
 }
 
-/// Best week, best day, day record, closest finish, biggest comebacks and,
-/// once that week is behind "All N weeks", the first match. Weeks oldest first.
-/// With a `year`, the weeks are that year's and there's no first match.
 func competitionRivalryRecords(
     _ weeks: [LocalCompetitionPresentation],
     opponentName: String,
@@ -218,7 +192,6 @@ func competitionRivalryRecords(
         } ?? ""
     }
     func name(_ holder: CompetitionBeltHolder) -> String { holder == .you ? "You" : opponentName }
-    // >=: on a tie the later week holds it.
     func best<T>(_ items: [T], _ value: (T) -> Double) -> T? {
         items.reduce(T?.none) { best, item in
             best.map { value(item) >= value($0) ? item : $0 } ?? item
@@ -288,7 +261,6 @@ func competitionRivalryRecords(
     return rows
 }
 
-/// What VoiceOver reads for a record's value; two-sided rows read "You x, Sam y".
 func competitionRivalryRecordAccessibilityText(
     _ record: CompetitionRivalryRecord,
     opponentName: String
@@ -302,8 +274,6 @@ func competitionRivalryRecordAccessibilityText(
     return "\(record.label): \(value). \(record.detail)"
 }
 
-/// This calendar year's weeks, oldest first, by the year each week ends in.
-/// Nil until 3 have been played with them, so early January shows All time only.
 func competitionYearWeeks(
     _ weeks: [LocalCompetitionPresentation],
     now: Date,
@@ -321,14 +291,11 @@ func competitionYearWeeks(
     return played.count >= 3 ? (year, played) : nil
 }
 
-/// "All time still shows your 2,730 week from June 2025.", while your best
-/// week is from before this year's weeks.
 func competitionAllTimeBestWeekNote(
     all: [LocalCompetitionPresentation],
     year: [LocalCompetitionPresentation],
     locale: Locale = .current
 ) -> String? {
-    // The later week holds it on a tie, as in Records.
     guard let top = all.map(\.userPoints).max(),
           let best = all.last(where: { $0.userPoints == top }),
           !year.contains(where: { $0.id == best.id }),
@@ -345,21 +312,14 @@ private func competitionMargin(_ week: LocalCompetitionPresentation) -> Double {
     abs((week.terminalResult?.userPoints ?? 0) - (week.terminalResult?.opponentPoints ?? 0))
 }
 
-// MARK: Your record with them
-
-/// "Your record with Sam": opens their page, or pops back to it when it's
-/// already on the stack.
 struct CompetitionRecordLink {
     let record: CompetitionOpponentRecord
     let open: () -> Void
 
     var title: String { "Your record with \(record.opponentDisplayName)" }
-    /// "Your record with Sam, 6 wins, 3 losses, 1 tie".
     var accessibilityLabel: String { "Your record with \(record.accessibilityText)" }
 }
 
-/// The record a match's "Your record with" row shows: never for practice or a
-/// deleted account, and only once a week with them has finished.
 func competitionRecordLinkRecord(
     for competition: LocalCompetitionPresentation,
     in competitions: [LocalCompetitionPresentation]
@@ -373,7 +333,6 @@ func competitionRecordLinkRecord(
     return record
 }
 
-/// The row on the Verdict and the received challenge.
 struct CompetitionRecordLinkRow: View {
     let link: CompetitionRecordLink
 
@@ -401,10 +360,6 @@ struct CompetitionRecordLinkRow: View {
     }
 }
 
-// MARK: Person page pieces
-
-/// The last ten weeks, oldest first: amber you, ink them, grey a tie. With a
-/// week in play, the last slot is dashed and nothing is counted for it.
 struct CompetitionFormStrip: View {
     let outcomes: [CompetitionOutcome]
     let opponentName: String
@@ -444,8 +399,6 @@ struct CompetitionFormStrip: View {
     }
 }
 
-/// Each ring between you: weeks or days won, then an average and a best
-/// day. Amber you, ink them, grey bars on a tie.
 struct CompetitionRingRecordPanel: View {
     let records: [CompetitionRingRecord]
     let opponentName: String
@@ -458,7 +411,6 @@ struct CompetitionRingRecordPanel: View {
     ]
 
     var body: some View {
-        // Weeks need every day's split; without one, only days can be counted.
         let hasWeeks = records.contains { $0.weeksYou + $0.weeksThem > 0 }
         let byDays = showsDays || !hasWeeks
         VStack(alignment: .leading, spacing: 14) {
@@ -501,7 +453,6 @@ struct CompetitionRingRecordPanel: View {
         "\(value) \(byDays ? (value == 1 ? "day" : "days") : (value == 1 ? "week" : "weeks"))"
     }
 
-    // You on the left, them on the right; stacked at accessibility sizes.
     @ViewBuilder
     private func stat(_ label: String, _ you: Double, _ them: Double) -> some View {
         if dynamicTypeSize.isAccessibilitySize {
@@ -518,7 +469,6 @@ struct CompetitionRingRecordPanel: View {
         }
     }
 
-    // At accessibility sizes the ring's name sits above its bar.
     private func row(_ ring: (name: String, color: Color), _ count: (you: Int, them: Int)) -> some View {
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
@@ -562,18 +512,11 @@ struct CompetitionRingRecordPanel: View {
     }
 }
 
-// MARK: Records
-
-/// One push from the person page: weekly points as the timeline (drag to
-/// pick a week; its row opens the Verdict), then each record once it exists.
-/// After 3 weeks with them this year, a year / All time picker filters both.
 struct CompetitionRecordsView: View {
     let publication: LocalCompetitionPublication
     let opponentIdentity: String
 
-    /// The drag's position; Swift Charts clears it when the finger lifts.
     @State private var selection: Date?
-    /// The last week dragged to, so its row stays to be tapped; nil shows the newest.
     @State private var picked: Date?
     @State private var showsAllTime = false
     @Environment(\.locale) private var locale
@@ -624,7 +567,6 @@ struct CompetitionRecordsView: View {
                 }
             }
             .moving(Motion.settle, value: showsAllTime)
-            // The picked week may not be in the other range.
             .onChange(of: showsAllTime) { picked = nil }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -647,8 +589,6 @@ struct CompetitionRecordsView: View {
     }
 
     private func weeklyPoints(_ weeks: [LocalCompetitionPresentation], name: String) -> some View {
-        // The newest week until one is dragged to, so its row always shows
-        // what the chart opens, and VoiceOver has a way in.
         let selected = picked.flatMap { date in
             weeks.min { abs(start($0).timeIntervalSince(date)) < abs(start($1).timeIntervalSince(date)) }
         } ?? weeks.max { start($0) < start($1) }
@@ -673,7 +613,6 @@ struct CompetitionRecordsView: View {
                         .foregroundStyle(Theme.ink)
                         .symbolSize(week.id == selected?.id ? 90 : 36)
                         .accessibilityHidden(true)
-                    // One element per week, on your point.
                     PointMark(x: .value("Week", start(week)), y: .value("Points", week.userPoints))
                         .foregroundStyle(Theme.youFill)
                         .symbolSize(week.id == selected?.id ? 90 : 36)
@@ -725,7 +664,6 @@ struct CompetitionRecordsView: View {
         .accessibilityHidden(true)
     }
 
-    /// "you 2,040, Sam 2,002, you won".
     private func weekValue(_ week: LocalCompetitionPresentation, name: String) -> String {
         let result = switch week.terminalResult?.outcome {
         case .win: "you won"
@@ -752,7 +690,6 @@ struct CompetitionRecordsView: View {
         .contentShape(Rectangle())
     }
 
-    // Label then value; at accessibility sizes the value sits under the label.
     private func recordRow(_ record: CompetitionRivalryRecord, name: String) -> some View {
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
@@ -794,10 +731,6 @@ struct CompetitionRecordsView: View {
     }
 }
 
-// MARK: What's in play with them
-
-/// The newest finished week while it's on Home and its Verdict hasn't been
-/// seen: the page shows it on top and holds the belt and the button for it.
 func competitionUnseenResult(
     _ weeks: [LocalCompetitionPresentation],
     now: Date,
@@ -811,8 +744,6 @@ func competitionUnseenResult(
     return last.id
 }
 
-/// The one thing in play with them, from Home's own grouping, and its
-/// section title. A result counts only while its Verdict is unseen.
 func competitionPersonNow(
     _ competitions: [LocalCompetitionPresentation],
     now: Date,
@@ -839,9 +770,6 @@ func competitionPersonNow(
     return nil
 }
 
-/// The foot button: "Challenge Sam Again" after a decline or expiry, "Rematch
-/// Sam" while the last week is on Home, else "Challenge Sam". Nil while
-/// anything is in flight or a Verdict waits, so a rematch can't skip it.
 func competitionPersonButtonTitle(
     _ competitions: [LocalCompetitionPresentation],
     opponentName: String,
@@ -867,7 +795,6 @@ func competitionPersonButtonTitle(
     return "Challenge \(opponentName)"
 }
 
-/// "Last played Oct 26 – Nov 1 · 5 weeks ago", once it's been two weeks.
 func competitionLastPlayedText(
     _ last: LocalCompetitionPresentation,
     now: Date,
@@ -881,16 +808,11 @@ func competitionLastPlayedText(
     return "Last played \(range) · \(weeks) weeks ago"
 }
 
-// MARK: Profiles
-
-/// What you and they have played, for their profile page.
 struct CompetitionProfileRivalry {
     let record: CompetitionOpponentRecord?
-    /// Finished, oldest first.
     let weeks: [LocalCompetitionPresentation]
     let belt: CompetitionBelt
     let isLive: Bool
-    /// Nil while anything with them is in flight.
     let challengeTitle: String?
     let now: Date
 
@@ -908,7 +830,6 @@ struct CompetitionProfileRivalry {
         let unseen = competitionUnseenResult(weeks, now: now, seen: seen)
         self.record = record
         self.weeks = weeks
-        // While a Verdict is unseen the belt holds at the week before it.
         belt = competitionPersonBelt(weeks, holdingBack: unseen, isRetired: record?.belt.isRetired == true)
         isLive = theirs.contains {
             switch $0.lifecycle {
@@ -926,19 +847,15 @@ struct CompetitionProfileRivalry {
     }
 }
 
-/// Your finished 1v1 weeks across everyone, from what's on this phone.
 struct CompetitionOwnCareer: Equatable {
     var career = CompetitionCareer()
     var bestDay = 0.0
-    /// Newest first.
     var outcomes: [CompetitionOutcome] = []
 }
 
 func competitionOwnCareer(_ competitions: [LocalCompetitionPresentation]) -> CompetitionOwnCareer {
     let weeks = Array(competitionHistoryWeeks(competitions).reversed())
     let outcomes = weeks.compactMap(\.terminalResult?.outcome)
-    // The streak folds in the server's order (schedule end, then uuid), as
-    // `competitionBelt` and get_career_summary do, so both read the same.
     let folded = weeks.map { week in
         (end: week.acceptedConfiguration.flatMap { competitionScheduleBoundaries($0.schedule)?.end } ?? .distantPast,
          id: week.id.rawValue.uuidString,
@@ -964,7 +881,6 @@ func competitionOwnCareer(_ competitions: [LocalCompetitionPresentation]) -> Com
     )
 }
 
-/// You on the left, them on the right, the label between.
 struct CompetitionTapeRow: View {
     let you: String
     let label: String
@@ -990,11 +906,9 @@ struct CompetitionTapeRow: View {
     }
 }
 
-/// Your own page: your career, the belts you hold, and whether others see it.
 struct CompetitionOwnProfileView: View {
     let publication: LocalCompetitionPublication
     let name: String
-    /// Nil until the server answers, which hides the switch.
     let sharesCareer: Bool?
     let setSharesCareer: (Bool) -> Void
     let edit: () -> Void
@@ -1176,9 +1090,6 @@ struct CompetitionOwnProfileView: View {
     }
 }
 
-// MARK: Opening a profile
-
-/// The stack's push, set on Home's `NavigationStack`. Nil hides every tap.
 private struct OpenCompetitionProfileKey: EnvironmentKey {
     static let defaultValue: ((CompetitionHomeRoute) -> Void)? = nil
 }
@@ -1190,8 +1101,6 @@ extension EnvironmentValues {
     }
 }
 
-/// A match's route to their profile: never practice, a simulated opponent or
-/// a deleted account.
 func competitionProfileRoute(for competition: LocalCompetitionPresentation) -> CompetitionHomeRoute? {
     guard !competition.isPractice,
           competition.opponentProfileID != nil,
@@ -1204,7 +1113,6 @@ func competitionOwnProfileRoute(for competition: LocalCompetitionPresentation) -
     competition.isPractice ? nil : .ownProfile
 }
 
-/// Makes a photo and name open a profile, inside whatever button holds them.
 struct CompetitionProfileTap: ViewModifier {
     let route: CompetitionHomeRoute?
     @Environment(\.openCompetitionProfile) private var open
@@ -1220,7 +1128,6 @@ struct CompetitionProfileTap: ViewModifier {
     }
 }
 
-/// The same for VoiceOver, on the element that reads the score.
 struct CompetitionProfileAction: ViewModifier {
     let route: CompetitionHomeRoute?
     let name: String

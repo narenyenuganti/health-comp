@@ -6,7 +6,6 @@ import UIKit
 
 struct MainTabView: View {
     let store: StoreOf<MainTabFeature>
-    /// Shows the avatar that opens Account. Test Lab hosts omit it.
     var openAccount: (() -> Void)?
 
     @Environment(\.scenePhase) private var scenePhase
@@ -16,7 +15,6 @@ struct MainTabView: View {
     private var motionSeen = CompetitionMotionSeen()
     @AppStorage(CompetitionDismissedChallenges.storageKey)
     private var dismissedChallenges = CompetitionDismissedChallenges()
-    /// New Match: the format picker, whose Duel opens the Challenge sheet.
     @State private var isNewMatchPresented = false
     @State private var newMatchLineup: GroupMatchLineup?
     @State private var opensDuel = false
@@ -51,8 +49,6 @@ struct MainTabView: View {
         .task(id: photoOwners) {
             store.send(.competition(.profilePhotosNeeded(photoOwners)))
         }
-        // Loaded up front, so a person page rarely opens on the ledger
-        // it shows until your block list is known.
         .task(id: store.competition.publication?.source == .remoteParticipants) {
             if store.competition.publication?.source == .remoteParticipants {
                 store.send(.competition(.blockedPeopleRequested))
@@ -61,7 +57,6 @@ struct MainTabView: View {
         }
         .onChange(of: scenePhase) { _, newValue in
             store.send(.scenePhaseChanged(Self.sceneState(newValue)))
-            // A photo changed or hidden while away shows without a relaunch.
             if newValue == .active {
                 store.send(.competition(.profilePhotosNeeded(photoOwners)))
                 if store.competition.publication?.source == .remoteParticipants {
@@ -69,9 +64,6 @@ struct MainTabView: View {
                 }
             }
         }
-        // Keeps the notifications prompt from presenting under the
-        // Challenge or practice sheet or the recap deck, where SwiftUI would
-        // drop it, or over the versus intro.
         .onChange(of: isChallengePresented || isNewMatchPresented || isPracticePresented || isVersusPlaying || recapPeriod != nil) { _, isOpen in
             store.send(.challengeSheetVisibilityChanged(isOpen))
         }
@@ -123,7 +115,6 @@ struct MainTabView: View {
         }
         .sheet(isPresented: $isNewMatchPresented, onDismiss: {
             newMatchLineup = nil
-            // After this sheet is gone, so the Challenge sheet can present.
             if opensDuel { opensDuel = false; isChallengePresented = true }
         }) {
             GroupMatchCreateView(
@@ -133,7 +124,6 @@ struct MainTabView: View {
                 onDuel: { opensDuel = true; isNewMatchPresented = false }
             )
         }
-        // A Friends push opens Friends in front of everything.
         .onChange(of: store.friendsRouteCount) { _, _ in
             challengeSheetRoutes = []
             isChallengePresented = false
@@ -146,17 +136,13 @@ struct MainTabView: View {
                 store.send(.competition(.challengeLinkRequested))
             }
         }
-        // Here, because both sheets can close without drawing the outcome.
-        // A timeout reaches `.idle` too, so the open match is the proof.
         .sensoryFeedback(.success, trigger: isSheetLanding) { old, new in
             old && !new && !store.path.isEmpty
                 && store.inviteClaimStatus == .idle && store.challengeFromLink == nil
         }
-        // Last, so every screen and sheet above draws the same photos.
         .environment(\.profilePhotos, store.competition.profilePhotoImages)
     }
 
-    /// Friends, then people you've had a duel with, once each.
     private var newMatchPeople: [GroupMatchPlayer] {
         GroupMatchPlayer.candidates(
             friends: store.competition.friends.list?.friends ?? [],
@@ -169,7 +155,6 @@ struct MainTabView: View {
         store.competition.photoOwners(claimSender: store.inviteClaimPreview?.sender.id)
     }
 
-    /// Accept, or Send from a link: both end by closing the sheet on the match.
     private var isSheetLanding: Bool {
         if store.inviteClaimStatus == .claiming
             || store.inviteClaimStatus == .waitingForCompetition {
@@ -180,8 +165,6 @@ struct MainTabView: View {
             || store.competition.challengeSheetStatus.controlPhase == .sent
     }
 
-    /// A lifecycle change while the screen is open crossfades in place. The
-    /// result keeps its cut, because its own reveal is the transition.
     private func competitionScreen(_ id: CompetitionID) -> some View {
         let publication = store.competition.publication
         let kind = publication?.dashboard.competitions.first { $0.id == id }
@@ -270,8 +253,6 @@ struct MainTabView: View {
                 isLaunchSlow = true
             }
             .toolbar { homeToolbar }
-            // Outside Home's `.refreshable`, which a sheet presented from
-            // inside it inherits: a drag down would refresh, not close.
             .sheet(isPresented: $isPracticePresented) {
                 if let publication = store.competition.publication,
                    let practice = practiceStart(publication) {
@@ -335,8 +316,6 @@ struct MainTabView: View {
                 case let .competition(id):
                     competitionScreen(id)
                         .toolbarRole(.editor)
-                        // Here, as this outlives the swap to the result: the
-                        // swap moves no focus, and a push never reaches this.
                         .onChange(of: completedResultTitle(id)) { old, title in
                             if old == nil, let title {
                                 AccessibilityNotification.Announcement(title).post()
@@ -348,8 +327,6 @@ struct MainTabView: View {
         .environment(\.openCompetitionProfile) { route in
             homeStack.wrappedValue = CompetitionHomeRoute.opening(route, on: homeStack.wrappedValue)
         }
-        // Here, not on the root Group, so it doesn't share a view with the
-        // claim sheet.
         .sheet(isPresented: notificationPromptPresented) {
             PermissionOnboardingView(
                 step: .notifications,
@@ -510,8 +487,6 @@ struct MainTabView: View {
         .environment(\.openCompetitionProfile, nil)
     }
 
-    /// Their weeks with you. Someone with no finished week gets their
-    /// profile, when search or Friends has told us who they are.
     @ViewBuilder
     private func personScreen(
         _ identity: String,
@@ -538,8 +513,6 @@ struct MainTabView: View {
         }
     }
 
-    /// One profile page wherever you tap a person. Someone you blocked or a
-    /// deleted account keeps the ledger once there are weeks to show.
     @ViewBuilder
     private func profileScreen(
         _ identity: String,
@@ -552,7 +525,6 @@ struct MainTabView: View {
         let id = RemoteCompetitionOpponentIdentity.profileID(identity)
         let name = id.flatMap { store.competition.friends.people[$0]?.displayName }
             ?? theirs.first?.opponentDisplayName
-            // Someone you only share a group match with.
             ?? id.flatMap { id in
                 publication.dashboard.groupMatches.flatMap(\.seats).first { $0.profileID == id }?.name
             }
@@ -620,8 +592,6 @@ struct MainTabView: View {
     ) -> some View {
         let depth = store.personPlace.depth
         let profileID = RemoteCompetitionOpponentIdentity.profileID(identity)
-        // Unknown (nil) until your block list loads, so someone you blocked
-        // never shows more than the ledger.
         let isBlocked: Bool? = if let profileID, publication.source == .remoteParticipants {
             store.competition.blockedPeople.map { $0.contains { $0.id == profileID } }
         } else {
@@ -655,7 +625,6 @@ struct MainTabView: View {
             },
             drawerBack: drawerBack
         )
-        // Your own blocks only; the phone never learns who blocked you.
         .task(id: identity) {
             if publication.source == .remoteParticipants {
                 store.send(.competition(.blockedPeopleRequested))
@@ -663,8 +632,6 @@ struct MainTabView: View {
         }
     }
 
-    /// Friending, Block and Report for one person, as the Friends reducer
-    /// has them. Someone it hasn't seen is nobody to you once the list loads.
     private func friendControls(_ id: UUID, displayName: String) -> PersonFriendControls {
         let friends = store.competition.friends
         let known = friends.people[id]
@@ -687,8 +654,6 @@ struct MainTabView: View {
         )
     }
 
-    /// "Your record with Sam" on a match: pushes their page, or pops back to
-    /// it when it's already on the stack.
     private func recordLink(
         _ competition: LocalCompetitionPresentation,
         in publication: LocalCompetitionPublication
@@ -713,9 +678,6 @@ struct MainTabView: View {
 
     @ToolbarContentBuilder
     private var homeToolbar: some ToolbarContent {
-        // The bar arrives with Home, not ahead of it: the launch mark is
-        // alone on screen until then. Absent rather than faded, because
-        // iOS 26 would draw the empty glass.
         if isToolbarShown {
             ToolbarItem(placement: .topBarLeading) {
                 Button(action: updateThenShowRings) {
@@ -725,7 +687,6 @@ struct MainTabView: View {
                 .accessibilityIdentifier("home.logo")
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                // Invitations are private links between real people.
                 if store.competition.publication?.source == .remoteParticipants {
                     CompetitionChallengeButton {
                         if GroupMatchRollout.showsFormatPicker { isNewMatchPresented = true } else { isChallengePresented = true }
@@ -757,13 +718,10 @@ struct MainTabView: View {
         }
     }
 
-    /// A wait that runs long shows the bar anyway, so Account stays in reach.
     private var isToolbarShown: Bool {
         store.competition.publication != nil || isLaunchSlow
     }
 
-    /// The fixture reinvites Alex; a real match prefills the Challenge sheet
-    /// with the same account, and Create still sends it.
     private func challengeAgain(_ id: CompetitionID) {
         if store.competition.publication?.source == .remoteParticipants {
             store.send(.competition(.challengeAgainTapped(id)))
@@ -777,13 +735,10 @@ struct MainTabView: View {
         await store.send(.competition(.pullToRefresh)).finish()
     }
 
-    /// The logo: update the scores, then show today's rings. The sheet opens
-    /// whether or not the update worked; Home's banner reports a failure.
     private func updateThenShowRings() {
         guard !isLogoUpdating else { return }
         isLogoUpdating = true
         Task {
-            // At least one lap of the mark, so a fast update still reads as one.
             let clock = ContinuousClock()
             let lap = clock.now + .seconds(0.75)
             await retry()
@@ -818,7 +773,6 @@ struct MainTabView: View {
         )
     }
 
-    /// Nil until that match finishes.
     private func completedResultTitle(_ id: CompetitionID) -> String? {
         guard let competition = store.competition.publication?.dashboard.competitions
             .first(where: { $0.id == id }),
@@ -881,8 +835,6 @@ struct MainTabView: View {
                     muteButton: muteButton(for: competition),
                     issue: competitionRowIssue(id, in: publication.dashboard.issues),
                     retry: retry,
-                    // An unstructured task, so leaving the screen mid-refresh
-                    // doesn't cancel the reconcile.
                     refresh: { [store] in
                         await Task {
                             await store.send(.competition(.pullToRefresh)).finish()
@@ -895,7 +847,6 @@ struct MainTabView: View {
                             cancel: { store.send(.competition(.cancelTapped(id))) }
                         )
                         : nil,
-                    // The real-match gate: never on the simulated fixture.
                     nudge: publication.source == .remoteParticipants
                         ? CompetitionNudge(
                             status: store.competition.nudges[id],
@@ -958,9 +909,6 @@ struct MainTabView: View {
                 )
             }
         } else if !store.path.contains(id) {
-            // ponytail: popping after the match left (End Practice, a server
-            // delete) slides off blank, not "Match Unavailable"; cache the
-            // last screen if the blank shows.
             Theme.ground.ignoresSafeArea()
         } else {
             ContentUnavailableView(
@@ -971,9 +919,6 @@ struct MainTabView: View {
         }
     }
 
-    /// Practice: simulated on its match screen (the rules say so), no mute,
-    /// no Cancel Match, End Practice in the menu; its result's one action is
-    /// Challenge Someone.
     @ViewBuilder
     private func practiceDestination(
         _ competition: LocalCompetitionPresentation,
@@ -1036,7 +981,6 @@ struct MainTabView: View {
         store.send(.competition(action))
     }
 
-    /// Real matches only: never on the simulated fixture.
     private func reactionControl(
         _ id: CompetitionID,
         source: CompetitionPublicationSource
@@ -1079,8 +1023,6 @@ struct MainTabView: View {
     }
 }
 
-/// Which screen `destination(for:)` draws. `waitsOnThem` is a real challenge
-/// you sent: it can only change because they answered.
 enum CompetitionScreenKind: Hashable {
     case invite(waitsOnThem: Bool), underway, result, closed
 }
@@ -1099,8 +1041,6 @@ func competitionScreenKind(
     }
 }
 
-/// A challenge that closed while its screen was open, drawn in place. After
-/// a day the match leaves the dashboard and the screen pops.
 private struct CompetitionClosedChallengeView: View {
     let competition: LocalCompetitionPresentation
     let canChallengeAgain: Bool
@@ -1145,8 +1085,6 @@ private struct CompetitionClosedChallengeView: View {
     }
 }
 
-/// Keeps the left-edge swipe-back gesture active while the Challenge drawer's
-/// pushed screens hide the system navigation bar in favour of the drawer bar.
 private struct DrawerInteractivePop: UIViewControllerRepresentable {
     let isEnabled: Bool
 

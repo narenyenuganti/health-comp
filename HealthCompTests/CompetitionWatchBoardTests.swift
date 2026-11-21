@@ -4,14 +4,11 @@ import Foundation
 import XCTest
 @testable import HealthComp
 
-/// The watch's logic. It lives in shared sources so this suite covers it on
-/// CI, which has no watch lane.
 final class CompetitionWatchBoardTests: XCTestCase {
     typealias Snapshot = CompetitionWidgetSnapshot
     typealias Match = CompetitionWidgetSnapshot.Match
 
     private let en = Locale(identifier: "en_US")
-    /// A Friday.
     private let now = ISO8601DateFormatter().date(from: "2026-11-06T12:00:00Z")!
 
     private func fixture(_ scenario: String) -> Snapshot {
@@ -33,8 +30,6 @@ final class CompetitionWatchBoardTests: XCTestCase {
         return directory
     }
 
-    // MARK: Mirror
-
     private func mirroring(
         _ url: URL,
         into calls: LockIsolated<[(snapshot: Snapshot?, material: Bool)]>
@@ -52,7 +47,7 @@ final class CompetitionWatchBoardTests: XCTestCase {
         var touched = first
         touched.matches[0].updatedAt = now
         await client.write(first, [])
-        await client.write(first, [])  // unchanged: silent
+        await client.write(first, [])
         await client.write(touched, [])
         XCTAssertEqual(calls.value.map { $0.snapshot }, [first, touched])
         XCTAssertEqual(calls.value.map { $0.material }, [true, false])
@@ -87,8 +82,6 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertTrue(spends(false, now.addingTimeInterval(-spacing), now))
         XCTAssertTrue(spends(true, now, now))
     }
-
-    // MARK: Payload
 
     func testPayloadRoundTripsWithoutThePersonID() throws {
         let sent = CompetitionWatchPayload(snapshot: fixture("several"), sentAt: 100)
@@ -126,8 +119,6 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertEqual(bad?.action(after: nil), .clear)
     }
 
-    // MARK: Pages
-
     func testPagesFollowTheComplicationAndDropWhatHasGone() {
         let several = fixture("several")
         XCTAssertEqual(several.pages(at: now).map(\.name), ["Sam", "Alex", "Riley", "Casey", "Former competitor"])
@@ -136,8 +127,6 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertEqual(fixture("empty").pages(at: now), [])
         XCTAssertEqual(fixture("card").pages(at: now).map(\.id), fixture("card").matches.map(\.id))
     }
-
-    // MARK: The card, the week, the alert
 
     func testCardRowsFollowThePagesAndNeverSpoilAReveal() {
         let card = fixture("card")
@@ -177,7 +166,6 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertEqual(rows.map(\.them), ["388", "121", "187", nil, nil, nil, nil])
     }
 
-    /// The watch reads the iPhone's keys without compiling `CompetitionRoute`.
     func testAnAlertNamesItsMatchWithTheRoutesOwnKeys() {
         let id = UUID()
         var userInfo = CompetitionRoute.competition(CompetitionID(id)).userInfo
@@ -188,8 +176,6 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertNil(CompetitionWatchAlert.competitionID(CompetitionRoute.friends.userInfo))
         XCTAssertNil(CompetitionWatchAlert.competitionID([:]))
     }
-
-    // MARK: Copy
 
     func testStatusInlineAndCornerForEveryState() {
         let rows: [(scenario: String, status: String, inline: String, corner: String)] = [
@@ -246,8 +232,6 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertEqual(defended?.line, "3rd title defense")
     }
 
-    // MARK: Chase
-
     func testChaseFillsTodayTowardTheLead() throws {
         let chase = try XCTUnwrap(match("trailing").chase(at: now, locale: en))
         XCTAssertEqual(chase.fill, 200.0 / 255, accuracy: 1e-9)
@@ -266,7 +250,7 @@ final class CompetitionWatchBoardTests: XCTestCase {
 
     func testChaseOnlyWhileYouTrailOnItsDay() {
         XCTAssertNil(match("live").chase(at: now))
-        XCTAssertNil(match("beltTrailing").chase(at: now))  // the phone couldn't work it out
+        XCTAssertNil(match("beltTrailing").chase(at: now))
         var level = match("trailing")
         level.opponentPoints = level.userPoints
         XCTAssertNil(level.chase(at: now))
@@ -281,8 +265,6 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("belt"))
         XCTAssertEqual(try JSONDecoder().decode(Snapshot.self, from: data), fixture("live"))
     }
-
-    // MARK: Stale, side, size
 
     func testStaleAtTheHourAndNeverForResultsOrNoTime() {
         var live = match("live")
@@ -310,19 +292,17 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertEqual(match("won").side, .you)
         XCTAssertEqual(match("lost").side, .them)
         XCTAssertEqual(match("tied").side, .square)
-        // Decided by decimals: not square, though whole points read the same.
         XCTAssertEqual(match("closeFinal").side, .them)
         var win = match("closeFinal")
         (win.userPoints, win.opponentPoints) = (win.opponentPoints, win.userPoints)
         XCTAssertEqual(win.side, .you)
-        // Live numbers round: 412.30 to 412.10 reads square.
         var live = match("live")
         (live.userPoints, live.opponentPoints) = (412.30, 412.10)
         XCTAssertEqual(live.side, .square)
     }
 
     func testScoreSizeLadder() {
-        let widths: [CGFloat] = [162 - 20, 176 - 20, 205 - 20]  // 40, 41, 49 mm
+        let widths: [CGFloat] = [162 - 20, 176 - 20, 205 - 20]
         let rows: [(you: String, them: String, sizes: [CGFloat])] = [
             ("610", "664", [56, 56, 56]),
             ("1,204", "1,150", [39, 43, 52]),
@@ -336,8 +316,6 @@ final class CompetitionWatchBoardTests: XCTestCase {
             )
         }
     }
-
-    // MARK: Seen
 
     func testAFinalIsFirstSightOnceAndLiveNever() throws {
         var seen = CompetitionWatchSeen()

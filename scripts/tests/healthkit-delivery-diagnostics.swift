@@ -7,7 +7,6 @@ enum HealthKitDeliveryDiagnosticTests {
         do {
             try run()
         } catch {
-            // Do not print unexpected log content or system error descriptions.
             print("FAIL: healthkit_delivery_diagnostic_output")
             exit(1)
         }

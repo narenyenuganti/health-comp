@@ -1,9 +1,4 @@
 -- Callable catalogue for build 1.0.7 (7).
--- Verified on staging and production on 2026-11-16 after migration
--- 20261115200000. All 64 signatures match both
--- hosted catalogues exactly; the read-only compatibility guard passed on both.
--- Run the script again at each release. Delete a line by hand only to retire
--- a function that no installed build calls any more.
 begin;
 
 set local role postgres;
@@ -12,8 +7,6 @@ set local search_path = extensions, public, pg_catalog;
 
 select plan(1);
 
--- A released call still works when a function of the same name and result
--- accepts every argument the build could send and requires nothing new.
 select is_empty($released$
   with callable as (
     select p.proname::text as fn,
@@ -107,8 +100,6 @@ select is_empty($released$
     where c.fn = r.fn and c.returns = r.returns
       and r.args <@ c.args and c.required <@ r.required
   )
-  -- PostgREST picks an overload by argument names alone and fails the call
-  -- (PGRST203) when two of them accept the names the build sends.
   or (select count(*) from callable c
       where c.fn = r.fn
         and array(select split_part(x, ' ', 1) from unnest(r.args) x)

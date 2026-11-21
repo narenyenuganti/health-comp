@@ -44,8 +44,6 @@ enum HealthCompLiveComposition {
         let competitionClient = competitionClientFactory.make(
             supabaseClientProvider
         )
-        // The same client and session as the app's, for alert reactions,
-        // sent only while the person it was posted for is still signed in.
         let setReaction = SupabaseCompetitionRemoteAPI
             .live(provider: supabaseClientProvider).setReaction
         CompetitionReactionAlert.send = { recipient, reaction in
@@ -111,13 +109,9 @@ struct HealthCompApp: App {
                     competitionClientFactory: competitionClientFactory
                 )
             case .configured, .invalid:
-                // The fixture and fail-closed branches intentionally construct no
-                // live dependency graph, HealthKit source, or production journal.
                 self.liveStore = nil
             }
         }
-        // Pin fixture rendering instead of relying on an OS appearance override.
-        // Ordinary DEBUG launches keep the person's in-app appearance choice.
         if self.liveStore == nil,
            let style = zip(arguments, arguments.dropFirst())
                .first(where: { $0.0 == "-AppleInterfaceStyle" })?.1
@@ -127,8 +121,6 @@ struct HealthCompApp: App {
         } else {
             self.testLabColorScheme = nil
         }
-        // Deterministic widget captures. Use with the Test Lab only: it builds
-        // no AppFeature store, so no publish or sign-out clear replaces it.
         if arguments.contains("--widget-sample") {
             let url = URL(
                 string: "\(CompetitionRoute.customURLScheme)://competition/00000000-0000-0000-0000-000000000005"
@@ -139,7 +131,6 @@ struct HealthCompApp: App {
                 )
             }
         }
-        // Every widget state for the UI tests; an unknown name clears the file.
         if let scenario = zip(arguments, arguments.dropFirst())
             .first(where: { $0.0 == "--widget-scenario" })?.1
         {
@@ -250,12 +241,9 @@ struct AppRootView: View {
     private var appearance = AppAppearance.system
 
     var body: some View {
-        // Layers, so only the one on top fades. Main never does: it hosts the
-        // sheets and UIKit bars, and its state goes nil with the phase.
         ZStack {
             Theme.ground.ignoresSafeArea()
             switch store.phase {
-            // One branch, so the wait doesn't restart between these phases.
             case .launching, .bootstrappingProfile, .tearingDown:
                 AppProgressView(title: Self.progressTitle(store.pendingTeardown?.reason))
                 .transition(Motion.appear)
@@ -290,7 +278,6 @@ struct AppRootView: View {
         .task {
             await store.send(.task).finish()
         }
-        // After the first frame, before any intro or reveal needs a sound.
         .task { Sounds.prepare() }
         .onOpenURL { url in
             guard let route = CompetitionRoute(url: url) else { return }
@@ -298,7 +285,6 @@ struct AppRootView: View {
         }
     }
 
-    /// Cleaning up after a session that never opened isn't signing out.
     static func progressTitle(_ teardown: AppFeature.TeardownReason?) -> String {
         switch teardown {
         case nil, .restoredWithoutSession, .cancelledAuthentication:
@@ -309,9 +295,6 @@ struct AppRootView: View {
     }
 }
 
-/// The mark at window centre while something loads. The launch screen shows
-/// it there too, and the root and Home draw it off one clock, keyboard or
-/// not, so it stays put and in step as one hands over to the next.
 struct AppProgressView: View {
     let title: String
 
@@ -319,19 +302,15 @@ struct AppProgressView: View {
         LaunchMarkLayer(title: title)
             .background(Theme.ground)
             .ignoresSafeArea()
-            // One flat layer: faded in parts, the mark dips over its twin below.
             .compositingGroup()
             .allowsHitTesting(false)
     }
 }
 
-// Account lives behind the Home avatar, so there is no two-item tab bar.
 struct AuthenticatedRootView: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
 
-    /// Outside the sheet, under the root's nil preference, so it follows the
-    /// iPhone's own setting live.
     @Environment(\.colorScheme) private var systemColorScheme
 
     var body: some View {
@@ -355,8 +334,6 @@ struct AuthenticatedRootView: View {
     }
 }
 
-/// Reads the competition's notification state in its own body, so the
-/// open sheet follows it.
 private struct AccountSheet: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
@@ -366,8 +343,6 @@ private struct AccountSheet: View {
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
 
-    /// A nil preference doesn't reach an open sheet, so going back to System
-    /// here names the iPhone's own setting instead.
     private var colorScheme: ColorScheme {
         appearance.colorScheme ?? systemColorScheme
     }
@@ -383,7 +358,6 @@ private struct AccountSheet: View {
         }
         .preferredColorScheme(colorScheme)
         .task { mainStore.send(.refreshHealthAccess) }
-        // A sheet sits outside Home's own environment.
         .environment(\.profilePhotos, mainStore.competition.profilePhotoImages)
     }
 
@@ -419,7 +393,6 @@ private struct AccountSheet: View {
             competitions,
             groupMatches: competition.publication?.dashboard.groupMatches ?? []
         )
-        // Challenge links are between real accounts only.
         let challengeLink = mainStore.competition.publication?.source == .remoteParticipants
             ? AccountChallengeLink(
                 url: mainStore.competition.challengeLink,
@@ -485,10 +458,6 @@ private struct AccountSheet: View {
     }
 }
 
-// MARK: - Launch
-
-/// When the current wait began. One value, so every loader pulses in step
-/// and counts the same two seconds before it says what it is waiting for.
 enum LaunchWait {
     static var began: Date?
     private static var loaders = 0
@@ -500,7 +469,6 @@ enum LaunchWait {
 
     static func loaderDisappeared() {
         loaders -= 1
-        // One loader hands over to the next within a fade.
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(0.5))
             if loaders == 0 { began = nil }
@@ -508,37 +476,25 @@ enum LaunchWait {
     }
 }
 
-/// What the launch mark draws at one instant. Seconds run from the start of
-/// the wait; `handoff` is when Home's matches arrived on that clock.
 struct LaunchMarkFrame: Equatable {
-    /// Where on Home the mark lands: on the hero's slash, where it splits
-    /// into the two scores, or on the empty state's open-slot mark.
     enum Landing: Equatable { case score, slot }
 
-    /// One pulse: each bar pulls into the slash, then all three grow back out
-    /// on the mark's 150 ms step.
     static let period = 1.25
-    /// After the hand-off: when Home's numbers and bars may move, and when
-    /// the mark is gone.
     static let reveal = 0.28
     static let duration = 0.47
 
     var growth: [CGFloat] = [1, 1, 1]
-    /// 0 at window centre, 1 on the landing.
     var travel: CGFloat = 0
-    /// 0 in the mark, 1 flown clear: the bars leftward, the block rightward.
     var barsLeave: CGFloat = 0
     var blockLeave: CGFloat = 0
     var barsOpacity = 1.0
     var blockOpacity = 1.0
-    /// The dashed outline the block leaves behind on the empty state.
     var slotOpacity = 0.0
 
     init(at time: Double, handoff: Double? = nil, landing: Landing? = nil) {
         let elapsed = handoff.map { time - $0 } ?? 0
         for bar in 0..<3 {
             let pulse = Self.pulse(bar, at: min(time, handoff ?? time))
-            // Whatever the pulse was doing, the bars are whole 150 ms in.
             growth[bar] = handoff == nil ? pulse : min(pulse + max(elapsed, 0) / 0.15, 1)
         }
         guard handoff != nil, elapsed > 0 else { return }
@@ -555,13 +511,11 @@ struct LaunchMarkFrame: Equatable {
             blockOpacity = 1 - Self.unit(elapsed - 0.22, over: 0.23)
             slotOpacity = UnitCurve.easeOut.value(at: Self.unit(elapsed - 0.2, over: 0.25))
         case nil:
-            // Nowhere to land: the mark fades where it stands.
             barsOpacity = 1 - Self.unit(elapsed, over: 0.2)
             blockOpacity = barsOpacity
         }
     }
 
-    /// One bar's length while waiting.
     static func pulse(_ bar: Int, at time: Double) -> Double {
         guard time >= 0.1 else { return 1 }
         let cycle = (time - 0.1).truncatingRemainder(dividingBy: period)
@@ -570,7 +524,6 @@ struct LaunchMarkFrame: Equatable {
         return 1 - UnitCurve.easeIn.value(at: unit(cycle - 0.08 * Double(bar), over: 0.2))
     }
 
-    // Stands in for `Motion.settle`, which is a spring and has no clock form.
     private static let settle = UnitCurve.bezier(
         startControlPoint: UnitPoint(x: 0.2, y: 0.9),
         endControlPoint: UnitPoint(x: 0.3, y: 1)
@@ -581,9 +534,7 @@ struct LaunchMarkFrame: Equatable {
     }
 }
 
-/// The mark as the launch draws it: a `BrandMark` whose halves can leave.
 struct LaunchMark: View {
-    /// The launch screen's image is this wide, so the two line up.
     static let width: CGFloat = 90
 
     let moment: LaunchMarkFrame
@@ -607,7 +558,6 @@ struct LaunchMark: View {
             )
             .fill(Theme.ink)
             .opacity(moment.blockOpacity)
-            // The same outline as Home's open-slot mark.
             MarkPolygon(MarkPolygon.block)
                 .stroke(Theme.tertiary, style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
                 .opacity(moment.slotOpacity)
@@ -616,9 +566,6 @@ struct LaunchMark: View {
     }
 }
 
-/// The launch mark on its clock, in a layer the size of the window: pulsing
-/// at the centre, then flying to `landing` once `handoff` is set. It says
-/// what it is waiting for only after two seconds.
 private struct LaunchMarkLayer: View {
     let title: String
     var handoff: Date? = nil
@@ -628,15 +575,12 @@ private struct LaunchMarkLayer: View {
 
     var body: some View {
         GeometryReader { proxy in
-            // Under Reduce Motion the mark holds still; only the title fades.
             TimelineView(.animation(minimumInterval: reduceMotion && handoff == nil ? 0.1 : nil)) { context in
                 let placed = placement(at: context.date, in: proxy)
                 ZStack {
                     LaunchMark(moment: placed.moment)
                         .frame(width: placed.width)
                         .position(placed.centre)
-                    // Top-anchored under the mark, so large text wraps
-                    // downward instead of over it.
                     Text(title)
                         .font(.subheadline)
                         .multilineTextAlignment(.center)
@@ -676,7 +620,6 @@ private struct LaunchMarkLayer: View {
             let bounds = proxy[landing.bounds]
             switch landing.kind {
             case .score:
-                // The mark's slash sits 54% across it, and goes on the scoreboard's.
                 end = CGPoint(x: bounds.midX - 0.04 * LaunchMark.width, y: bounds.midY)
             case .slot:
                 end = CGPoint(x: bounds.midX, y: bounds.midY)
@@ -695,11 +638,8 @@ private struct LaunchMarkLayer: View {
     }
 }
 
-/// Where Home is in the launch hand-off. Anywhere else it is `.done`.
 enum LaunchStage {
-    /// Laid out under the mark: scores read zero and the bars are unbuilt.
     case waiting
-    /// The mark has reached Home: the numbers roll and the bars grow.
     case landed
     case done
 }
@@ -715,7 +655,6 @@ extension EnvironmentValues {
     }
 }
 
-/// Where the launch mark lands on Home. The first view to offer one wins.
 struct LaunchLanding: Equatable {
     let kind: LaunchMarkFrame.Landing
     let bounds: Anchor<CGRect>
@@ -737,17 +676,12 @@ extension View {
     }
 }
 
-/// Home under its loader. When the matches arrive, the mark flies to the
-/// landing Home offers and Home's numbers move once it is there. With Reduce
-/// Motion the loader fades off Home, and with nowhere to land the mark fades
-/// where it stands.
 struct LaunchHandoff<Content: View>: View {
     let isLoading: Bool
     let title: String
     let content: Content
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Nil once Home has the screen to itself.
     @State private var loader: Loader?
     @State private var hasLanded = false
 
@@ -770,7 +704,6 @@ struct LaunchHandoff<Content: View>: View {
     var body: some View {
         ZStack {
             Theme.ground.ignoresSafeArea()
-            // Home lays out finished under the mark, still hittable.
             content
                 .environment(\.launchStage, stage)
                 .opacity(loader == .waiting ? Motion.pendingOpacity : 1)

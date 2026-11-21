@@ -1021,7 +1021,7 @@ final class LocalCompetitionRuntimeTests: XCTestCase {
         )
 
         let attempts = await setup.store.appendAttempts()
-        XCTAssertEqual(attempts.count, 3) // acceptance + failed CAS + retry
+        XCTAssertEqual(attempts.count, 3)
         let refreshBatches = Array(attempts.suffix(2))
         XCTAssertEqual(refreshBatches[0], refreshBatches[1])
         XCTAssertEqual(refreshBatches[1].count, 2)
@@ -1121,7 +1121,7 @@ final class LocalCompetitionRuntimeTests: XCTestCase {
             newerSnapshot
         )
         let attempts = await setup.store.appendAttempts()
-        XCTAssertEqual(attempts.count, 2) // acceptance + stale runtime attempt
+        XCTAssertEqual(attempts.count, 2)
     }
 
     func testNewerFailedInterveningRefreshDoesNotDiscardCompletedPreparedRead() async throws {
@@ -1204,7 +1204,7 @@ final class LocalCompetitionRuntimeTests: XCTestCase {
             completedSnapshot
         )
         let attempts = await setup.store.appendAttempts()
-        XCTAssertEqual(attempts.count, 3) // acceptance + conflict + completed retry
+        XCTAssertEqual(attempts.count, 3)
     }
 
     func testFailedLatestAttemptDoesNotHideNewerDurableCompletedReadDuringCAS() async throws {
@@ -1319,7 +1319,7 @@ final class LocalCompetitionRuntimeTests: XCTestCase {
             durableSnapshot
         )
         let attempts = await setup.store.appendAttempts()
-        XCTAssertEqual(attempts.count, 2) // acceptance + stale runtime attempt
+        XCTAssertEqual(attempts.count, 2)
     }
 
     func testOlderInterveningRefreshDoesNotSuppressNewerPreparedRead() async throws {
@@ -1350,8 +1350,6 @@ final class LocalCompetitionRuntimeTests: XCTestCase {
             at: setup.activeDate
         )
         let externalRefresh = try ActivityRefreshAttemptRecorded(
-            // A competing runtime mints the same ordinal-based identity before
-            // this prepared read rebases onto its older committed result.
             attemptID: "runtime-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-attempt-1",
             competitionID: setup.competitionID,
             attemptOrdinal: 1,
@@ -1406,7 +1404,7 @@ final class LocalCompetitionRuntimeTests: XCTestCase {
             newerSnapshot
         )
         let attempts = await setup.store.appendAttempts()
-        XCTAssertEqual(attempts.count, 3) // acceptance + conflict + newer retry
+        XCTAssertEqual(attempts.count, 3)
     }
 
     func testCursorRetryExhaustionThrowsExplicitRuntimeError() async throws {
@@ -1444,7 +1442,7 @@ final class LocalCompetitionRuntimeTests: XCTestCase {
             XCTAssertEqual(error, .cursorRetryLimitExceeded)
         }
         let attempts = await setup.store.appendAttempts()
-        XCTAssertEqual(attempts.count, 3) // acceptance + two failed attempts
+        XCTAssertEqual(attempts.count, 3)
     }
 
     func testNotificationDecisionCommitAppendsOneAtomicBatch() async throws {
@@ -1479,7 +1477,7 @@ final class LocalCompetitionRuntimeTests: XCTestCase {
             Set(decisions.map(\.record.semanticEventID))
         )
         let attempts = await setup.store.appendAttempts()
-        XCTAssertEqual(attempts.count, 2) // acceptance + one atomic decision batch
+        XCTAssertEqual(attempts.count, 2)
         XCTAssertEqual(attempts.last?.count, 2)
     }
 
@@ -1509,7 +1507,7 @@ final class LocalCompetitionRuntimeTests: XCTestCase {
 
         XCTAssertEqual(result, .noDecision)
         let attempts = await setup.store.appendAttempts()
-        XCTAssertEqual(attempts.count, 2) // acceptance + conflicted first attempt
+        XCTAssertEqual(attempts.count, 2)
     }
 
     func testDeleteRetriesCursorConflictAndIsIdempotentWhenAlreadyAbsent()

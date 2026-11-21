@@ -118,8 +118,6 @@ set auth_user_id = null, display_name = 'Former competitor', state = 'anonymized
 where id = '42000000-0000-0000-0000-000000000004';
 delete from auth.users where id = '41000000-0000-0000-0000-000000000004';
 
--- These grants roll back with the test. They isolate policy behavior from grant
--- behavior and ensure missing policies produce ordinary TAP failures.
 grant select (id, display_name, state, anonymized_at, created_at, updated_at)
   on public.profiles to authenticated, anon;
 grant all on table

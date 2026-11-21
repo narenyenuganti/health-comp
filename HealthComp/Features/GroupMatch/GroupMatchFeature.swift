@@ -2,12 +2,9 @@ import CompetitionCore
 import ComposableArchitecture
 import Foundation
 
-/// What Create Match sends: named people and bots only, everyone but you.
-/// In doubles you are on team 1.
 struct GroupMatchDraft: Hashable, Sendable {
     enum Seat: Hashable, Sendable {
         case person(profileID: UUID, team: Int?)
-        /// Someone named by their personal challenge link; the server resolves it.
         case challengeLink(CompetitionChallengeLinkCode, team: Int?)
         case bot(BotMode, team: Int?)
     }
@@ -20,7 +17,6 @@ extension CompetitionChallengeLinkCode: Hashable {
     func hash(into hasher: inout Hasher) { hasher.combine(rawValue) }
 }
 
-/// Everything a person can ask of a group match.
 enum GroupMatchCommand: Hashable, Sendable {
     case create(GroupMatchDraft)
     case accept(CompetitionID)
@@ -28,25 +24,17 @@ enum GroupMatchCommand: Hashable, Sendable {
     case withdraw(CompetitionID)
     case cancel(CompetitionID)
     case leave(CompetitionID)
-    /// Doubles partner only.
     case nudge(CompetitionID)
-    /// Nil removes your reaction to that seat's day.
     case react(CompetitionID, seatID: UUID, ordinal: Int, CompetitionReactionKind?)
     case rematch(CompetitionID)
-    /// From an invite: declines it and blocks whoever sent it.
     case block(CompetitionID)
 }
 
-/// Why a command failed, for the line under its button. Anything else
-/// (offline, server error) has no reason and keeps the screen's generic line.
 enum GroupMatchFailure: Hashable, Sendable {
     case recipientUnavailable
-    /// The server names the first person who needs a newer app.
     case updateRequired(profileID: UUID?, displayName: String? = nil)
     case creationLimit
-    /// Closed, expired or no longer yours to answer.
     case closed
-    /// The server refused a nudge: your partner updated recently, or the result no longer waits on them.
     case nudgeNotNeeded
 
     init?(_ error: Error) {
@@ -60,7 +48,6 @@ enum GroupMatchFailure: Hashable, Sendable {
         }
     }
 
-    /// `name` is the display name of the person an update names, if known.
     func message(name: String? = nil) -> String {
         switch self {
         case .recipientUnavailable: "Someone in this lineup can’t be invited. Check the players and try again."
@@ -73,19 +60,14 @@ enum GroupMatchFailure: Hashable, Sendable {
     }
 }
 
-/// Commands for group matches, so screens add no reducer code. The published
-/// match comes back through `CompetitionFeature`.
 @Reducer
 struct GroupMatchFeature {
     @ObservableState
     struct State: Equatable {
         var inFlight: Set<GroupMatchCommand> = []
         var failed: Set<GroupMatchCommand> = []
-        /// Why a command in `failed` failed, when the server said.
         var failureReasons: [GroupMatchCommand: GroupMatchFailure] = [:]
 
-        /// The line under the first of `commands` that failed: the server's
-        /// reason when it gave one, otherwise `generic`. Nil when none failed.
         func failureLine(
             _ commands: [GroupMatchCommand], otherwise generic: String, name: (UUID) -> String? = { _ in nil }
         ) -> String? {
@@ -102,14 +84,12 @@ struct GroupMatchFeature {
         }
 
         case commandTapped(GroupMatchCommand)
-        /// Nil publication when the command failed, with the reason if known.
         case commandFinished(GroupMatchCommand, CompetitionPublication?, GroupMatchFailure? = nil)
         case delegate(Delegate)
     }
 
     @Dependency(\.competitionClient) var competitionClient
 
-    /// `CompetitionFeature.stop` cancels these, so a sign-out drops late answers.
     enum CancelID { case commands }
 
     var body: some ReducerOf<Self> {
@@ -124,7 +104,6 @@ struct GroupMatchFeature {
                         let published = try await competitionClient.groupMatchCommand(command)
                         await send(.commandFinished(command, published))
                     } catch {
-                        // A refused nudge isn't a connection problem; retrying won't help.
                         var reason = GroupMatchFailure(error)
                         if case .nudge = command, error as? CompetitionRemoteFailure == .forbidden { reason = .nudgeNotNeeded }
                         await send(.commandFinished(command, nil, reason))

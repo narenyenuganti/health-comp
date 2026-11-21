@@ -2,7 +2,6 @@ import CompetitionCore
 import Foundation
 
 struct CompetitionNotificationPolicy: Sendable {
-    /// The cap per match per evaluation; matches never compete for it.
     var maximumPostsPerEvaluation: Int
     var maximumPostsPerCompetitionDay: Int
     var scheduledFireDate: @Sendable (
@@ -28,9 +27,6 @@ struct CompetitionNotificationPolicy: Sendable {
 }
 
 extension CompetitionNotificationPolicy {
-    /// Versioned, reversible product policy for local notifications. Semantic
-    /// identifiers deliberately do not include any of these choices, so copy,
-    /// timing, and budgets can evolve without changing durable dedupe keys.
     static let liveV1 = Self(
         maximumPostsPerEvaluation: 1,
         maximumPostsPerCompetitionDay: 2,
@@ -133,8 +129,6 @@ extension CompetitionNotificationPolicy {
                     "Open HealthComp for the latest on your match with \(name)."
                 )
             }
-            // The match zone's abbreviation at that midnight, when it differs
-            // from the phone's, as the status line does.
             let zone: String = {
                 guard let end = message.matchDayEnd,
                       let id = message.matchTimeZoneIdentifier,
@@ -198,8 +192,6 @@ extension CompetitionNotificationPolicy {
         }
     }
 
-    /// One notification for several matches: results or catch-ups from one
-    /// evaluation, or same-time 9:00 reminders.
     static func liveV1SummaryContent(
         _ messages: [CompetitionNotificationMessage],
         locale: Locale = .current
@@ -211,7 +203,6 @@ extension CompetitionNotificationPolicy {
         let names = uniqueNamesText(messages, locale: locale)
         switch first.family {
         case .opportunistic(.result):
-            // Same hold-back as the single result: the reveal tells who won.
             return CompetitionNotificationContent(
                 title: "\(messages.count) decisions are in",
                 body: "Your matches with \(names) are scored. Open to hear the decisions."
@@ -242,8 +233,6 @@ extension CompetitionNotificationPolicy {
         }
     }
 
-    /// Lifecycle titles come from the shared status formatter, so a
-    /// notification and the screen it opens use the same words.
     private static func statusTitle(
         _ lifecycle: LocalCompetitionLifecyclePresentation,
         opponent: String
@@ -365,8 +354,6 @@ struct CompetitionNotificationPlanner: Sendable {
             }
         }
 
-        // Each match spends its own per-evaluation cap in `opportunisticPlan`;
-        // the sort only keeps the output deterministic.
         decisions.sort {
             let left = policy.priority($0.record.family)
             let right = policy.priority($1.record.family)
@@ -385,9 +372,6 @@ struct CompetitionNotificationPlanner: Sendable {
         )
     }
 
-    /// Collapses durable, accepted emissions from one evaluation into what iOS
-    /// posts: several results (or catch-ups) become one summary, and the
-    /// daily maximum posts once, naming nobody.
     func immediateRequests(
         for emissions: [CompetitionNotificationEmissionDecision],
         in snapshot: CompetitionNotificationPlanningSnapshot
@@ -431,7 +415,6 @@ struct CompetitionNotificationPlanner: Sendable {
         let fireDate: Date
     }
 
-    /// Same-time 9:00 reminders for several matches become one request.
     private func mergedScheduledRequests(
         _ candidates: [ScheduledCandidate]
     ) -> [CompetitionScheduledNotificationRequest] {
@@ -450,9 +433,6 @@ struct CompetitionNotificationPlanner: Sendable {
             }
             handled.formUnion(members)
             if family == .whatItTakes {
-                // One evening reminder: the smallest gap, keeping its route.
-                // ponytail: grouped by fire instant, so matches in different
-                // zones can each post one; group by evening if that bites.
                 func key(_ index: Int) -> (Double, String) {
                     (candidates[index].message.whatItTakes?.points ?? .infinity,
                      candidates[index].request.identifier)
@@ -514,7 +494,6 @@ struct CompetitionNotificationPlanner: Sendable {
                 message.whatItTakes = takes
                 message.dayOrdinal = takes.dayOrdinal
                 message.matchTimeZoneIdentifier = timeZoneIdentifier
-                // Base is that day's midnight in the match zone.
                 message.matchDayEnd = try competition.schedule.map {
                     try $0.calendar.startOfDay($0.calendar.day(after: $0.calendar.day(containing: baseDate)))
                 }
@@ -537,8 +516,6 @@ struct CompetitionNotificationPlanner: Sendable {
         }
     }
 
-    /// Today's banter at 8 PM in the match's zone. One identifier per match,
-    /// so it posts at most once a day; nil before Day 3 or without a line.
     private func banterCandidate(_ match: GroupMatchPresentation, evaluatedAt: Date) throws -> ScheduledCandidate? {
         guard let day = match.liveDay, let text = match.banter, let schedule = match.schedule else { return nil }
         let calendar = schedule.calendar
@@ -591,12 +568,6 @@ struct CompetitionNotificationPlanner: Sendable {
             let start = try calendar.startOfDay(schedule.startDay)
             let final = try calendar.startOfDay(finalDay)
             let end = try calendar.startOfDay(endDay)
-            // The reminder's day comes from the value, not the lifecycle, so
-            // the trigger, N and "Day d" describe the same clock day.
-            // ponytail: content as of the last plan; a 6:45 PM BGAppRefresh
-            // re-plan is the upgrade if stale numbers bite.
-            // ponytail: a pending reminder can outlive a server cancellation
-            // until the next reconcile; a generic cancellation push is the upgrade.
             var takes: [(CompetitionScheduledNotificationFamily, Date, String)] = []
             if competition.lifecycle.isLiveDay,
                let value = competition.whatItTakes, value.points != nil,
@@ -619,7 +590,6 @@ struct CompetitionNotificationPlanner: Sendable {
                     ]
                     : [(.competitionEnded, end, timeZone)]) + takes
             case .endsToday, .tallying:
-                // `takes` is empty while tallying.
                 return [(.competitionEnded, end, timeZone)] + takes
             default:
                 return []
@@ -682,10 +652,6 @@ struct CompetitionNotificationPlanner: Sendable {
                 $0.record.semanticEventID
             )
         }
-        // Switched off: recorded silently, so turning it back on never posts a
-        // late one, and this match's slot goes to its next candidate.
-        // ponytail: reuse .superseded; add NotificationSuppressionReason.switchedOff
-        // in CompetitionCore if support needs to tell them apart.
         let isOff = { CompetitionNotificationMessageFamily.opportunistic($0).isOff(in: switchedOff) }
         for candidate in candidates where isOff(candidate.record.family) {
             result.suppressions.append(
@@ -693,8 +659,6 @@ struct CompetitionNotificationPlanner: Sendable {
             )
         }
         candidates.removeAll { isOff($0.record.family) }
-        // "600 today" posts once a day across matches; this match's slot goes
-        // to its next candidate.
         if dailyMaximumRecordedInAnotherMatch(competition, snapshot: snapshot) {
             for candidate in candidates where candidate.record.family == .dailyMaximum {
                 result.suppressions.append(
@@ -759,8 +723,6 @@ struct CompetitionNotificationPlanner: Sendable {
         return result
     }
 
-    /// Lead changes react to the other person's day, results to the result.
-    /// Muted matches never get here, so their alerts carry no actions.
     private func reactionTarget(
         _ record: NotificationEmissionRecorded
     ) -> CompetitionReactionTarget? {
@@ -987,8 +949,6 @@ struct CompetitionNotificationPlanner: Sendable {
             )
         }
 
-        // A change needs an earlier leader and never fires on Day 1;
-        // `leadBaselineRecord` records the first leader silently.
         if let leader = currentLeader(competition),
            ordinal >= 2,
            let previous = mostRecentRecordedLeader(in: competition, through: ordinal),
@@ -1018,8 +978,6 @@ struct CompetitionNotificationPlanner: Sendable {
         displayedLeader(competition.ownerPoints, competition.opponentPoints)
     }
 
-    /// The first shown leader, and any Day 1 flip, is recorded silently: it is
-    /// the baseline later changes compare against, and usually sync order.
     private func leadBaselineRecord(
         for competition: CompetitionNotificationCompetitionSnapshot,
         snapshot: CompetitionNotificationPlanningSnapshot
@@ -1044,8 +1002,6 @@ struct CompetitionNotificationPlanner: Sendable {
         )
     }
 
-    /// Another live match already recorded today's daily maximum (emitted or
-    /// suppressed), each checked against its own current day.
     private func dailyMaximumRecordedInAnotherMatch(
         _ competition: CompetitionNotificationCompetitionSnapshot,
         snapshot: CompetitionNotificationPlanningSnapshot
@@ -1081,8 +1037,6 @@ struct CompetitionNotificationPlanner: Sendable {
         )
     }
 
-    /// The leader by the whole points people see; nil when they read equal,
-    /// so "The lead changed … You 412, Alex 412." can't happen.
     private func displayedLeader(
         _ ownerPoints: Double,
         _ opponentPoints: Double
@@ -1095,11 +1049,6 @@ struct CompetitionNotificationPlanner: Sendable {
         return nil
     }
 
-    /// The leader of the latest day with a recorded leader. When both leaders
-    /// are recorded for that day (a Day 1 flip, or a same-day change), the
-    /// record set can't say which came last, so that day's end-of-day shown
-    /// totals decide; nil when they can't, so the next lead is a silent
-    /// baseline rather than a guess.
     private func mostRecentRecordedLeader(
         in competition: CompetitionNotificationCompetitionSnapshot,
         through dayOrdinal: Int
@@ -1125,8 +1074,6 @@ struct CompetitionNotificationPlanner: Sendable {
         return nil
     }
 
-    /// The shown leader of the cumulative totals through `day`; nil when any
-    /// day's points are missing or the shown totals are equal.
     private func endOfDayLeader(
         in competition: CompetitionNotificationCompetitionSnapshot,
         day: Int
@@ -1182,9 +1129,6 @@ struct CompetitionNotificationPlanner: Sendable {
         )
     }
 
-    /// The belt event of a finished match when it took the belt, from every
-    /// snapshot match with the same person (muted ones too, so muting never
-    /// shifts the history). The fold orders weeks like History does.
     private func beltTake(
         for competition: CompetitionNotificationCompetitionSnapshot,
         in snapshot: CompetitionNotificationPlanningSnapshot

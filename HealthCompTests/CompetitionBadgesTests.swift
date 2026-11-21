@@ -5,23 +5,16 @@ import SwiftUI
 import XCTest
 @testable import HealthComp
 
-/// Badges, your records, each ring between two people and History's filter:
-/// all worked out from finished weeks. Ring points split each day 38/28/34,
-/// as the Test Lab's October does.
 final class CompetitionBadgesTests: XCTestCase {
     private let locale = Locale(identifier: "en_US")
     private let zone = "America/Los_Angeles"
 
     func testAWeeksFeatsEarnTheirBadges() {
         let weeks = [
-            // Every day yours.
             week(0, you: Array(repeating: 300, count: 7), them: Array(repeating: 290, count: 7)),
-            // 300 behind going into the last day.
             week(1, you: [100, 100, 100, 100, 100, 100, 400], them: [150, 150, 150, 150, 150, 150, 50]),
-            // Six level days, then five points.
             week(2, you: [200, 200, 200, 200, 200, 200, 205], them: Array(repeating: 200, count: 7)),
             week(3, you: Array(repeating: 100, count: 7), them: Array(repeating: 200, count: 7)),
-            // Won, but nothing on day 1.
             week(4, you: [0, 300, 300, 300, 300, 300, 300], them: Array(repeating: 250, count: 7)),
         ]
         let book = competitionBadgeBook(weeks.reversed())
@@ -53,7 +46,6 @@ final class CompetitionBadgesTests: XCTestCase {
         func badge(_ kind: CompetitionBadgeKind) -> CompetitionBadge {
             book.badges.first { $0.kind == kind } ?? CompetitionBadge(kind: kind)
         }
-        // Took it in week 0, so the third defence is week 3.
         XCTAssertEqual(badge(.defender).count, 1)
         XCTAssertEqual(badge(.defender).latest, weeks[3].id)
         XCTAssertEqual(badge(.hotStreak).count, 1)
@@ -63,7 +55,6 @@ final class CompetitionBadgesTests: XCTestCase {
         XCTAssertEqual(badge(.collector).countText, "1 OF 3")
         XCTAssertEqual(book.byWeek[weeks[9].id], [.sweep, .tripleCrown, .rival])
 
-        // Two more belts, one lost, then won back: three at once, twice.
         weeks += [
             week(10, "Alex", you: win.you, them: win.them),
             week(11, "Riley", you: win.you, them: win.them),
@@ -77,7 +68,6 @@ final class CompetitionBadgesTests: XCTestCase {
     }
 
     func testDayMarksAndSweepReadDaysAsTheResultDoes() {
-        // 300.4 to 300.2 shows as a level day; 0 to 0 is no data.
         let sample = week(0, you: [300.4, 0, 300, 300, 300, 300, 300], them: [300.2, 0, 290, 290, 290, 290, 290])
         XCTAssertEqual(competitionDayOutcomes(sample), [.tie, nil, .win, .win, .win, .win, .win])
         let book = competitionBadgeBook([sample])
@@ -90,7 +80,6 @@ final class CompetitionBadgesTests: XCTestCase {
         func badge(_ kind: CompetitionBadgeKind, _ book: CompetitionBadgeBook) -> CompetitionBadge {
             book.badges.first { $0.kind == kind } ?? CompetitionBadge(kind: kind)
         }
-        // A tie ends a streak.
         let streak = competitionBadgeBook(
             (0..<4).map { week($0, you: win.you, them: win.them) }
                 + [week(4, you: tie, them: tie), week(5, you: win.you, them: win.them)]
@@ -98,7 +87,6 @@ final class CompetitionBadgesTests: XCTestCase {
         XCTAssertEqual(badge(.hotStreak, streak).count, 0)
         XCTAssertEqual(badge(.hotStreak, streak).countText, "BEST 4")
 
-        // A tie keeps the belt without defending it; a deleted account's belt is never held.
         let belts = competitionBadgeBook([
             week(0, you: win.you, them: win.them),
             week(1, you: tie, them: tie),
@@ -116,12 +104,10 @@ final class CompetitionBadgesTests: XCTestCase {
         let weeks = [
             week(0, you: win.you, them: win.them),
             week(1, you: win.you, them: win.them),
-            // Same end: the smaller id is the win but finalized later.
             week(2, "Alex", you: win.you, them: win.them, idNumber: 0x20, finishedLater: 3_600),
             week(2, "Riley", you: win.them, them: win.you, idNumber: 0x21),
             week(3, you: win.you, them: win.them),
         ]
-        // Server order: W W W L W.
         XCTAssertEqual(competitionOwnCareer(weeks).career.winStreak, 3)
     }
 
@@ -133,7 +119,6 @@ final class CompetitionBadgesTests: XCTestCase {
         XCTAssertEqual(competitionFilteredWeeks(weeks, filter: .lost, person: nil).count, 2)
         XCTAssertEqual(competitionFilteredWeeks(weeks, filter: .all, person: alex).map(\.opponentDisplayName), ["Alex"])
         XCTAssertTrue(competitionFilteredWeeks(weeks, filter: .won, person: alex).isEmpty)
-        // Oct 4–10 with Sam, newest first at index 3.
         XCTAssertEqual(competitionDayOutcomes(weeks[3]), [.win, .loss, .win, .loss, .win, .win, .win])
     }
 
@@ -164,7 +149,6 @@ final class CompetitionBadgesTests: XCTestCase {
         XCTAssertEqual(rings.map(\.ring), [0, 1, 2])
         XCTAssertEqual(rings.map(\.detail), Array(repeating: "Wed, Oct 28", count: 3))
 
-        // A winning run that reaches the newest week is still going.
         let run = competitionOwnRecordSections(Array(weeks[..<3]), now: CompetitionMonthFixture.now, locale: locale)
         XCTAssertEqual(run[1].rows[0].detail, "Still going")
         XCTAssertTrue(competitionOwnRecordSections([], now: CompetitionMonthFixture.now).isEmpty)
@@ -197,19 +181,14 @@ final class CompetitionBadgesTests: XCTestCase {
 
         stack.wrappedValue = [.ownProfile, .ownBadges]
         XCTAssertEqual(stack.wrappedValue, [.ownProfile, .ownBadges])
-        // Your profile › Records › the week a record happened in.
         stack.wrappedValue = [.ownProfile, .ownRecords, .competition(id)]
         XCTAssertEqual(stack.wrappedValue, [.ownProfile, .ownRecords, .competition(id)])
-        // "Your record with Sam" from that week: Sam's page, without yours.
         stack.wrappedValue += [.person("sam")]
         XCTAssertEqual(stack.wrappedValue, [.competition(id), .person("sam")])
         stack.wrappedValue = []
         XCTAssertEqual(place, CompetitionPersonPlace())
     }
 
-    // MARK: Weeks
-
-    /// Week `number` starts that many weeks after Sun Jan 4, 2026.
     private func week(
         _ number: Int,
         _ opponent: String = "Sam",

@@ -2,8 +2,6 @@ import CompetitionCore
 import ComposableArchitecture
 import SwiftUI
 
-/// Live doubles: the two-sided scoreboard of team totals, who's carrying,
-/// the week by team, today, and a nudge for your partner.
 struct GroupMatchLiveDoublesView: View {
     let match: GroupMatchPresentation
     let store: StoreOf<GroupMatchFeature>
@@ -101,8 +99,6 @@ struct GroupMatchLiveDoublesView: View {
         .accessibilityIdentifier("competition.group.carrying")
     }
 
-    /// Two bars sized by each partner's share of the team's points. Yours is
-    /// amber and a person partner an amber outline; a bot is never amber.
     private func teamSplit(_ team: MatchStandingSubject) -> some View {
         let members = match.members(of: team)
         let isYours = team == yourTeam
@@ -118,7 +114,6 @@ struct GroupMatchLiveDoublesView: View {
                         .frame(width: width * share)
                     Group {
                         if isYours, !members[1].isBot {
-                            // A thin stroke: amber as text, which holds contrast on the panel.
                             RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.you, lineWidth: 2)
                         } else {
                             RoundedRectangle(cornerRadius: 4).fill(Theme.tertiary)
@@ -138,7 +133,6 @@ struct GroupMatchLiveDoublesView: View {
         .modifier(CompetitionProfileAction(route: match.profileRoute(members[1]), name: members[1].name))
     }
 
-    /// "You, 1,664 points, 53 percent"
     private func memberLabel(_ seat: GroupMatchSeat) -> String {
         var parts = [
             seat.id == match.viewerSeatID ? "You" : seat.name,
@@ -162,8 +156,6 @@ struct GroupMatchLiveDoublesView: View {
         .modifier(CompetitionProfileTap(route: match.profileRoute(seat)))
     }
 
-    /// Two items at either end of a line, or one under the other at
-    /// accessibility sizes, as the scoreboard does.
     private func pair(_ leading: some View, _ trailing: some View) -> some View {
         let stacked = dynamicTypeSize.isAccessibilitySize
         let layout = stacked
@@ -180,7 +172,6 @@ struct GroupMatchLiveDoublesView: View {
         Double(match.projection.seatTotals[seat.id] ?? 0) / 100
     }
 
-    /// Partners side by side with the opponent in the same row.
     private func todayPanel(_ ordinal: Int) -> some View {
         let yours = match.members(of: yourTeam)
         let theirs = match.members(of: theirTeam)
@@ -204,7 +195,6 @@ struct GroupMatchLiveDoublesView: View {
             .accessibilityLabel("\(isYou ? "You" : seat.name), \(competitionPointsAccessibilityText(points, locale: locale)) today")
     }
 
-    /// Your partner only, while you both play. Never a bot.
     @ViewBuilder
     private var nudge: some View {
         if let partner, !partner.isBot, match.canNudgePartner, !match.hasLeft(partner), !match.hasLeft(match.viewer) {

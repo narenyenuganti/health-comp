@@ -314,7 +314,6 @@ final class CompetitionRoutingTests: XCTestCase {
         XCTAssertNil(CompetitionRoute(userInfo: payload))
     }
 
-    /// Exactly what the server sends for friend_request and friend_accepted.
     func testFriendsPayloadDecodesStrictlyAndEncodesBack() {
         let route = CompetitionRoute.friends
         XCTAssertEqual(
@@ -334,7 +333,6 @@ final class CompetitionRoutingTests: XCTestCase {
         XCTAssertEqual(CompetitionRoute(userInfo: payload), .friends)
         XCTAssertEqual(CompetitionReactionAlert.route(userInfo: payload), .friends)
 
-        // Malformed: an id, any extra key, a bad aps, another version.
         var withID = payload
         withID["healthcomp.route.competitionID"] = "ead172f8-531d-4327-823d-e82a4f696051"
         XCTAssertNil(CompetitionRoute(userInfo: withID))
@@ -358,7 +356,6 @@ final class CompetitionRoutingTests: XCTestCase {
         XCTAssertNil(CompetitionRoute(userInfo: wrongCase))
     }
 
-    /// A kind this build doesn't know opens the app where it was.
     func testUnknownRouteKindFailsClosed() {
         for kind in ["friend", "profile", "", "competitions"] {
             XCTAssertNil(CompetitionRoute(userInfo: [
@@ -371,7 +368,6 @@ final class CompetitionRoutingTests: XCTestCase {
             "healthcomp.route.v": 1,
             "healthcomp.route.kind": 3,
         ]))
-        // A competition route still needs its id.
         XCTAssertNil(CompetitionRoute(userInfo: [
             "healthcomp.route.v": 1,
             "healthcomp.route.kind": "competition",

@@ -1,7 +1,5 @@
 import XCTest
 
-/// Practice match (spec §9.9, PR 12), driven through the real Home, match
-/// screen and result in the remote Test Lab's `practice` scenario.
 final class PracticeMatchUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -25,8 +23,6 @@ final class PracticeMatchUITests: XCTestCase {
         app = nil
     }
 
-    // MARK: Start
-
     func testStartTomorrowFromTheEmptyHomeAndEndItBeforeItStarts() throws {
         launchLab(setup: "starts-scheduled")
         XCTAssertTrue(text("No matches yet").waitForExistence(timeout: 8))
@@ -36,7 +32,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertEqual(challenge.label, "Challenge Someone")
         XCTAssertEqual(open.label, "Practice Match")
         XCTAssertEqual(buttons("competition.practice.open").count, 1)
-        // The quieter button sits under Challenge Someone.
         XCTAssertLessThanOrEqual(challenge.frame.maxY, open.frame.minY)
         XCTAssertGreaterThanOrEqual(open.frame.height, 44)
         XCTAssertFalse(app.buttons["competition.practice.challenge"].exists)
@@ -56,7 +51,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertEqual(erratic.label, "Erratic, Huge days and off days. Hard to read.")
         XCTAssertEqual(beast.label, "Beast, Well above your usual, every day.")
         XCTAssertFalse(app.buttons["competition.practice.pace.balanced"].exists)
-        // Pacer is the default, and only one bot is ever picked.
         XCTAssertEqual(selected(), ["pacer"])
         XCTAssertLessThan(pacer.frame.minY, chill.frame.minY)
         XCTAssertLessThan(chill.frame.minY, erratic.frame.minY)
@@ -80,11 +74,9 @@ final class PracticeMatchUITests: XCTestCase {
 
         start.tap()
         XCTAssertTrue(sheet.waitForNonExistence(timeout: 5))
-        // Tomorrow's practice is the hero, labeled, with Challenge Someone under it.
         let card = sharingCard(state: "scheduled")
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         XCTAssertEqual(all("competition.sharing.scheduled.\(Self.practiceUUID)").count, 1)
-        // VoiceOver reads the row line; the card shows "Practice · Scheduled".
         XCTAssertEqual(card.label, "Pacer. Practice · Starts Mon, Aug 17")
         XCTAssertFalse(text("No matches yet").exists)
         XCTAssertFalse(app.buttons["competition.practice.open"].exists)
@@ -95,7 +87,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertEqual(buttons("competition.practice.challenge").count, 1)
         XCTAssertLessThanOrEqual(card.frame.maxY, homeChallenge.frame.minY)
         XCTAssertFalse(app.buttons["competition.history.open"].exists)
-        // Practice never asks for notifications.
         XCTAssertFalse(app.buttons["onboarding.notNow"].waitForExistence(timeout: 2))
 
         scrollToElement(card)
@@ -113,7 +104,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].exists)
         XCTAssertFalse(card.exists)
         XCTAssertFalse(app.buttons["competition.practice.challenge"].exists)
-        // It can be started again.
         XCTAssertTrue(app.buttons["competition.practice.open"].isHittable)
     }
 
@@ -126,7 +116,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 5))
         XCTAssertEqual(error.label, Self.startError)
         XCTAssertEqual(all("competition.practice.error").count, 1)
-        // The sheet stays open with the same pace and Start ready again.
         XCTAssertTrue(element("competition.practice.sheet").exists)
         XCTAssertEqual(selected(), ["pacer"])
         waitForEnabled(start)
@@ -137,9 +126,7 @@ final class PracticeMatchUITests: XCTestCase {
         waitForEnabled(start)
         XCTAssertEqual(selected(), ["beast"])
 
-        // Closed and reopened, the old failure stays hidden.
         closeSheet()
-        // The failure isn't repeated as a banner on Home.
         XCTAssertFalse(text(Self.startError).exists)
         XCTAssertFalse(app.staticTexts["Couldn’t finish that. Try again."].exists)
         XCTAssertTrue(text("No matches yet").exists)
@@ -152,8 +139,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         XCTAssertFalse(text(Self.startError).exists)
     }
-
-    // MARK: Live
 
     func testLivePracticePlaysLikeAMatchAndEndsFromTheMenu() {
         launchLab()
@@ -172,7 +157,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertFalse(app.buttons["competition.nudge"].exists)
         XCTAssertFalse(app.buttons["competition.result.share"].exists)
 
-        // The rules say the pacer is simulated and nothing leaves the iPhone.
         openMenu()
         XCTAssertTrue(app.buttons["Sync status"].exists)
         XCTAssertFalse(muteMenuItem.exists)
@@ -183,7 +167,6 @@ final class PracticeMatchUITests: XCTestCase {
         app.swipeDown(velocity: .fast)
         XCTAssertTrue(text("Nothing leaves this iPhone").waitForNonExistence(timeout: 3))
 
-        // Keep Going leaves it running.
         openMenu()
         app.buttons["competition.practice.end"].tap()
         let dialog = app.sheets["End this practice match?"]
@@ -194,7 +177,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertTrue(dialog.waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.navigationBars["Pacer"].exists)
 
-        // Back returns to the same Home.
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(card.waitForExistence(timeout: 3))
         card.tap()
@@ -241,8 +223,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertFalse(muteMenuItem.exists)
     }
 
-    // MARK: Results
-
     func testPracticeResultsSayPracticeAndOfferChallengeSomeone() throws {
         let outcomes: [(setup: String, title: String, home: String)] = [
             ("won", "You beat Pacer", "Practice · You won"),
@@ -256,7 +236,6 @@ final class PracticeMatchUITests: XCTestCase {
             XCTAssertEqual(all("competition.sharing.completed.\(Self.practiceUUID)").count, 1)
             XCTAssertTrue(row.label.contains(outcome.home), row.label)
             XCTAssertTrue(row.label.contains("Pacer"), row.label)
-            // Nothing to archive and nothing moves to History.
             XCTAssertFalse(anyText(containing: "Moves to History").exists)
             XCTAssertFalse(app.buttons["competition.history.open"].exists)
             XCTAssertFalse(text("No matches yet").exists)
@@ -279,11 +258,9 @@ final class PracticeMatchUITests: XCTestCase {
             XCTAssertLessThanOrEqual(challenge.frame.maxY, app.frame.maxY - 34)
         }
 
-        // Challenge Someone goes back to Home and opens the Challenge sheet.
         app.buttons["competition.practice.challenge"].tap()
         XCTAssertTrue(element("competition.create.card").waitForExistence(timeout: 5))
         XCTAssertFalse(app.navigationBars["Pacer"].exists)
-        // Close, not a drag: main's Challenge sheet inherits Home's pull to refresh.
         app.buttons["competition.create.done"].tap()
         XCTAssertTrue(element("competition.create.card").waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.navigationBars["Home"].exists)
@@ -303,8 +280,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertTrue(challenge.isHittable)
     }
 
-    // MARK: Beside real matches
-
     func testARealMatchTakesTheHeroAndHomeDropsThePracticeOnlyChallenge() {
         launchLab(setup: "with-scheduled-match")
         let priya = app.buttons.matching(NSPredicate(
@@ -317,7 +292,6 @@ final class PracticeMatchUITests: XCTestCase {
         let live = element("competition.home.live")
         XCTAssertTrue(live.exists)
         XCTAssertTrue(live.label.contains("LIVE · 1") || anyText(containing: "LIVE · 1").exists, live.label)
-        // Priya leads; the practice is an equal card under LIVE.
         XCTAssertLessThan(priya.frame.minY, practice.frame.minY)
         XCTAssertTrue(practice.label.contains("Practice · Day 2 of 7"), practice.label)
         XCTAssertFalse(priya.label.contains("Practice"), priya.label)
@@ -335,7 +309,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertFalse(app.buttons["competition.practice.challenge"].exists)
         XCTAssertFalse(jordan.label.contains("Practice"), jordan.label)
 
-        // The real match keeps its own screen: Jordan's has no End Practice.
         jordan.tap()
         XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
         openMenu()
@@ -362,12 +335,9 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["onboarding.notNow"].waitForExistence(timeout: 8))
     }
 
-    /// A real challenge that arrives while the pace sheet is up must not lose
-    /// the notifications prompt: it shows once the sheet closes.
     func testAChallengeArrivingUnderThePaceSheetStillGetsTheNotificationsPrompt() {
         launchLab(setup: "challenge-arrives", arguments: ["-practiceLabNotifications", "YES"])
         openSheet()
-        // Sam's challenge lands behind the sheet.
         XCTAssertTrue(sharingCard(name: "Sam").waitForExistence(timeout: 12))
         XCTAssertFalse(app.buttons["onboarding.notNow"].exists)
         sleep(2)
@@ -375,8 +345,6 @@ final class PracticeMatchUITests: XCTestCase {
         closeSheet()
         XCTAssertTrue(app.buttons["onboarding.notNow"].waitForExistence(timeout: 5))
     }
-
-    // MARK: Sizes and zones
 
     func testDarkAX5SheetScrollsToAnInlineStart() throws {
         launchLab(arguments: Self.darkAX5)
@@ -422,8 +390,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertEqual(card.label, "Pacer. Practice · Starts Mon, Aug 17 PDT")
     }
 
-    // MARK: Helpers
-
     private func launchLab(
         setup: String = "",
         arguments: [String] = [],
@@ -459,7 +425,6 @@ final class PracticeMatchUITests: XCTestCase {
     }
 
     private func openMenu() {
-        // iOS 18 exposes Menu's identified wrapper, not its nested button, as hittable.
         let more = element("competition.more")
         XCTAssertTrue(more.waitForExistence(timeout: 3))
         more.tap()
@@ -472,8 +437,6 @@ final class PracticeMatchUITests: XCTestCase {
         dialog.buttons["End Practice"].tap()
     }
 
-    /// The cancel button of an action sheet; on iPhone it may sit outside
-    /// the sheet element.
     private func dialogCancel(_ dialog: XCUIElement, _ label: String) {
         let inside = dialog.buttons[label]
         if inside.exists { inside.tap() } else { app.buttons[label].firstMatch.tap() }
@@ -483,7 +446,6 @@ final class PracticeMatchUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Mute' OR label BEGINSWITH 'Unmute'")).firstMatch
     }
 
-    /// The pace ids that read as selected.
     private func selected() -> [String] {
         ["pacer", "chill", "erratic", "beast"].filter {
             app.buttons["competition.practice.pace.\($0)"].isSelected
@@ -529,7 +491,6 @@ final class PracticeMatchUITests: XCTestCase {
         )).firstMatch
     }
 
-    /// The pace sheet's own scroll view, not Home behind it.
     private var sheetScroll: XCUIElement {
         app.scrollViews.containing(
             NSPredicate(format: "identifier == %@", "competition.practice.pace.pacer")

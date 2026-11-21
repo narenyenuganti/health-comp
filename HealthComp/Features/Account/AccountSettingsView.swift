@@ -5,7 +5,6 @@ import CoreImage.CIFilterBuiltins
 import PhotosUI
 import SwiftUI
 
-/// Your reusable challenge link for Account. Nil hides the section.
 struct AccountChallengeLink {
     let url: URL?
     let failed: Bool
@@ -15,28 +14,20 @@ struct AccountChallengeLink {
     let reset: () -> Void
 }
 
-/// Your photo, for Account's header. The photo itself comes from the
-/// environment's `profilePhotos`.
 struct AccountProfilePhoto {
     let status: CompetitionFeature.OwnPhotoState.Status
     let removedByReview: Bool
-    /// Asks whether a reviewer removed your last photo.
     let load: () -> Void
-    /// Uploads Move and Scale's JPEG.
     let save: (Data) -> Void
     let remove: () -> Void
-    /// Move and Scale closed without saving.
     let cropClosed: () -> Void
 }
 
-/// One trip through Move and Scale, with where its photo comes from.
 struct AccountPhotoCropRequest: Identifiable {
     let id = UUID()
     let load: @Sendable () async throws -> Data
 
 #if DEBUG
-    /// `--profile-photo-fixture` skips the picker with this photo, since
-    /// PhotosPicker can't be driven from a UI test.
     static let testLabFixture: Data? = ProcessInfo.processInfo.arguments
         .contains("--profile-photo-fixture")
         ? ProfilePhotoTestLabServer.fixtureJPEG(red: 0.85, green: 0.45, blue: 0.2)
@@ -44,25 +35,19 @@ struct AccountPhotoCropRequest: Identifiable {
 #endif
 }
 
-/// The people you blocked, for Account. Hidden until a non-empty list loads.
 struct AccountBlockedPeople {
     let people: [AuthenticatedProfile]?
     let unblocking: Set<UUID>
-    /// The person whose last Unblock failed.
     let unblockFailed: UUID?
     let load: () -> Void
     let unblock: (UUID) -> Void
 }
 
-/// Your username and who can find or challenge you, for Account → Privacy.
-/// Nil hides them; so does a server that hasn't answered.
 struct AccountFriendSettings {
     let state: FriendSettingsFeature.State
     let send: (FriendSettingsFeature.Action) -> Void
 }
 
-/// What Account → Notifications needs from the competition. Hosts without
-/// competition state pass nil, which hides the row.
 struct AccountNotificationSettings {
     let authorization: CompetitionNotificationAuthorizationState?
     let isRequestInFlight: Bool
@@ -71,8 +56,6 @@ struct AccountNotificationSettings {
     var mutesInFlight: Set<String> = []
     var unmute: (String) -> Void = { _ in }
     var choicesChanged: () -> Void = {}
-    /// nil reads and observes `ActivityAuthorizationInfo`; a value overrides
-    /// it for the DEBUG fixture.
     var liveActivitiesEnabled: Bool? = nil
 
     var statusText: String {
@@ -80,13 +63,10 @@ struct AccountNotificationSettings {
     }
 }
 
-/// A muted person Account can name.
 struct AccountMutedPerson: Equatable, Identifiable {
     let id: String
     let name: String
 
-    /// Names come from the person's matches; a muted identity with no match
-    /// has nothing to notify about, so it isn't listed.
     static func list(
         _ competitions: [LocalCompetitionPresentation],
         muted: Set<String>
@@ -105,8 +85,6 @@ struct AccountMutedPerson: Equatable, Identifiable {
     }
 }
 
-/// What Account → Health needs. HealthKit hides read denial, so there is no
-/// definite "On".
 struct AccountHealthSettings {
     enum State: Equatable {
         case off
@@ -124,7 +102,6 @@ struct AccountHealthSettings {
     }
 }
 
-/// Matches whose points stop reaching the server while signed out.
 func accountLiveMatchCount(
     _ competitions: [LocalCompetitionPresentation],
     groupMatches: [GroupMatchPresentation] = []
@@ -139,7 +116,6 @@ func accountLiveMatchCount(
         + groupMatches.filter { isLive($0.lifecycle) && !$0.hasLeft($0.viewer) }.count
 }
 
-/// Sign-out is global, so the copy says "your points", not "this iPhone".
 func accountSignOutMessage(liveMatchCount: Int) -> String {
     switch liveMatchCount {
     case ...0:
@@ -151,8 +127,6 @@ func accountSignOutMessage(liveMatchCount: Int) -> String {
     }
 }
 
-/// A short list; each setting opens its own page so explanations don't
-/// stack up here.
 struct AccountSettingsView: View {
     let store: StoreOf<AccountFeature>
     var notifications: AccountNotificationSettings?
@@ -160,10 +134,8 @@ struct AccountSettingsView: View {
     var liveMatchCount = 0
     var challengeLink: AccountChallengeLink?
     var blockedPeople: AccountBlockedPeople?
-    /// Real accounts only: set, change or remove your photo.
     var profilePhoto: AccountProfilePhoto?
     var friendSettings: AccountFriendSettings?
-    /// Sleep beta: Health's sleep sheet.
     var requestSleepAccess: () -> Void = {}
 #if HEALTHCOMP_STAGING
     var refreshCompetition: (() -> Void)?
@@ -187,7 +159,6 @@ struct AccountSettingsView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .headline) private var blockedInitialSize: CGFloat = 34
 
-    /// What can resize the list once it's open.
     private var listShape: [AnyHashable] {
         [
             AnyHashable(challengeLink?.url),
@@ -204,7 +175,6 @@ struct AccountSettingsView: View {
 
     var body: some View {
         scrollingList
-            // The id, as Account can open before the publication mounts the link.
             .task(id: challengeLink != nil) { load() }
             .onChange(of: store.isEditingDisplayName) { _, isEditing in
                 isNameFocused = isEditing
@@ -217,7 +187,6 @@ struct AccountSettingsView: View {
             .overlay {
                 AccountProgressOverlay(store: store)
             }
-            // Messages land away from the button that caused them.
             .onChange(of: spokenMessage) { _, new in
                 if let new { AccessibilityNotification.Announcement(new).post() }
             }
@@ -247,7 +216,6 @@ struct AccountSettingsView: View {
         .accountPageStyle(title: "Account")
     }
 
-    /// Delete is the last row, so its message lands off the bottom of the list.
     private var scrollingList: some View {
         ScrollViewReader { proxy in
             listWithHaptics
@@ -261,8 +229,6 @@ struct AccountSettingsView: View {
 
     private static let deletionMessageID = "account.deletion-message"
 
-    // Plain Bools and its own property: on the List's chain, these closures
-    // don't type-check in time. Each failure clears before the next attempt.
     private var listWithHaptics: some View {
         let hasMessage: Bool = store.message != nil
         let unblockFailed: Bool = blockedPeople?.unblockFailed != nil
@@ -275,13 +241,10 @@ struct AccountSettingsView: View {
             .sensoryFeedback(.success, trigger: linkURL, condition: Self.linkWasReset)
     }
 
-    /// First load isn't a reset.
     private static func linkWasReset(_ old: URL?, _ new: URL?) -> Bool {
         old != nil && new != nil
     }
 
-    /// This runs again on pop back, and a reload would clear the failure on
-    /// screen. Hosts with no link yet can still load later.
     private func load() {
         store.send(.appeared)
         guard !hasLoaded else { return }
@@ -291,7 +254,6 @@ struct AccountSettingsView: View {
         profilePhoto?.load()
     }
 
-    /// Centred on the page ground: your photo, your name and Edit Name.
     private var profileHeader: some View {
         Section {
             VStack(spacing: 12) {
@@ -323,7 +285,6 @@ struct AccountSettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityLabel("Display name, \(store.displayName)")
                 .accessibilityAddTraits(.isHeader)
-            // Its 44 pt is its own spacing.
             Button("Edit Name") {
                 store.send(.editDisplayNameButtonTapped)
             }
@@ -390,7 +351,6 @@ struct AccountSettingsView: View {
         }
     }
 
-    /// The name error, and what happened to your photo.
     @ViewBuilder
     private var headerMessages: some View {
         if let message = store.message, !message.isDeletionMessage {
@@ -420,7 +380,6 @@ struct AccountSettingsView: View {
         return nil
     }
 
-    /// No photo: a tap opens the picker. With one: Change or Remove.
     @ViewBuilder
     private var avatarControl: some View {
         if let profilePhoto {
@@ -491,7 +450,6 @@ struct AccountSettingsView: View {
                     }
                 )
             }
-            // The sheet closes once the upload lands.
             .onChange(of: profilePhoto.status) { old, new in
                 if old == .saving, new == .idle { cropRequest = nil }
             }
@@ -525,7 +483,6 @@ struct AccountSettingsView: View {
 
     private func choosePhoto() {
 #if DEBUG
-        // PhotosPicker can't be driven from a UI test.
         if let fixture = AccountPhotoCropRequest.testLabFixture {
             cropRequest = AccountPhotoCropRequest { fixture }
             return
@@ -536,8 +493,6 @@ struct AccountSettingsView: View {
 
     private var challengeLinkSection: some View {
         Section {
-            // Separate rows, so the List settles these. A height change inside
-            // one cell jumps, and its text runs over its neighbours.
             if let url = challengeLink?.url {
                 VStack(alignment: .leading, spacing: 12) {
                     let isResetting = challengeLink?.isResetting == true
@@ -545,9 +500,6 @@ struct AccountSettingsView: View {
                         .font(.footnote.monospaced())
                         .foregroundStyle(Theme.secondary)
                         .textSelection(.enabled)
-                        // At accessibility sizes it would break mid-word every few
-                        // letters: one line, cut in the middle. Share and Show Code
-                        // carry the full link.
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 1 : nil)
                         .truncationMode(.middle)
                         .fixedSize(horizontal: false, vertical: true)
@@ -581,7 +533,6 @@ struct AccountSettingsView: View {
                     } else {
                         HStack(spacing: 8) { buttons }
                     }
-                    // The 44 pt frame sits inside the label so the hit area gets it too.
                     Button { isResetLinkConfirmationPresented = true } label: {
                         Text("Reset Link")
                     }
@@ -641,8 +592,6 @@ struct AccountSettingsView: View {
         Section {
             ForEach(people, id: \.id) { person in
                 blockedRow(person, blocked)
-                // Under the person, so it shows where the tap was even when
-                // the list runs past the screen.
                 if blocked.unblockFailed == person.id {
                     Text("Couldn’t unblock. Check your connection and try again.")
                         .font(.callout)
@@ -672,9 +621,6 @@ struct AccountSettingsView: View {
             : AnyLayout(HStackLayout(spacing: 12))
         return layout {
             HStack(spacing: 12) {
-                // At accessibility sizes the initial would squeeze the
-                // name into a narrow column, so the name gets the width.
-                // Never a photo: the block hides it.
                 if !isAccessibilitySize {
                     PersonAvatar(
                         name: person.displayName,
@@ -688,7 +634,6 @@ struct AccountSettingsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Button { blocked.unblock(person.id) } label: {
-                // The ink tint doesn't dim when disabled, so saving shows here.
                 Text("Unblock")
                     .foregroundStyle(isUnblocking ? Theme.secondary : Theme.ink)
                     .animation(Motion.fade, value: isUnblocking)
@@ -703,7 +648,6 @@ struct AccountSettingsView: View {
         }
     }
 
-    /// The URL without its scheme: "healthcomp.app/c/Xb3k…".
     static func displayText(_ url: URL) -> String {
         let text = url.absoluteString
         guard let range = text.range(of: "://") else { return text }
@@ -794,8 +738,6 @@ struct AccountSettingsView: View {
         .listRowBackground(Theme.panel)
     }
 
-    /// Quiet text at the foot, for the two actions you rarely take. Neutral,
-    /// because red means Move; the roles stay for VoiceOver.
     private var footerSection: some View {
         Section {
             Button(role: .destructive) {
@@ -809,8 +751,6 @@ struct AccountSettingsView: View {
             .accessibilityValue(
                 store.isRequestInFlight ? "Signing out" : ""
             )
-            // On the button, not the List, so it can't collide with the
-            // delete alert.
             .alert("Sign out?", isPresented: $isSignOutConfirmationPresented) {
                 Button("Sign Out", role: .destructive) {
                     store.send(.signOutButtonTapped)
@@ -862,7 +802,6 @@ struct AccountSettingsView: View {
                 )
             }
 
-            // The last row, so the in-flight scroll to the bottom lands on it.
             if let message = store.message, message.isDeletionMessage {
                 Text(message.text)
                     .font(.callout)
@@ -898,7 +837,6 @@ private struct AccountAppearancePage: View {
     }
 }
 
-/// Sleep beta: Rings + Sleep challenges, and which tracker your nights come from.
 private struct AccountSleepBetaPage: View {
     let requestSleepAccess: () -> Void
 
@@ -955,7 +893,6 @@ private struct AccountSleepBetaPage: View {
     }
 }
 
-/// Before Health's own sheet: what's read and what leaves the phone.
 private struct SleepPrimingSheet: View {
     let proceed: () -> Void
     let notNow: () -> Void
@@ -997,13 +934,11 @@ private struct AccountSoundsPage: View {
         List {
             Section {
                 Toggle("Sound Effects", isOn: $isOn)
-                    // Amber, as the notification switches.
                     .tint(Theme.youFill)
                     .accessibilityIdentifier("account.sounds.enabled")
                 HStack(spacing: 12) {
                     Image(systemName: "speaker.fill")
                         .accessibilityHidden(true)
-                    // Letting go plays the "you move ahead" sound at the new volume.
                     Slider(value: $volume, in: 0...1, step: 0.05) { isDragging in
                         if !isDragging { Sounds.play(.ahead) }
                     }
@@ -1083,7 +1018,6 @@ private struct AccountNotificationsPage: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .headline) private var initialSize: CGFloat = 34
-    // Read up front, so the rows it adds are there on the push.
     @State private var systemLiveActivitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
 
     private var liveActivitiesEnabled: Bool {
@@ -1175,8 +1109,6 @@ private struct AccountNotificationsPage: View {
                     }
                     .frame(minHeight: 44)
                     .accountAction()
-                    // The status section has its own Open Settings; VoiceOver
-                    // tells them apart.
                     .accessibilityLabel("Open Settings for Live Activities")
                     .accessibilityIdentifier("account.notifications.live-activity.settings")
                 }
@@ -1217,10 +1149,7 @@ private struct AccountNotificationsPage: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            // The frame sits inside the label so the tap area, not just the
-            // layout, stays 44pt at the smallest text sizes.
             Button { settings.unmute(person.id) } label: {
-                // The ink tint doesn't dim when disabled, so saving shows here.
                 Text("Unmute")
                     .foregroundStyle(isUnmuting ? Theme.secondary : Theme.ink)
                     .animation(Motion.fade, value: isUnmuting)
@@ -1233,7 +1162,6 @@ private struct AccountNotificationsPage: View {
                 .accessibilityIdentifier("account.notifications.unmute")
         }
     }
-
 
 }
 
@@ -1253,7 +1181,6 @@ private struct NotificationChoiceToggle: View {
     var body: some View {
         Toggle(choice.title, isOn: isForcedOff ? .constant(false) : $isOn)
             .disabled(isForcedOff)
-            // Amber, not the page's ink, which hides the thumb in dark mode.
             .tint(Theme.youFill)
             .onChange(of: isOn) { changed() }
             .accessibilityIdentifier("account.notifications.choice.\(choice.rawValue)")
@@ -1295,7 +1222,6 @@ private struct AccountPrivacyPage: View {
         .onChange(of: friends?.state.failedField) { _, new in
             if new != nil { AccessibilityNotification.Announcement(Self.saveErrorText).post() }
         }
-        // The id, as Account can open before the publication mounts these.
         .task(id: friends != nil) { friends?.send(.requested) }
         .sheet(isPresented: Binding(
             get: { friends?.state.sheet != nil },
@@ -1354,7 +1280,6 @@ private struct AccountPrivacyPage: View {
                 get: { shown.showInSearch },
                 set: { friends.send(.showInSearchChanged($0)) }
             ))
-            // Amber, not the page's ink, which hides the thumb in dark mode.
             .tint(Theme.youFill)
             .disabled(friends.state.isSaving)
             .accessibilityIdentifier("account.privacy.show-in-search")
@@ -1387,8 +1312,6 @@ private struct AccountPrivacyPage: View {
                     }
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
-                    // Choices, not actions, so not semibold; dimmed while
-                    // saving, which the page's ink style would otherwise hide.
                     .opacity(friends.state.isSaving ? 0.45 : 1)
                 }
                 .disabled(friends.state.isSaving)
@@ -1418,7 +1341,6 @@ private struct AccountProgressOverlay: View {
     let store: StoreOf<AccountFeature>
 
     var body: some View {
-        // Save waits in its own button.
         if store.isRequestInFlight, !store.isEditingDisplayName {
             ProgressView()
                 .tint(Theme.ink)
@@ -1586,8 +1508,6 @@ private struct StagingScoringDiagnosticPage: View {
 }
 #endif
 
-/// An action row: semibold, so it reads apart from the static rows beside
-/// it, and dimmed while disabled, which the page's ink style would hide.
 private struct AccountAction: ViewModifier {
     @Environment(\.isEnabled) private var isEnabled
 
@@ -1601,7 +1521,6 @@ private struct AccountAction: ViewModifier {
 private extension View {
     func accountAction() -> some View { modifier(AccountAction()) }
 
-    /// Account's pages share one surface and an inline title.
     func accountPageStyle(title: String) -> some View {
         scrollContentBackground(.hidden)
             .background(Theme.ground)
@@ -1612,7 +1531,6 @@ private extension View {
     }
 }
 
-/// System / Light / Dark, each previewed as a tiny Home screen.
 private struct AppearancePicker: View {
     @Binding var selection: AppAppearance
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -1658,8 +1576,6 @@ private struct AppearancePicker: View {
         .sensoryFeedback(.selection, trigger: selection)
     }
 
-    /// The whole window changes, and dynamic colours don't interpolate through
-    /// a transaction, so it crossfades from a snapshot: `Motion.fade` in UIKit.
     private func choose(_ option: AppAppearance) {
         guard option != selection else { return }
         let window = UIApplication.shared.connectedScenes
@@ -1709,7 +1625,6 @@ private struct AppearanceThumbnail: View {
         .accessibilityHidden(true)
     }
 
-    // Theme colors resolve against the overridden color scheme.
     private var screen: some View {
         VStack(spacing: 6) {
             BrandMark().frame(width: 22)
@@ -1723,8 +1638,6 @@ private struct AppearanceThumbnail: View {
     }
 }
 
-/// The QR code of your challenge link. Black on white in both modes, because
-/// scanners need dark modules on a light quiet zone.
 private struct ChallengeLinkCodeView: View {
     let url: URL
     let done: () -> Void

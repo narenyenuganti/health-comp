@@ -5,7 +5,6 @@ struct CompetitionLocalDateFormattingChecks {
     static func main() {
         let iso = ISO8601DateFormatter()
         func instant(_ text: String) -> Date { iso.date(from: text)! }
-        // Folds U+2009 / U+202F (and any other whitespace) to one space.
         func normalized(_ text: String) -> String {
             text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         }
@@ -30,7 +29,6 @@ struct CompetitionLocalDateFormattingChecks {
         let utc = TimeZone(identifier: "UTC")!
         let la = TimeZone(identifier: "America/Los_Angeles")!
 
-        // Numbers
         expect(competitionPointsText(382.2, locale: us), "382")
         expect(competitionPointsText(0.5, locale: us), "1")
         expect(competitionPointsText(2.5, locale: us), "3")
@@ -53,7 +51,6 @@ struct CompetitionLocalDateFormattingChecks {
         precondition(competitionFinalFractionDigits(userPoints: 412, opponentPoints: 412) == 0)
         precondition(competitionFinalFractionDigits(userPoints: 420, opponentPoints: 412.3) == 0)
         precondition(competitionFinalFractionDigits(userPoints: 412.46, opponentPoints: 412.54) == 0)
-        // More decimals until a decided result's numbers differ, capped at 4.
         precondition(competitionFinalFractionDigits(userPoints: 412.3333, opponentPoints: 412.3349) == 3)
         expect(competitionPointsText(412.3333, fractionDigits: 3, locale: us), "412.333")
         expect(competitionPointsText(412.3349, fractionDigits: 3, locale: us), "412.335")
@@ -63,7 +60,6 @@ struct CompetitionLocalDateFormattingChecks {
         expect(competitionRoundedParts([0.5, 0.5, 0.5], total: 1.5), [0, 1, 1])
         expect(competitionRoundedParts([], total: 0), [])
 
-        // Margins and leads (shared with the widget extension)
         func margin(_ user: Double, _ opponent: Double, _ digits: Int) -> String? {
             competitionMarginText(userPoints: user, opponentPoints: opponent, fractionDigits: digits, locale: us)
         }
@@ -110,7 +106,6 @@ struct CompetitionLocalDateFormattingChecks {
         precondition(outcome(nil, nil, occurred: false) == .upcoming)
         precondition(outcome(310, 300, current: 2) == .today)
 
-        // Day
         let now = instant("2026-10-31T12:00:00Z")
         let nextYear = instant("2027-02-01T12:00:00Z")
         let thursday = instant("2026-10-29T19:00:00Z")
@@ -121,7 +116,6 @@ struct CompetitionLocalDateFormattingChecks {
         precondition(frenchDay.contains("29"), "Missing 29 in \(frenchDay)")
         precondition(frenchDay != "Thu, Oct 29", "French day matches English: \(frenchDay)")
 
-        // Week
         let oct24 = instant("2026-10-24T00:00:00Z")
         let oct28 = instant("2026-10-28T00:00:00Z")
         let oct30 = instant("2026-10-30T00:00:00Z")
@@ -130,7 +124,6 @@ struct CompetitionLocalDateFormattingChecks {
         expect(normalized(competitionWeekText(oct28, nov3, now: now, locale: us, timeZone: utc)), "Oct 28 – Nov 3")
         require(competitionWeekText(oct24, oct30, now: nextYear, locale: us, timeZone: utc), contains: ["2026"])
 
-        // Moment
         let moment = instant("2026-10-28T04:41:00Z")
         expect(normalized(competitionMomentText(moment, now: now, locale: us, timeZone: la)), "Tue 9:41 PM")
         require(
@@ -139,13 +132,11 @@ struct CompetitionLocalDateFormattingChecks {
         )
         require(competitionMomentText(moment, now: now, locale: fr, timeZone: la), contains: ["21:41"])
 
-        // Updated: time only on the same day, else the moment style
         let updatedNow = instant("2026-10-31T16:41:00Z")
         expect(normalized(competitionUpdatedText(updatedNow, now: updatedNow, locale: us, timeZone: la)), "9:41 AM")
         expect(normalized(competitionUpdatedText(instant("2026-10-31T06:40:00Z"), now: updatedNow, locale: us, timeZone: la)), "Fri 11:40 PM")
         require(competitionUpdatedText(instant("2026-10-20T04:41:00Z"), now: updatedNow, locale: us, timeZone: la), contains: ["Oct 19"])
 
-        // Tally deadline
         let tallyNow = instant("2026-11-04T05:00:00Z")
         let midnightDeadline = instant("2026-11-05T08:00:00Z")
         expect(competitionDeadlineText(midnightDeadline, now: tallyNow, locale: us, timeZone: la), "Wed night")

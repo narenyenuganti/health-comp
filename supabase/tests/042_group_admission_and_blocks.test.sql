@@ -1,5 +1,4 @@
 begin;
--- Included inside each group test transaction; no product fixture state persists.
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
@@ -44,7 +43,6 @@ begin
  update public.competitions set start_day=current_date-days_ago,invitation_expires_at=now()-interval '20 days',
    best_available_deadline=(current_date-days_ago+9)::timestamp at time zone 'UTC' where id=cid;
 end; $$;
--- Real submission path: fixed semantic identity and evaluation time allow exact replay.
 create function pg_temp.score(cid uuid,person integer,day integer,rev bigint,points integer default 30000) returns jsonb language plpgsql as $$
 declare evaluated timestamptz; d text;
 begin
@@ -96,7 +94,6 @@ select lives_ok($$select pg_temp.duel(2,3)$$,'scheduled group peers may create d
 select lives_ok($$select pg_temp.pair(2,3)$$,'scheduled group peers may create groups');
 select pg_temp.as_user(1); select public.cancel_group_match(pg_temp.gid('consented'));
 
--- A block through the general friends API closes all five groups and frees the creator's quota.
 select pg_temp.make_match('quota-'||n) from generate_series(1,5) n;
 insert into private.friendships(profile_low,profile_high) values(least(pg_temp.pid(1),pg_temp.pid(2)),greatest(pg_temp.pid(1),pg_temp.pid(2)));
 select pg_temp.as_user(2);
@@ -111,9 +108,7 @@ select pg_temp.as_user(5); select lives_ok($$select public.block_profile(pg_temp
 select is((select lifecycle from public.competitions where id=pg_temp.gid('creator-block')),'cancelled','creator block cancels own pending group');
 select is((select count(*) from private.competition_notification_work where competition_id=pg_temp.gid('creator-block') and kind='match_cancelled'),1::bigint,'creator cancellation notifies its human invitee');
 
--- Co-invitee blocks must close the third party's pending match but preserve a scheduled match.
 insert into private.friendships(profile_low,profile_high) values(least(pg_temp.pid(4),pg_temp.pid(5)),greatest(pg_temp.pid(4),pg_temp.pid(5)));
--- Player 3 met 4 only in player 1's lineup, which is no challenge credential.
 insert into private.friendships(profile_low,profile_high) values(least(pg_temp.pid(3),pg_temp.pid(4)),greatest(pg_temp.pid(3),pg_temp.pid(4))),
   (least(pg_temp.pid(3),pg_temp.pid(5)),greatest(pg_temp.pid(3),pg_temp.pid(5)));
 select pg_temp.as_user(3);
@@ -127,7 +122,6 @@ select pg_temp.as_user(4); select lives_ok($$select public.block_profile(pg_temp
 select is((select lifecycle from public.competitions where id=pg_temp.gid('co-block')),'declined','co-invitee block closes third-party pending match');
 select is((select lifecycle from public.competitions where id=pg_temp.gid('co-scheduled')),'scheduled','general block does not cancel a scheduled group');
 
--- A hidden creator is directly reachable by their own named invitee, just as in duels.
 insert into gm values('hidden-creator',(pg_temp.pair(7,8)->>'competition_id')::uuid);
 select pg_temp.as_user(8);
 select ok(private.person_reachable(pg_temp.pid(8),pg_temp.pid(7)),'pending invitee can reach their hidden creator');

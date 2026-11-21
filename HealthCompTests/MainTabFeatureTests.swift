@@ -46,8 +46,6 @@ final class MainTabFeatureTests: XCTestCase {
                 steps: [.health]
             )
         }
-        // Prompts toggling the scene don't reach the competition before it
-        // starts.
         await store.send(.scenePhaseChanged(.active))
 
         await store.send(.onboardingContinueTapped) {
@@ -131,7 +129,6 @@ final class MainTabFeatureTests: XCTestCase {
                 $0.inviteClaimStatus = .loadingPreview
             }
         }
-        // The sheet names the sender before Health, as it does after.
         await receivePreview(store, envelope)
         XCTAssertEqual(store.state.inviteClaimPreview?.sender.displayName, "Naren")
 
@@ -281,7 +278,6 @@ final class MainTabFeatureTests: XCTestCase {
         )
         XCTAssertEqual(claims.requestCount, 0)
         XCTAssertEqual(routing.consumedSequences, [envelope.sequence])
-        // Health is still the next step, and nothing asked for it.
         XCTAssertEqual(store.state.onboarding, onboarding)
         XCTAssertEqual(permissions.calls, [])
         XCTAssertFalse(store.state.acceptsClaimOnStart)
@@ -424,8 +420,6 @@ final class MainTabFeatureTests: XCTestCase {
         XCTAssertEqual(routing.consumedSequences, [])
     }
 
-    /// Decline, Not Now, or a link you already accepted: each opens the
-    /// waiting link over the Health step.
     @MainActor
     func testQueuedLinkOpensItsPreviewBeforeHealth() async throws {
         enum Exit: CaseIterable { case decline, notNow, alreadyAccepted }
@@ -452,7 +446,6 @@ final class MainTabFeatureTests: XCTestCase {
             let onboarding = MainTabFeature.PermissionOnboarding(steps: [.health])
             var initial = MainTabFeature.State(onboarding: onboarding)
             if exit == .alreadyAccepted {
-                // Both links arrived; the first one's preview is answering.
                 initial.pendingClaimRoute = first
                 initial.queuedClaimRoute = second
                 initial.inviteClaimStatus = .loadingPreview
@@ -557,8 +550,6 @@ final class MainTabFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.onboarding, onboarding)
     }
 
-    /// Health finished while the preview was loading, before the first
-    /// publication: a link you already accepted still opens its match.
     @MainActor
     func testAlreadyAcceptedLinkAfterHealthBeforeFirstPublicationOpensTheMatch()
         async throws {
@@ -615,7 +606,6 @@ final class MainTabFeatureTests: XCTestCase {
         XCTAssertEqual(routing.consumedSequences, [envelope.sequence])
     }
 
-    /// A link from before this account can arrive after a newer, valid one.
     @MainActor
     func testWrongAccountNoticeReopensTheValidLinkBehindIt() async throws {
         let early = try claimEnvelope(sequence: 5, token: String(repeating: "E", count: 43))
@@ -694,7 +684,6 @@ final class MainTabFeatureTests: XCTestCase {
             $0.pendingClaimRoute = envelope
             $0.inviteClaimStatus = .loadingPreview
         }
-        // The match shows on Home once Health is set up.
         await store.receive(
             .claimPreviewResponse(sequence: envelope.sequence, .success(accepted))
         ) {
@@ -711,7 +700,6 @@ final class MainTabFeatureTests: XCTestCase {
     @MainActor
     func testNewerClaimLinkWaitsBehindAnEarlierAcceptance() async throws {
         let first = try claimEnvelope(sequence: 7)
-        // A different link: the same link again is ignored.
         let newer = try claimEnvelope(sequence: 8, token: String(repeating: "N", count: 43))
         let claims = MainTabClaimRecorder(
             expectedToken: try XCTUnwrap(
@@ -739,7 +727,6 @@ final class MainTabFeatureTests: XCTestCase {
             $0.acceptsClaimOnStart = true
             $0.inviteClaimStatus = .idle
         }
-        // The accepted link stays on screen; the newer one waits for it.
         await store.send(.routeReceived(newer)) {
             $0.queuedClaimRoute = newer
         }
@@ -1078,7 +1065,6 @@ final class MainTabFeatureTests: XCTestCase {
             $0.isAccountPresented = false
             $0.notificationPrompt = .scheduled
         }
-        // Account opens during the delay: the ready check backs off.
         await store.send(.accountPresentationChanged(true)) {
             $0.isAccountPresented = true
         }
@@ -1095,8 +1081,6 @@ final class MainTabFeatureTests: XCTestCase {
             $0.notificationPrompt = .presented
         }
 
-        // A sheet opening while the prompt is "presented" means the
-        // present was dropped; it retries when the sheet closes.
         await store.send(.accountPresentationChanged(true)) {
             $0.isAccountPresented = true
             $0.notificationPrompt = .unscheduled
@@ -1136,7 +1120,6 @@ final class MainTabFeatureTests: XCTestCase {
             ),
             pendingClaimRoute: envelope
         )
-        // Accepted over the Health step, after the preview loaded.
         initial.inviteClaimPreview = MainTabClaimRecorder.preview
         initial.inviteClaimPreviewEvaluatedAt = MainTabClaimRecorder.now
         initial.acceptsClaimOnStart = true
@@ -1149,8 +1132,6 @@ final class MainTabFeatureTests: XCTestCase {
             $0.permissionOnboardingClient = PermissionOnboardingRecorder().client
         }
 
-        // A live match is already there, but the claim sheet is about to
-        // show, so the prompt waits.
         let first = publication(
             revision: 1,
             visibleID: liveID,
@@ -1424,7 +1405,6 @@ final class MainTabFeatureTests: XCTestCase {
         }
         await store.receive(.competition(.pullToRefresh))
 
-        // A publication without the match keeps holding and doesn't refresh again.
         let unrelated = publication(
             revision: 6,
             visibleID: archivedID,
@@ -1552,7 +1532,6 @@ final class MainTabFeatureTests: XCTestCase {
             $0.path = [id]
             $0.lastHandledRouteSequence = 3
         }
-        // Friends left the stack, so its work stops too.
         await store.receive(.competition(.friends(.closed))) {
             $0.competition.friends.query = ""
         }
@@ -1560,8 +1539,6 @@ final class MainTabFeatureTests: XCTestCase {
         XCTAssertEqual(routing.consumedSequences, [3])
     }
 
-    /// A Friends push: like a match route it clears what covers Home, then
-    /// opens Friends on its own and reloads the list.
     @MainActor
     func testFriendsRouteClosesWhatCoversHomeOpensFriendsAndReloads() async {
         let id = competitionID("81000000-0000-0000-0000-00000000000B")
@@ -1601,13 +1578,9 @@ final class MainTabFeatureTests: XCTestCase {
         await store.finish()
         XCTAssertEqual(routing.consumedSequences, [4])
 
-        // The same push again does nothing.
         await store.send(.routeReceived(CompetitionRouteEnvelope(sequence: 4, route: .friends)))
     }
 
-    /// A Friends push closes the challenge-link sheet and the claim sheet
-    /// and drops their pending, queued and in-flight work, so neither
-    /// reopens or navigates away from Friends later.
     @MainActor
     func testFriendsRouteClosesLinkAndClaimSheetsAndIgnoresLateResponses() async throws {
         let id = competitionID("81000000-0000-0000-0000-00000000000C")
@@ -1656,14 +1629,11 @@ final class MainTabFeatureTests: XCTestCase {
         await store.finish()
         XCTAssertEqual(Set(routing.consumedSequences), [5, 6, 7])
 
-        // Answers that arrive after the tap change nothing.
         await store.send(.challengeLinkResolved(sequence: 4, .success("Maya")))
         await store.send(.claimInviteResponse(sequence: 5, .success(id, expectedRevision: 2)))
         await store.send(.claimConfirmationTimedOut(MainTabFeature.PendingClaimNavigation(competitionID: id, expectedPublicationRevision: 2)))
     }
 
-    /// Practice and simulated matches have no Friends: the push only
-    /// opened the app.
     @MainActor
     func testFriendsRouteWithoutRemoteAccountOnlyOpensTheApp() async {
         let id = competitionID("81000000-0000-0000-0000-00000000000D")
@@ -1746,7 +1716,6 @@ final class MainTabFeatureTests: XCTestCase {
             $0.showsFriends = false
             $0.historyPersonIdentity = nil
         }
-        // Its search, load and changes stop with it.
         await store.receive(.competition(.friends(.closed)))
     }
 
@@ -2379,11 +2348,9 @@ final class MainTabFeatureTests: XCTestCase {
         await store.send(.routeReceived(second)) {
             $0.queuedClaimRoute = second
         }
-        // The same link again is ignored.
         let duplicate = CompetitionRouteEnvelope(sequence: 22, route: first.route)
         await store.send(.routeReceived(duplicate))
         XCTAssertEqual(store.state.pendingClaimRoute, first)
-        // A replay of the held envelope is not a second tap: not consumed.
         await store.send(.routeReceived(first))
 
         await store.send(.notNowClaimTapped) {
@@ -2420,7 +2387,6 @@ final class MainTabFeatureTests: XCTestCase {
             $0.competitionRoutingClient = MainTabRoutingRecorder().client
             $0.date = .constant(MainTabClaimRecorder.now)
         }
-        // No publication yet: the first link is still idle.
         await store.send(.routeReceived(first)) { $0.pendingClaimRoute = first }
         await store.send(.routeReceived(second)) { $0.queuedClaimRoute = second }
 
@@ -2489,7 +2455,6 @@ final class MainTabFeatureTests: XCTestCase {
             $0.pendingClaimNavigation = .init(competitionID: matchID, expectedPublicationRevision: 2)
             $0.inviteClaimStatus = .waitingForCompetition
         }
-        // The second link waits for the match instead of starting.
         await store.send(.routeReceived(second)) { $0.queuedClaimRoute = second }
 
         let acknowledged = publication(revision: 2, visibleID: matchID)
@@ -2689,7 +2654,6 @@ final class MainTabFeatureTests: XCTestCase {
     @MainActor
     func testChallengeLinkResolvesToReadyAndPrefillsThePerson() async throws {
         let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Xb3kP9qL2mN8vR4tY6wZ1a"))
-        // The link gives a name, and the sheet keeps the code to send by.
         let maya = CompetitionFeature.InviteRecipient(link: code, displayName: "Maya")
         let envelope = CompetitionRouteEnvelope(sequence: 50, route: .challengeLink(code))
         let routing = MainTabRoutingRecorder()
@@ -2747,7 +2711,6 @@ final class MainTabFeatureTests: XCTestCase {
             $0.competitionClient = MainTabLifecycleRecorder().client
             $0.competitionRoutingClient = MainTabRoutingRecorder().client
         }
-        // The same collapsed copy as a link that never existed.
         await store.send(.competition(.createInviteResponse(.sheet, idempotencyKey: key, .failure(.recipientUnavailable)))) {
             $0.competition.inviteCreations[.sheet] = nil
             $0.competition.inviteRecipient = nil
@@ -2855,7 +2818,6 @@ final class MainTabFeatureTests: XCTestCase {
         )
     }
 
-    /// The recorder's preview arrives and the sheet becomes ready.
     @MainActor
     private func receivePreview(
         _ store: TestStore<MainTabFeature.State, MainTabFeature.Action>,
@@ -3010,7 +2972,6 @@ private final class MainTabClaimRecorder: @unchecked Sendable {
     private var storedPreviewResult: Swift.Result<
         CompetitionInvitePreview, CompetitionRemoteFailure
     > = .success(preview)
-    /// Read on each preview request.
     var previewResult: Swift.Result<CompetitionInvitePreview, CompetitionRemoteFailure> {
         get { lock.withLock { storedPreviewResult } }
         set { lock.withLock { storedPreviewResult = newValue } }
@@ -3080,8 +3041,6 @@ private final class MainTabClaimRecorder: @unchecked Sendable {
         return client
     }
 }
-
-// MARK: - Practice match
 
 extension MainTabFeatureTests {
     @MainActor
