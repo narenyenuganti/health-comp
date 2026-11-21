@@ -46,7 +46,6 @@ struct WatchMatchComplication: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "WatchMatchComplication", provider: WatchMatchProvider()) { entry in
             WatchMatchComplicationView(entry: entry)
-                .containerBackground(Color.black, for: .widget)
         }
         .configurationDisplayName("Match")
         .description("The score of your match.")
@@ -63,19 +62,43 @@ struct WatchMatchComplicationView: View {
     private var redacted: Bool { redactionReasons.contains(.privacy) }
 
     var body: some View {
-        switch CompetitionWidgetSnapshot.content(entry.snapshot, personID: nil, at: entry.date) {
-        case let .match(match):
-            let updated = family == .accessoryCircular && match.isStale(at: entry.date)
-                ? match.updatedLine(at: entry.date).map { " \($0)." } : nil
-            matchView(match)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(match.accessibilityLabel(
-                    at: entry.date, redacted: redacted, circular: family == .accessoryCircular
-                ) + (updated ?? ""))
-        case let .empty(text):
-            emptyView(text)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(text.accessibilityLabel)
+        let content = CompetitionWidgetSnapshot.content(entry.snapshot, personID: nil, at: entry.date)
+        Group {
+            switch content {
+            case let .match(match):
+                let updated = family == .accessoryCircular && match.isStale(at: entry.date)
+                    ? match.updatedLine(at: entry.date).map { " \($0)." } : nil
+                matchView(match)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(match.accessibilityLabel(
+                        at: entry.date, redacted: redacted, circular: family == .accessoryCircular
+                    ) + (updated ?? ""))
+            case let .empty(text):
+                emptyView(text)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(text.accessibilityLabel)
+            }
+        }
+        .containerBackground(for: .widget) {
+            widgetBackground(for: content)
+        }
+    }
+
+    @ViewBuilder
+    private func widgetBackground(for content: CompetitionWidgetContent) -> some View {
+        if family == .accessoryRectangular, case let .match(match) = content {
+            let tint: Color = if !match.isStale(at: entry.date), match.side == .you {
+                Theme.youFill.opacity(0.22)
+            } else {
+                Color(uiColor: UIColor(hex: 0x3A3D46)).opacity(0.38)
+            }
+            LinearGradient(
+                colors: [tint, Color(uiColor: UIColor(hex: 0x0B0B0D))],
+                startPoint: .topLeading,
+                endPoint: .bottom
+            )
+        } else {
+            Color.black
         }
     }
 
@@ -173,15 +196,20 @@ private struct WatchRectangularView: View {
                     .foregroundStyle(Theme.secondary)
                 }
             } else {
+                let scoreSize = min(34, max(20, geometry.size.height - 26))
                 VStack(alignment: .leading, spacing: 2) {
                     header
-                    HStack(alignment: .lastTextBaseline, spacing: 0) {
+                    HStack(alignment: .lastTextBaseline, spacing: 4) {
                         number(match.userPointsText(), Theme.you)
                             .widgetAccentable()
-                        Spacer(minLength: 8)
+                        Spacer(minLength: 4)
+                        SlantedBar()
+                            .fill(Theme.outline.opacity(0.6))
+                            .frame(width: 2, height: scoreSize * 0.62)
+                        Spacer(minLength: 4)
                         number(match.opponentPointsText(), Theme.ink)
                     }
-                    .font(.score(size: min(34, geometry.size.height - 26)))
+                    .font(.score(size: scoreSize))
                     CompetitionMatchStrip(match: match, date: date, height: 6, spacing: 3) { _, outcome, bar in
                         bar.widgetAccentable(outcome == .won)
                     }
@@ -191,7 +219,13 @@ private struct WatchRectangularView: View {
     }
 
     private var status: String {
-        (match.isStale(at: date) ? match.updatedLine(at: date) : nil) ?? match.boardStatus(at: date)
+        if match.isStale(at: date), let updated = match.updatedLine(at: date) {
+            return updated
+        }
+        if let lead = match.chase(at: date)?.lead {
+            return "\(lead) to lead"
+        }
+        return match.boardStatus(at: date)
     }
 
     private var header: some View {
