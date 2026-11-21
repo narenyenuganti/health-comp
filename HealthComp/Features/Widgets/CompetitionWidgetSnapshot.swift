@@ -25,6 +25,36 @@ struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
         var belt: Belt?
         var chase: Chase?
         var group: Group?
+        var todayRings: TodayRings? = nil
+        var rivalry: Rivalry? = nil
+    }
+
+    struct TodayRings: Codable, Equatable, Sendable {
+        enum RingKind: String, Codable, Equatable, Sendable {
+            case move, exercise, stand, sleep
+        }
+
+        struct Row: Codable, Equatable, Sendable {
+            var kind: RingKind
+            var title: String
+            var detail: String
+            var progress: Double
+            var points: Double?
+        }
+
+        var dayOrdinal: Int
+        var rows: [Row]
+    }
+
+    struct Rivalry: Codable, Equatable, Sendable {
+        var wins: Int
+        var losses: Int
+        var ties: Int
+        var recent: [Final.Outcome]
+        var formLine: String?
+        var reignWeeks: Int?
+        var edgeRing: TodayRings.RingKind?
+        var edgeRecord: String?
     }
 
     struct Group: Codable, Equatable, Sendable {
@@ -48,6 +78,7 @@ struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
     struct Chase: Codable, Equatable, Sendable {
         var day: Int
         var points: Double?
+        var suggestion: String? = nil
     }
 
     struct Belt: Codable, Equatable, Sendable {
@@ -514,7 +545,7 @@ extension CompetitionWidgetSnapshot {
             youDays: [Double?] = [], themDays: [Double?] = [],
             updated: Bool = true, updatedAgo: TimeInterval = 11 * 60,
             final: Final.Outcome? = nil, leavesInDays: Int = 3, belt: Belt? = nil,
-            chase: Chase? = nil
+            chase: Chase? = nil, todayRings: TodayRings? = nil, rivalry: Rivalry? = nil
         ) -> Match {
             let first = day(1 - currentDay)
             let id = UUID(uuidString: String(format: "00000000-0000-0000-0000-%012ld", index))!
@@ -538,12 +569,35 @@ extension CompetitionWidgetSnapshot {
                     Final(outcome: $0, completedAt: day(0).addingTimeInterval(3_600), leavesAt: day(leavesInDays))
                 },
                 belt: belt,
-                chase: chase
+                chase: chase,
+                todayRings: todayRings,
+                rivalry: rivalry
             )
         }
         let week: [Double?] = [250, 230, 262, 250, 212, 260, 300]
         let theirs: [Double?] = [230, 260, 280, 192, 188, 250, 240]
-        let sam = match(5, "Sam", currentDay: 5, you: 1_204, them: 1_150, youDays: week, themDays: theirs)
+        let liveRings = TodayRings(dayOrdinal: 5, rows: [
+            .init(kind: .move, title: "Move", detail: "510/600 kcal", progress: 0.85, points: 85),
+            .init(kind: .exercise, title: "Exercise", detail: "27/30 min", progress: 0.90, points: 90),
+            .init(kind: .stand, title: "Stand", detail: "10/12 hr", progress: 0.83, points: 83),
+        ])
+        let trailingRings = TodayRings(dayOrdinal: 3, rows: [
+            .init(kind: .move, title: "Move", detail: "430/600 kcal", progress: 0.72, points: 72),
+            .init(kind: .exercise, title: "Exercise", detail: "21/30 min", progress: 0.70, points: 70),
+            .init(kind: .stand, title: "Stand", detail: "7/12 hr", progress: 0.58, points: 58),
+        ])
+        let samRivalry = Rivalry(
+            wins: 4, losses: 2, ties: 0,
+            recent: [.loss, .win, .loss, .win, .win],
+            formLine: "You won the last 2",
+            reignWeeks: 4,
+            edgeRing: .exercise,
+            edgeRecord: "14–6 days"
+        )
+        let sam = match(
+            5, "Sam", currentDay: 5, you: 1_204, them: 1_150, youDays: week, themDays: theirs,
+            todayRings: liveRings, rivalry: samRivalry
+        )
         let alex = match(6, "Alex", currentDay: 2, you: 480, them: 455, youDays: [250, 230], themDays: [230, 225])
         var four = match(11, "Sam", person: "group:four", currentDay: 4, you: 1_664, them: 1_712,
                          youDays: [421, 437, 398, 408], themDays: [448, 402, 451, 411], updated: false)
@@ -560,7 +614,8 @@ extension CompetitionWidgetSnapshot {
         case "trailing":
             matches = [match(5, "Sam", currentDay: 3, you: 610, them: 664,
                              youDays: [200, 210, 200], themDays: [220, 224, 220],
-                             chase: Chase(day: 3, points: 55))]
+                             chase: Chase(day: 3, points: 55, suggestion: "About 165 kcal of Move or 17 min of Exercise."),
+                             todayRings: trailingRings, rivalry: samRivalry)]
         case "outOfReach":
             matches = [match(5, "Sam", currentDay: 7, you: 1_700, them: 2_171, youDays: theirs,
                              themDays: week, chase: Chase(day: 7, points: nil))]
@@ -634,10 +689,12 @@ extension CompetitionWidgetSnapshot {
                              youDays: theirs, themDays: week, final: .loss)]
         case "beltLive":
             matches = [match(5, "Sam", currentDay: 5, you: 1_204, them: 1_150, youDays: week, themDays: theirs,
-                             belt: Belt(holder: .you, defenses: 2))]
+                             belt: Belt(holder: .you, defenses: 2),
+                             todayRings: liveRings, rivalry: samRivalry)]
         case "beltTrailing":
             matches = [match(5, "Sam", currentDay: 3, you: 610, them: 664, youDays: [200, 210, 200],
-                             themDays: [220, 224, 220], belt: Belt(holder: .them, defenses: 1))]
+                             themDays: [220, 224, 220], belt: Belt(holder: .them, defenses: 1),
+                             todayRings: trailingRings, rivalry: samRivalry)]
         case "beltEarned":
             matches = [match(5, "Sam", currentDay: 9, you: 1_840, them: 1_726, youDays: week, themDays: theirs,
                              final: .win, belt: Belt(holder: .you, defenses: 0, card: .earned))]

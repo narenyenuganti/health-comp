@@ -237,6 +237,7 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertEqual(chase.fill, 200.0 / 255, accuracy: 1e-9)
         XCTAssertEqual(chase.lead, "55")
         XCTAssertEqual(chase.line, "200 of 255 today")
+        XCTAssertEqual(chase.suggestion, "About 165 kcal of Move or 17 min of Exercise.")
         XCTAssertEqual(chase.spoken, "55 points to take the lead. 200 of 255 today.")
     }
 
@@ -333,5 +334,189 @@ final class CompetitionWatchBoardTests: XCTestCase {
         var seen = CompetitionWatchSeen(sentAt: 100, finals: [won.id, other])
         seen.prune(keeping: fixture("won"))
         XCTAssertEqual(seen, CompetitionWatchSeen(sentAt: 100, finals: [won.id]))
+    }
+
+    func testEnrichedSnapshotRoundTripsAndDecodesLegacyPayloads() throws {
+        var legacy = fixture("live")
+        legacy.matches[0].todayRings = nil
+        legacy.matches[0].rivalry = nil
+        let legacyData = try JSONEncoder().encode(legacy)
+        let legacyText = String(decoding: legacyData, as: UTF8.self)
+        XCTAssertFalse(legacyText.contains("todayRings"))
+        XCTAssertFalse(legacyText.contains("rivalry"))
+        XCTAssertEqual(try JSONDecoder().decode(Snapshot.self, from: legacyData), legacy)
+
+        let rich = fixture("trailing")
+        let payload = CompetitionWatchPayload(snapshot: rich, sentAt: 200)
+        guard case let .store(decoded) = payload.action(after: 100) else {
+            return XCTFail("expected enriched snapshot")
+        }
+        XCTAssertEqual(decoded.matches[0].todayRings, rich.matches[0].todayRings)
+        XCTAssertEqual(decoded.matches[0].rivalry, rich.matches[0].rivalry)
+        XCTAssertEqual(decoded.matches[0].chase?.suggestion, "About 165 kcal of Move or 17 min of Exercise.")
+    }
+
+    func testActiveTodayRingsOnlyMatchesItsLiveDay() {
+        let live = match("live")
+        XCTAssertEqual(live.activeTodayRings(at: now)?.rows.count, 3)
+        XCTAssertNil(live.activeTodayRings(at: now.addingTimeInterval(86_400)))
+        var wrongDay = live
+        wrongDay.todayRings?.dayOrdinal = 4
+        XCTAssertNil(wrongDay.activeTodayRings(at: now))
+    }
+
+    func testPlayedDayPointsMasksUpcomingDaysAndCountsRounds() {
+        let live = match("live")
+        let played = live.playedDayPoints(at: now, locale: en)
+        XCTAssertEqual(played.count, 7)
+        XCTAssertEqual(played.map(\.isToday), [false, false, false, false, true, false, false])
+        XCTAssertEqual(played.map(\.isUpcoming), [false, false, false, false, false, true, true])
+        XCTAssertEqual(played[4].you, 212)
+        XCTAssertEqual(played[4].them, 188)
+        XCTAssertNil(played[5].you)
+        XCTAssertNil(played[5].them)
+        XCTAssertNil(played[6].you)
+        let tally = live.roundTally(at: now)
+        XCTAssertEqual([tally.won, tally.lost, tally.tied], [2, 2, 0])
+    }
+
+    func testTodayScoresMatchLiveAndPendingStates() {
+        let live = match("live").todayScores(at: now)
+        XCTAssertEqual(live.you, 212)
+        XCTAssertEqual(live.them, 188)
+        let pending = match("pending").todayScores(at: now)
+        XCTAssertEqual(pending.you, 300)
+        XCTAssertEqual(pending.them, 240)
+        let scheduled = match("scheduled").todayScores(at: now)
+        XCTAssertNil(scheduled.you)
+        XCTAssertNil(scheduled.them)
+        let won = match("won").todayScores(at: now)
+        XCTAssertNil(won.you)
+        XCTAssertNil(won.them)
+    }
+
+    func testRivalryRecordTextAndAccessibility() throws {
+        let rivalry = try XCTUnwrap(match("live").rivalry)
+        XCTAssertEqual(rivalry.recordText, "4–2")
+        XCTAssertEqual(
+            rivalry.accessibilityLabel(opponentName: "Sam"),
+            "All-time versus Sam: 4 wins, 2 losses. You won the last 2. Strongest ring: Exercise, 14–6 days."
+        )
+        var tied = rivalry
+        tied.ties = 1
+        XCTAssertEqual(tied.recordText, "4–2–1")
+        XCTAssertTrue(tied.accessibilityLabel(opponentName: "Sam").contains("1 tie."))
+    }
+
+    func testDashboardSnapshotPopulatesTodayRingsChaseSuggestionAndRivalry() throws {
+        let calendar = try CompetitionCalendar(timeZoneIdentifier: "UTC")
+        let start = try CompetitionDay(era: 1, year: 2026, month: 11, day: 2, timeZoneIdentifier: "UTC")
+        let schedule = CompetitionSchedule(calendar: calendar, startDay: start)
+        let ringSnapshot = ActivitySnapshot(
+            moveMode: .activeEnergyKilocalories,
+            standMode: .standHours,
+            move: try ActivityRingReading(value: 450, goal: 600),
+            exercise: try ActivityRingReading(value: 20, goal: 30),
+            standOrRoll: try ActivityRingReading(value: 8, goal: 12),
+            pauseState: .running
+        )
+        let today = try CompetitionDay(era: 1, year: 2026, month: 11, day: 6, timeZoneIdentifier: "UTC")
+        let liveDays = try (1...7).map { ordinal -> LocalCompetitionDayPresentation in
+            let day = try CompetitionDay(era: 1, year: 2026, month: 11, day: 1 + ordinal, timeZoneIdentifier: "UTC")
+            let isCurrent = day == today
+            let past = ordinal < 5
+            var row = LocalCompetitionDayPresentation(
+                day: day,
+                ordinal: ordinal,
+                ownerAcceptedPoints: isCurrent ? 208 : (past ? 200 : nil),
+                ownerLatestAvailability: isCurrent || past ? .observed : .notYetOccurred,
+                opponentRevealedPoints: isCurrent ? 220 : (past ? 210 : nil),
+                ownerAcceptedSnapshot: isCurrent ? ringSnapshot : nil,
+                ownerLatestSnapshot: isCurrent ? ringSnapshot : nil
+            )
+            if past {
+                row.ownerRingPoints = [70, 80, 50]
+                row.opponentRingPoints = [80, 60, 70]
+            }
+            return row
+        }
+        let liveMatch = CompetitionPresentation(
+            id: CompetitionID(UUID(uuidString: "00000000-0000-0000-0000-000000000101")!),
+            ownerDisplayName: "Naren",
+            opponentDisplayName: "Sam",
+            opponentIdentity: "remote-profile:v1:sam",
+            lifecycle: .active(dayOrdinal: 5),
+            acceptedConfiguration: LocalCompetitionAcceptedPresentation(schedule: schedule, difficulty: .balanced),
+            userPoints: 1_008,
+            opponentPoints: 1_060,
+            days: liveDays,
+            currentDayOrdinal: 5,
+            lastRefresh: nil,
+            tally: nil,
+            terminalResult: nil,
+            evaluatedAt: now,
+            timeZoneIdentifier: "UTC"
+        )
+        let priorSchedule = CompetitionSchedule(
+            calendar: calendar,
+            startDay: try CompetitionDay(era: 1, year: 2026, month: 10, day: 19, timeZoneIdentifier: "UTC")
+        )
+        let priorDays = try (1...7).map { ordinal -> LocalCompetitionDayPresentation in
+            let day = try CompetitionDay(era: 1, year: 2026, month: 10, day: 18 + ordinal, timeZoneIdentifier: "UTC")
+            var row = LocalCompetitionDayPresentation(
+                day: day,
+                ordinal: ordinal,
+                ownerAcceptedPoints: 250,
+                ownerLatestAvailability: .observed,
+                opponentRevealedPoints: 220
+            )
+            row.ownerRingPoints = [80, 95, 75]
+            row.opponentRingPoints = [85, 65, 70]
+            return row
+        }
+        let completedAt = ISO8601DateFormatter().date(from: "2026-10-26T09:00:00Z")!
+        let priorWin = CompetitionPresentation(
+            id: CompetitionID(UUID(uuidString: "00000000-0000-0000-0000-000000000100")!),
+            ownerDisplayName: "Naren",
+            opponentDisplayName: "Sam",
+            opponentIdentity: "remote-profile:v1:sam",
+            lifecycle: .completed(
+                outcome: .win,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: completedAt
+            ),
+            acceptedConfiguration: LocalCompetitionAcceptedPresentation(schedule: priorSchedule, difficulty: .balanced),
+            userPoints: 1_750,
+            opponentPoints: 1_540,
+            days: priorDays,
+            currentDayOrdinal: nil,
+            lastRefresh: nil,
+            tally: nil,
+            terminalResult: LocalCompetitionTerminalPresentation(
+                userPoints: 1_750,
+                opponentPoints: 1_540,
+                outcome: .win,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: completedAt
+            ),
+            evaluatedAt: now,
+            timeZoneIdentifier: "UTC"
+        )
+        let dashboard = CompetitionDashboard(
+            competitions: [liveMatch, priorWin],
+            awards: [],
+            issues: [],
+            hiddenTerminalCompetitionCount: 0
+        )
+        let snapshot = Snapshot(dashboard: dashboard)
+        let built = try XCTUnwrap(snapshot.matches.first { $0.id == liveMatch.id.rawValue })
+        XCTAssertEqual(built.todayRings?.dayOrdinal, 5)
+        XCTAssertEqual(built.todayRings?.rows.map(\.kind), [.move, .exercise, .stand])
+        XCTAssertEqual(built.todayRings?.rows.first?.detail, "450/600 kcal")
+        XCTAssertNotNil(built.chase?.suggestion)
+        XCTAssertEqual(built.rivalry?.wins, 1)
+        XCTAssertEqual(built.rivalry?.losses, 0)
+        XCTAssertEqual(built.rivalry?.edgeRing, .exercise)
+        XCTAssertEqual(built.rivalry?.edgeRecord, "7–0 days")
     }
 }

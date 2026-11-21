@@ -121,6 +121,7 @@ extension CompetitionWidgetSnapshot {
                 Match(presentation: competition).map {
                     var match = $0
                     match.belt = Belt(for: competition, records: records, in: competitions)
+                    match.rivalry = Rivalry(for: competition, records: records, in: competitions)
                     return match
                 }
             } + dashboard.groupMatches.compactMap(Match.init(group:)),
@@ -150,6 +151,84 @@ extension CompetitionWidgetSnapshot.Belt {
         }
         let defenses = record.belt.current?.defenses ?? 0
         self.init(holder: holder == .you ? .you : .them, defenses: defenses, card: card)
+    }
+}
+
+extension CompetitionWidgetSnapshot.Rivalry {
+    init?(
+        for competition: CompetitionPresentation,
+        records: [CompetitionOpponentRecord],
+        in competitions: [CompetitionPresentation]
+    ) {
+        guard !competitionBeltWaitsOnAnEarlierMatch(competition, in: competitions),
+              let record = records.first(where: { $0.opponentIdentity == competition.opponentIdentity }),
+              record.wins + record.losses + record.ties > 0
+        else { return nil }
+        let weeks = competitionRivalryWeeks(competitions, opponentIdentity: competition.opponentIdentity)
+        let outcomes = weeks.compactMap(\.terminalResult?.outcome)
+        let recent = outcomes.suffix(5).compactMap {
+            CompetitionWidgetSnapshot.Final.Outcome(rawValue: $0.rawValue)
+        }
+        let formLine = competitionFormLine(outcomes, opponentName: competition.opponentDisplayName)
+        let reignWeeks = record.belt.current?.weeks
+        var edgeRing: CompetitionWidgetSnapshot.TodayRings.RingKind?
+        var edgeRecord: String?
+        if let days = competitionRingDaysWon(weeks) {
+            let kinds: [CompetitionWidgetSnapshot.TodayRings.RingKind] = [.move, .exercise, .stand]
+            let best = days.enumerated()
+                .filter { $0.element.you > $0.element.them }
+                .max { lhs, rhs in
+                    let leftMargin = lhs.element.you - lhs.element.them
+                    let rightMargin = rhs.element.you - rhs.element.them
+                    return leftMargin != rightMargin ? leftMargin < rightMargin : lhs.offset > rhs.offset
+                }
+            if let best {
+                edgeRing = kinds[best.offset]
+                edgeRecord = "\(best.element.you)–\(best.element.them) days"
+            }
+        }
+        self.init(
+            wins: record.wins,
+            losses: record.losses,
+            ties: record.ties,
+            recent: recent,
+            formLine: formLine,
+            reignWeeks: reignWeeks,
+            edgeRing: edgeRing,
+            edgeRecord: edgeRecord
+        )
+    }
+}
+
+extension CompetitionWidgetSnapshot.TodayRings {
+    init?(presentation p: CompetitionPresentation) {
+        switch p.lifecycle {
+        case .active, .endsToday: break
+        default: return nil
+        }
+        guard let ordinal = p.currentDayOrdinal,
+              let day = p.days.first(where: { $0.ordinal == ordinal }),
+              let panel = competitionRingPanel(day)
+        else { return nil }
+        let snapshot = day.ownerAcceptedSnapshot ?? day.ownerLatestSnapshot
+        let shares = snapshot.map {
+            competitionRingShares($0, perRingCap: day.scoringPolicy.perRingCap)
+        } ?? [0, 0, 0]
+        let kinds: [RingKind] = [.move, .exercise, .stand, .sleep]
+        let rows = panel.rows.enumerated().map { index, row in
+            let kind = kinds[min(index, kinds.count - 1)]
+            let progress = index < shares.count
+                ? max(0, shares[index])
+                : max(0, (row.points ?? 0) / 100)
+            return Row(
+                kind: kind,
+                title: row.title,
+                detail: row.detail,
+                progress: progress,
+                points: row.points
+            )
+        }
+        self.init(dayOrdinal: ordinal, rows: rows)
     }
 }
 
@@ -262,8 +341,13 @@ extension CompetitionWidgetSnapshot.Match {
                 .compactMap { $0 }.min(),
             final: final,
             chase: competitionWhatItTakes(p).map {
-                CompetitionWidgetSnapshot.Chase(day: $0.dayOrdinal, points: $0.points)
-            }
+                CompetitionWidgetSnapshot.Chase(
+                    day: $0.dayOrdinal,
+                    points: $0.points,
+                    suggestion: $0.points == nil ? nil : $0.suggestion
+                )
+            },
+            todayRings: CompetitionWidgetSnapshot.TodayRings(presentation: p)
         )
     }
 }
