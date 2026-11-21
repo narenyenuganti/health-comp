@@ -866,6 +866,7 @@ func competitionOwnCareer(_ competitions: [LocalCompetitionPresentation]) -> Com
         streak = week.outcome == .win ? streak + 1 : 0
         longest = max(longest, streak)
     }
+    let standardWeeks = weeks.filter(\.metrics.isDefaultRings)
     return CompetitionOwnCareer(
         career: CompetitionCareer(
             wins: outcomes.filter { $0 == .win }.count,
@@ -874,9 +875,9 @@ func competitionOwnCareer(_ competitions: [LocalCompetitionPresentation]) -> Com
             people: Set(weeks.map(\.opponentIdentity)).count,
             belts: competitionOpponentRecords(competitions).filter { $0.belt.holder == .you }.count,
             winStreak: longest,
-            bestWeek: weeks.map(\.userPoints).max() ?? 0
+            bestWeek: standardWeeks.map(\.userPoints).max() ?? 0
         ),
-        bestDay: weeks.flatMap(\.days).compactMap(\.ownerAcceptedPoints).max() ?? 0,
+        bestDay: standardWeeks.flatMap(\.days).compactMap(\.ownerAcceptedPoints).max() ?? 0,
         outcomes: outcomes
     )
 }

@@ -10,7 +10,8 @@ struct CompetitionSharingView: View {
     @Binding var recipientCode: String
     let recipient: CompetitionFeature.InviteRecipient?
     let recipientStatus: CompetitionFeature.InviteRecipientStatus
-    var withSleep: Binding<Bool>? = nil
+    var metrics: Binding<CompetitionMetrics>? = nil
+    var requestSleepAccess: (() -> Void)? = nil
     let findRecipient: () -> Void
     let createInvite: () -> Void
     @Binding var isChallengePresented: Bool
@@ -227,7 +228,8 @@ struct CompetitionSharingView: View {
                 recipientCode: $recipientCode,
                 recipient: recipient,
                 recipientStatus: recipientStatus,
-                withSleep: withSleep,
+                metrics: metrics,
+                requestSleepAccess: requestSleepAccess,
                 senderName: senderName,
                 ownChallengeLink: ownChallengeLink,
                 friends: friends,
@@ -647,8 +649,11 @@ private struct CompetitionHeroCard: View {
     }
 
     private var statusLeading: some View {
-        Text(status.title)
-            .foregroundStyle(isLive ? Theme.ink : Theme.secondary)
+        HStack(spacing: 8) {
+            Text(status.title)
+                .foregroundStyle(isLive ? Theme.ink : Theme.secondary)
+            CompetitionMetricBadge(metrics: competition.metrics)
+        }
     }
 
     @ViewBuilder

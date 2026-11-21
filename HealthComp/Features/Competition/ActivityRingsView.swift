@@ -2,6 +2,7 @@ import CompetitionCore
 import SwiftUI
 
 struct CompetitionRingRow: Equatable, Sendable {
+    var metric: CompetitionMetric = .move
     let title: String
     let detail: String
     let spokenDetail: String
@@ -19,31 +20,61 @@ func competitionRingPanel(
     _ day: LocalCompetitionDayPresentation,
     locale: Locale = .current
 ) -> CompetitionRingPanel? {
+    let metrics = day.metrics.isEmpty ? .threeRings : day.metrics
+    let includesSleep = metrics.includesSleep || day.dailyMaximum > ActivityScore.maximumDailyPoints
     guard let snapshot = day.ownerAcceptedSnapshot ?? day.ownerLatestSnapshot else {
-        return nil
+        guard !metrics.includesActivityRings, includesSleep else { return nil }
+        let sleepRow = competitionSleepRow(day, locale: locale)
+        let spoken = "Your sleep. \(sleepRow.title), \(sleepRow.spokenDetail)"
+            + (sleepRow.points.map { ", \(competitionPointsAccessibilityText($0, locale: locale))" } ?? "")
+            + "."
+        return CompetitionRingPanel(
+            rows: [sleepRow],
+            isPaused: false,
+            note: nil,
+            accessibilityLabel: spoken
+        )
     }
     let isAccepted = day.ownerAcceptedSnapshot != nil
     let total = isAccepted
         ? day.ownerAcceptedPoints.map { max(0, $0 - (day.ownerSleepPoints ?? 0)) }
-        : ActivityScoreCalculator.score(snapshot, policy: day.scoringPolicy).availableScore?.points
-    let shares = competitionRingShares(snapshot, perRingCap: day.scoringPolicy.perRingCap)
-    let sum = shares.reduce(0, +)
-    let points = total.map { total in
-        competitionRoundedParts(shares.map { sum > 0 ? total * $0 / sum : 0 }, total: total)
+        : ActivityScoreCalculator.score(snapshot, policy: day.scoringPolicy, metrics: metrics).availableScore?.points
+    let rawShares = competitionRingShares(snapshot, perRingCap: day.scoringPolicy.perRingCap)
+    let activeIndices = metrics.activeActivityIndices
+    let activeShares = activeIndices.map { rawShares[$0] }
+    let sum = activeShares.reduce(0, +)
+    let activePoints = total.map { total in
+        competitionRoundedParts(activeShares.map { sum > 0 ? total * $0 / sum : 0 }, total: total)
+    }
+    var pointsByIndex: [Int: Double] = [:]
+    if let activePoints {
+        for (offset, ringIndex) in activeIndices.enumerated() {
+            pointsByIndex[ringIndex] = activePoints[offset]
+        }
     }
 
     func number(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(0)).locale(locale))
     }
-    func row(_ index: Int, _ title: String, _ reading: ActivityRingReading, _ unit: String, _ spokenUnit: String) -> CompetitionRingRow {
+    func row(
+        _ metric: CompetitionMetric,
+        _ index: Int,
+        _ title: String,
+        _ reading: ActivityRingReading,
+        _ unit: String,
+        _ spokenUnit: String
+    ) -> CompetitionRingRow {
         guard let value = reading.value, let goal = reading.goal, goal > 0 else {
-            return CompetitionRingRow(title: title, detail: "No data", spokenDetail: "no data", points: points?[index])
+            return CompetitionRingRow(
+                metric: metric, title: title, detail: "No data", spokenDetail: "no data", points: pointsByIndex[index]
+            )
         }
         return CompetitionRingRow(
+            metric: metric,
             title: title,
             detail: "\(number(value))/\(number(goal)) \(unit)",
             spokenDetail: "\(number(value)) of \(number(goal)) \(spokenUnit)",
-            points: points?[index]
+            points: pointsByIndex[index]
         )
     }
 
@@ -53,16 +84,27 @@ func competitionRingPanel(
     case .rollHours: "Roll"
     case .unknown: "Stand or Roll"
     }
-    let rows = [
-        row(0, minutes ? "Move Time" : "Move", snapshot.move, minutes ? "min" : "kcal", minutes ? "minutes" : "kilocalories"),
-        row(1, "Exercise", snapshot.exercise, "min", "minutes"),
-        row(2, standTitle, snapshot.standOrRoll, "hr", "hours"),
-    ] + (day.dailyMaximum > ActivityScore.maximumDailyPoints ? [competitionSleepRow(day, locale: locale)] : [])
-    let isPaused = snapshot.pauseState == .paused
+    var rows: [CompetitionRingRow] = []
+    if metrics.contains(.move) {
+        rows.append(row(
+            .move, 0, minutes ? "Move Time" : "Move", snapshot.move,
+            minutes ? "min" : "kcal", minutes ? "minutes" : "kilocalories"
+        ))
+    }
+    if metrics.contains(.exercise) {
+        rows.append(row(.exercise, 1, "Exercise", snapshot.exercise, "min", "minutes"))
+    }
+    if metrics.contains(.stand) {
+        rows.append(row(.stand, 2, standTitle, snapshot.standOrRoll, "hr", "hours"))
+    }
+    if includesSleep {
+        rows.append(competitionSleepRow(day, locale: locale))
+    }
+    let isPaused = metrics.includesActivityRings && snapshot.pauseState == .paused
 
-    let note: String? = if isAccepted, day.ownerLatestSnapshot != snapshot {
+    let note: String? = if metrics.includesActivityRings, isAccepted, day.ownerLatestSnapshot != snapshot {
         "Points use an earlier reading. Your rings have changed since."
-    } else if !isAccepted, total != nil {
+    } else if metrics.includesActivityRings, !isAccepted, total != nil {
         "These points haven’t synced yet."
     } else {
         nil
@@ -91,18 +133,16 @@ struct ActivityRingsView: View {
 
     @Environment(\.locale) private var locale
 
-    private let colors = [Theme.move, Theme.exercise, Theme.stand, Theme.sleep]
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(panel.rows.enumerated()), id: \.offset) { index, row in
-                    if index == 3, let openNight {
-                        Button(action: openNight) { rowView(index, row, opens: true) }
+                ForEach(Array(panel.rows.enumerated()), id: \.offset) { _, row in
+                    if row.metric == .sleep, let openNight {
+                        Button(action: openNight) { rowView(row, opens: true) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("competition.sleep.row")
                     } else {
-                        rowView(index, row, opens: false)
+                        rowView(row, opens: false)
                     }
                 }
                 if panel.isPaused {
@@ -127,10 +167,10 @@ struct ActivityRingsView: View {
         }
     }
 
-    private func rowView(_ index: Int, _ row: CompetitionRingRow, opens: Bool) -> some View {
+    private func rowView(_ row: CompetitionRingRow, opens: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             SlantedBar()
-                .fill(colors[min(index, colors.count - 1)])
+                .fill(row.metric.color)
                 .frame(width: 10, height: 10)
             (Text(row.title).fontWeight(.semibold).foregroundStyle(Theme.ink)
                 + Text(" · \(row.detail)").foregroundStyle(Theme.secondary))
@@ -180,8 +220,12 @@ func competitionWhatItTakes(
         userPoints: competition.userPoints, opponentPoints: competition.opponentPoints
     )
     guard margin <= 0 else { return nil }
+    let metrics = competition.metrics
+    let hasMove = metrics.contains(.move)
+    let hasExercise = metrics.contains(.exercise)
+    guard hasMove || hasExercise else { return nil }
     let need = 1 - margin
-    let left = max(0, ActivityScore.maximumDailyPoints - (today - (day.ownerSleepPoints ?? 0)))
+    let left = max(0, metrics.activityDailyMaximum - (today - (day.ownerSleepPoints ?? 0)))
     let cap = day.scoringPolicy.perRingCap
     let shares = competitionRingShares(snapshot, perRingCap: cap)
 
@@ -207,14 +251,16 @@ func competitionWhatItTakes(
         )
     }
     let moveMinutes = snapshot.moveMode == .moveMinutes
-    let move = ring(0, snapshot.move, moveMinutes ? "Move Time" : "Move", minutes: moveMinutes)
-    let exercise = ring(1, snapshot.exercise, "Exercise", minutes: true)
-    let reach = min(left, move.room + exercise.room).rounded(.down)
+    let move = hasMove ? ring(0, snapshot.move, moveMinutes ? "Move Time" : "Move", minutes: moveMinutes) : nil
+    let exercise = hasExercise ? ring(1, snapshot.exercise, "Exercise", minutes: true) : nil
+    let activeRings = [move, exercise].compactMap { $0 }
+    let reach = min(left, activeRings.reduce(0) { $0 + $1.room }).rounded(.down)
 
     func number(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(0)).locale(locale))
     }
     let name = competition.opponentDisplayName
+    let activeRingNames = activeRings.map(\.title).joined(separator: " and ")
 
     guard need <= reach else {
         let level = margin == 0
@@ -223,11 +269,11 @@ func competitionWhatItTakes(
         func sentence(_ gap: String) -> String {
             let lead = level ? "All square, and" : "\(name) is \(gap) ahead and"
             if reach >= 1 {
-                return "\(lead) you have \(competitionPointsAccessibilityText(reach, locale: locale)) left in Move and Exercise today."
+                return "\(lead) you have \(competitionPointsAccessibilityText(reach, locale: locale)) left in \(activeRingNames) today."
             }
             return left.rounded(.down) == 0
                 ? "\(lead) you’ve reached today’s cap."
-                : "\(lead) Move and Exercise are at the 200% cap."
+                : "\(lead) \(activeRingNames) \(activeRings.count == 1 ? "is" : "are") at the 200% cap."
         }
         let text = sentence(gap)
         return CompetitionWhatItTakes(
@@ -250,9 +296,9 @@ func competitionWhatItTakes(
             "\(number(value)) \(spokenUnit) of \(ring.title)"
         )
     }
-    let rings = (exercise.room > move.room ? [exercise, move] : [move, exercise]).filter { $0.room > 0 }
+    let rings = activeRings.sorted { $0.room > $1.room }.filter { $0.room > 0 }
     let singles = rings.filter { $0.room >= need }
-    let parts = singles.isEmpty
+    let parts = singles.isEmpty && rings.count >= 2
         ? [part(rings[0], rings[0].room), part(rings[1], need - rings[0].room)]
         : singles.map { part($0, need) }
     let joiner = singles.isEmpty ? " and " : " or "

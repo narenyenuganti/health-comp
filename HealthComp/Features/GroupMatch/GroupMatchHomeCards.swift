@@ -114,6 +114,7 @@ private struct GroupMatchHomeCard: View {
                 }
                 Text(stateWord).foregroundStyle(Theme.ink)
                     + Text(" · \(match.format.title)").foregroundStyle(Theme.secondary)
+                CompetitionMetricBadge(metrics: match.metrics)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let trailing {

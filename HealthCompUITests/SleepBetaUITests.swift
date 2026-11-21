@@ -55,7 +55,7 @@ final class SleepBetaUITests: XCTestCase {
             "--multi-user-competition-test-lab",
             "--multi-user-competition-scenario", "challenge-friend",
             "-healthcomp.colorHintSeen", "YES",
-            "-healthcomp.sleepBeta.enabled", "YES",
+            "-healthcomp.sleepBeta.introSeen", "YES",
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US",
         ]
@@ -71,10 +71,14 @@ final class SleepBetaUITests: XCTestCase {
         let friend = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "competition.create.friend.", "Dev Patel")).firstMatch
         XCTAssertTrue(friend.waitForExistence(timeout: 5))
         friend.tap()
-        let sleepFormat = app.buttons["Rings + Sleep"]
-        XCTAssertTrue(sleepFormat.waitForExistence(timeout: 3))
-        sleepFormat.tap()
+        let sleepTile = app.buttons["competition.metrics.tile.sleep"]
+        XCTAssertTrue(sleepTile.waitForExistence(timeout: 3))
+        sleepTile.tap()
         XCTAssertTrue(app.staticTexts["Up to 100 points a night"].waitForExistence(timeout: 3))
+        let standTile = app.buttons["competition.metrics.tile.stand"]
+        XCTAssertTrue(standTile.exists)
+        standTile.tap()
+        XCTAssertTrue(app.staticTexts["500 PTS/DAY"].waitForExistence(timeout: 3))
         sleep(1)
         shot("sleep-create")
     }
@@ -93,19 +97,17 @@ final class SleepBetaUITests: XCTestCase {
         let row = element("account.sleep")
         scrollToElement(row)
         row.tap()
-        XCTAssertTrue(app.navigationBars["Sleep Beta"].waitForExistence(timeout: 3))
-        let toggle = app.switches["account.sleep.enabled"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 3))
-        if toggle.value as? String == "1" { toggle.switches.firstMatch.tap() }
-        shot("sleep-settings-off")
-        toggle.switches.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Sleep"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Oura Ring"].waitForExistence(timeout: 3))
+        let connect = app.buttons["account.sleep.connect"]
+        XCTAssertTrue(connect.waitForExistence(timeout: 3))
+        connect.tap()
         let proceed = app.buttons["account.sleep.continue"]
         XCTAssertTrue(proceed.waitForExistence(timeout: 3))
         sleep(1)
         shot("sleep-priming")
         proceed.tap()
         XCTAssertTrue(proceed.waitForNonExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["Oura Ring"].waitForExistence(timeout: 3))
         sleep(1)
         shot("sleep-settings")
     }

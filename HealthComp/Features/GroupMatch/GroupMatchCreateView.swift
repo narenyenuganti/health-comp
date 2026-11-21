@@ -46,9 +46,11 @@ struct GroupMatchLineup: Equatable {
 
     private(set) var format: GroupMatchFormat
     private(set) var seats: [Entry?]
+    var metrics: CompetitionMetrics
 
-    init(format: GroupMatchFormat, entries: [Entry] = []) {
+    init(format: GroupMatchFormat, entries: [Entry] = [], metrics: CompetitionMetrics = .threeRings) {
         self.format = format
+        self.metrics = metrics.isEmpty ? .threeRings : metrics
         seats = []
         place(entries)
     }
@@ -57,12 +59,16 @@ struct GroupMatchLineup: Equatable {
         let others = match.seats
             .filter { $0.id != match.viewerSeatID }
             .sorted { ($0.team == match.viewer.team ? 0 : 1, $0.number) < ($1.team == match.viewer.team ? 0 : 1, $1.number) }
-        self.init(format: match.format, entries: others.map { seat in
-            switch seat.occupant {
-            case let .person(profileID, _): .person(GroupMatchPlayer(profileID: profileID, name: seat.name))
-            case let .bot(mode): .bot(mode)
-            }
-        })
+        self.init(
+            format: match.format,
+            entries: others.map { seat in
+                switch seat.occupant {
+                case let .person(profileID, _): .person(GroupMatchPlayer(profileID: profileID, name: seat.name))
+                case let .bot(mode): .bot(mode)
+                }
+            },
+            metrics: match.metrics
+        )
     }
 
     func team(ofSeat index: Int) -> Int? {
@@ -95,7 +101,7 @@ struct GroupMatchLineup: Equatable {
             case let .bot(mode)?: .bot(mode, team: team(ofSeat: index))
             case nil: nil
             }
-        })
+        }, metrics: metrics)
     }
 
     mutating func add(_ entry: Entry, team: Int?) {
@@ -153,6 +159,7 @@ struct GroupMatchCreateView: View {
 
     let store: StoreOf<GroupMatchFeature>
     let people: [GroupMatchPlayer]
+    let requestSleepAccess: (() -> Void)?
     let onDuel: () -> Void
     let lookUpLink: @Sendable (CompetitionChallengeLinkCode) async -> GroupMatchLinkLookup
     private let prefilled: [GroupMatchPlayer]
@@ -175,11 +182,13 @@ struct GroupMatchCreateView: View {
         people: [GroupMatchPlayer] = [],
         lineup: GroupMatchLineup? = nil,
         opensAt path: [Step] = [],
+        requestSleepAccess: (() -> Void)? = nil,
         onDuel: @escaping () -> Void = {},
         lookUpLink: @escaping @Sendable (CompetitionChallengeLinkCode) async -> GroupMatchLinkLookup = GroupMatchLinkLookup.resolve
     ) {
         self.store = store
         self.people = people
+        self.requestSleepAccess = requestSleepAccess
         self.onDuel = onDuel
         self.lookUpLink = lookUpLink
         var prefilled: [GroupMatchPlayer] = []
@@ -339,6 +348,10 @@ struct GroupMatchCreateView: View {
                     .foregroundStyle(Theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            CompetitionMetricPicker(
+                selection: $lineup.metrics,
+                requestSleepAccess: requestSleepAccess
+            )
         } actions: {
             if let sent, let line = store.state.failureLine(
                 [sent],

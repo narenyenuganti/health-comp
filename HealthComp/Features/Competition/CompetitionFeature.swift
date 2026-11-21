@@ -114,7 +114,7 @@ struct CompetitionFeature {
         var inviteRecipient: InviteRecipient?
         var inviteRecipientCode = ""
         var inviteRecipientStatus: InviteRecipientStatus = .idle
-        var inviteWithSleep = false
+        var inviteMetrics: CompetitionMetrics = .threeRings
         var ownProfile: AuthenticatedProfile?
         var challengeLink: URL?
         var challengeLinkLoadFailed = false
@@ -249,7 +249,7 @@ struct CompetitionFeature {
         case challengeLinkResetConfirmed
         case challengeLinkResetResponse(URL?)
         case createInviteTapped
-        case inviteSleepToggled(Bool)
+        case inviteMetricsChanged(CompetitionMetrics)
         case sleepAccessRequested
         case createInviteResponse(
             InviteSlot,
@@ -666,15 +666,15 @@ struct CompetitionFeature {
                 pruneInviteLinks(state: &state)
                 return effect
 
-            case let .inviteSleepToggled(isOn):
-                state.inviteWithSleep = isOn
+            case let .inviteMetricsChanged(metrics):
+                state.inviteMetrics = metrics.isEmpty ? .threeRings : metrics
                 return .none
 
             case .sleepAccessRequested:
                 return .run { _ in try? await competitionClient.requestSleepAuthorization() }
 
             case .challengeSheetDismissed:
-                state.inviteWithSleep = false
+                state.inviteMetrics = .threeRings
                 state.inviteCreations[.sheet] = nil
                 state.inviteRecipientCode = ""
                 state.inviteRecipient = nil
@@ -930,6 +930,9 @@ struct CompetitionFeature {
                     return .none
                 }
                 return .run { send in
+                    if target.metrics.includesSleep {
+                        try? await competitionClient.requestSleepAuthorization()
+                    }
                     let returned = await competitionClient.startPractice(target)
                     await send(
                         .commandFinished(
@@ -1392,7 +1395,13 @@ struct CompetitionFeature {
         )
         var rematchParentID: CompetitionID?
         if case let .rematch(of: parentID) = slot { rematchParentID = parentID }
-        let withSleep = slot == .sheet && state.inviteWithSleep
+        let selectedMetrics: CompetitionMetrics
+        if let parentID = rematchParentID,
+           let parent = state.publication?.dashboard.competitions.first(where: { $0.id == parentID }) {
+            selectedMetrics = parent.metrics
+        } else {
+            selectedMetrics = slot == .sheet ? state.inviteMetrics : .threeRings
+        }
         let timeZoneIdentifier = competitionInviteLinkClient
             .currentTimeZoneIdentifier()
         return .run { send in
@@ -1406,9 +1415,10 @@ struct CompetitionFeature {
                 var outcome = try await competitionClient.createInvite(
                     request
                 )
-                if withSleep,
-                   let published = try? await competitionClient.enableSleep(
-                       CompetitionID(outcome.invite.competitionID)
+                if !selectedMetrics.isDefaultRings,
+                   let published = try? await competitionClient.setCompetitionMetrics(
+                       CompetitionID(outcome.invite.competitionID),
+                       selectedMetrics
                    ) {
                     outcome = CompetitionInviteCreationOutcome(
                         invite: outcome.invite,

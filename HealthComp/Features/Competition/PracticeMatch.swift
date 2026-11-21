@@ -32,8 +32,47 @@ struct PracticeShadowRival: Equatable, Identifiable, Sendable {
 }
 
 enum PracticeStartTarget: Equatable, Sendable {
-    case bot(OpponentDifficulty)
-    case shadow(PracticeShadowRival)
+    case bot(OpponentDifficulty, metrics: CompetitionMetrics = .threeRings)
+    case shadow(PracticeShadowRival, metrics: CompetitionMetrics = .threeRings)
+
+    var metrics: CompetitionMetrics {
+        switch self {
+        case let .bot(_, metrics), let .shadow(_, metrics):
+            metrics.isEmpty ? .threeRings : metrics
+        }
+    }
+}
+
+enum PracticeMetricsStore {
+    private static let key = "healthcomp.practice.metrics.v1"
+
+    static func save(_ metrics: CompetitionMetrics, for id: CompetitionID) {
+        var map = loadAll()
+        if metrics.isDefaultRings {
+            map.removeValue(forKey: id.rawValue.uuidString.lowercased())
+        } else {
+            map[id.rawValue.uuidString.lowercased()] = metrics.rawValue
+        }
+        UserDefaults.standard.set(map, forKey: key)
+    }
+
+    static func metrics(for id: CompetitionID) -> CompetitionMetrics {
+        guard let raw = loadAll()[id.rawValue.uuidString.lowercased()] else {
+            return .threeRings
+        }
+        let parsed = CompetitionMetrics(rawValue: raw)
+        return parsed.isEmpty ? .threeRings : parsed
+    }
+
+    static func remove(for id: CompetitionID) {
+        var map = loadAll()
+        map.removeValue(forKey: id.rawValue.uuidString.lowercased())
+        UserDefaults.standard.set(map, forKey: key)
+    }
+
+    private static func loadAll() -> [String: Int] {
+        UserDefaults.standard.dictionary(forKey: key) as? [String: Int] ?? [:]
+    }
 }
 
 enum PracticeMatch {
@@ -122,11 +161,13 @@ enum PracticeMatch {
             + loaded.failures.map(\.competitionID)
         for id in leftovers {
             try? await runtime.delete(competitionID: id)
+            PracticeMetricsStore.remove(for: id)
         }
         let context = await environment.context()
         let request: OpponentPlanGenerationRequest
+        let chosenMetrics = target.metrics
         switch target {
-        case let .bot(difficulty):
+        case let .bot(difficulty, _):
             let baseline = baselineDailyPoints(
                 await readLastTwoWeeks(environment: environment, context: context)
             )
@@ -136,7 +177,7 @@ enum PracticeMatch {
                 difficulty: difficulty,
                 baselineDailyPoints: baseline
             )
-        case let .shadow(rival):
+        case let .shadow(rival, _):
             request = OpponentPlanGenerationRequest(
                 seed: .random(in: .min ... .max),
                 generatorVersion: .v4,
@@ -159,6 +200,7 @@ enum PracticeMatch {
             competitionID: id,
             opponent: request
         )
+        PracticeMetricsStore.save(chosenMetrics, for: id)
         return id
     }
 

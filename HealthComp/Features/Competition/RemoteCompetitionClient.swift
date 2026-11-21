@@ -238,6 +238,9 @@ extension CompetitionClient {
             groupMatchCommand: { try await coordinator.groupMatchCommand($0) }
         )
         client.enableSleep = { id in try await coordinator.enableSleep(id) }
+        client.setCompetitionMetrics = { id, metrics in
+            try await coordinator.setCompetitionMetrics(id, metrics)
+        }
         client.requestSleepAuthorization = {
             try await environment.requestSleepAuthorization()
         }
@@ -526,7 +529,9 @@ private actor RemoteCompetitionClientCoordinator {
     private var latestChallenges = CompetitionChallengeList.empty
     private var latestReactions: [CompetitionReactionRecord] = []
     private var latestSleep: [CompetitionSleepMatch] = []
+    private var latestMetrics: [CompetitionMetricsRecord] = []
     private var ownSleepReadings: [UUID: [Int: CompetitionSleepReading]] = [:]
+    private var practiceSleepReadings: [UUID: [Int: CompetitionSleepReading]] = [:]
     private var latestGroupMatches: [GroupMatchReadModel] = []
     private var groupSync: (runtime: RemoteCompetitionRuntime, again: Bool)?
     private var groupSyncTask: Task<Void, Never>?
@@ -612,7 +617,9 @@ private actor RemoteCompetitionClientCoordinator {
                 self.latestChallenges = .empty
                 self.latestReactions = []
                 self.latestSleep = []
+                self.latestMetrics = []
                 self.ownSleepReadings = [:]
+                self.practiceSleepReadings = [:]
                 self.latestGroupMatches = []
                 self.hasStarted = false
                 self.isStopped = false
@@ -748,7 +755,9 @@ private actor RemoteCompetitionClientCoordinator {
                     latestChallenges = .empty
                     latestReactions = []
                     latestSleep = []
+                    latestMetrics = []
                     ownSleepReadings = [:]
+                    practiceSleepReadings = [:]
                     latestGroupMatches = []
                     publicationRevision = 0
                     hasStarted = false
@@ -831,7 +840,9 @@ private actor RemoteCompetitionClientCoordinator {
             latestChallenges = .empty
             latestReactions = []
             latestSleep = []
+            latestMetrics = []
             ownSleepReadings = [:]
+            practiceSleepReadings = [:]
             latestGroupMatches = []
             publicationRevision = 0
             hasStarted = false
@@ -948,10 +959,14 @@ private actor RemoteCompetitionClientCoordinator {
         }
         let reconciled = outcome.reconciled(previous: lastMaterializations)
         lastMaterializations = reconciled.lastGood
+        if let metrics = try? await remoteAPI.listCompetitionMetrics() {
+            latestMetrics = metrics
+        }
         if let sleep = try? await remoteAPI.listSleepScoring() {
             latestSleep = sleep
             await syncOwnSleep(materializations: reconciled.materializations, profile: profile)
         }
+        await syncPracticeSleep()
         let failedIDs = reconciled.failedIDs
         let reportedFailedIDs: [CompetitionID]
         if suppressesTransientIssues, let latest = latestPublication {
@@ -1070,8 +1085,22 @@ private actor RemoteCompetitionClientCoordinator {
                     return
                 }
             }
-            _ = try await remoteAPI.sendGroupMatchCommand(remote)
-            if let draft { groupCreationKeys[draft] = nil }
+            let createdID = try await remoteAPI.sendGroupMatchCommand(remote)
+            if let draft {
+                groupCreationKeys[draft] = nil
+                if !draft.metrics.isDefaultRings {
+                    try? await remoteAPI.setCompetitionMetrics(createdID, draft.metrics)
+                    latestMetrics.removeAll { $0.competitionID == createdID }
+                    latestMetrics.insert(
+                        CompetitionMetricsRecord(competitionID: createdID, metrics: draft.metrics),
+                        at: 0
+                    )
+                    if draft.metrics.includesSleep,
+                       !latestSleep.contains(where: { $0.competitionID == createdID }) {
+                        latestSleep.insert(CompetitionSleepMatch(competitionID: createdID, nights: []), at: 0)
+                    }
+                }
+            }
         }
         await syncGroupMatchesNow()
         return await withOperationGate { latestPublication ?? unpublishedPublication(issues: []) }
@@ -1189,6 +1218,8 @@ private actor RemoteCompetitionClientCoordinator {
             else {
                 return publication(adding: .commandRejected(id))
             }
+            PracticeMetricsStore.remove(for: id)
+            practiceSleepReadings.removeValue(forKey: id.rawValue)
             practiceJournals = await practiceRuntime.loadAll().successfulJournals
             practiceIssues = practiceIssues.compactMap { issue in
                 guard case .competitionFailures(let ids) = issue else { return issue }
@@ -1388,6 +1419,13 @@ private actor RemoteCompetitionClientCoordinator {
     }
 
     func enableSleep(_ id: CompetitionID) async throws -> CompetitionPublication {
+        try await setCompetitionMetrics(id, .all)
+    }
+
+    func setCompetitionMetrics(
+        _ id: CompetitionID,
+        _ metrics: CompetitionMetrics
+    ) async throws -> CompetitionPublication {
         try await withCancellableOperationGate {
             guard terminalTeardown == nil else {
                 throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
@@ -1395,9 +1433,20 @@ private actor RemoteCompetitionClientCoordinator {
             guard runtime != nil, let profile, let inputs = lastPublishInputs else {
                 throw CompetitionRemoteFailure.unauthenticated
             }
-            try await remoteAPI.enableSleepScoring(id.rawValue)
-            if !latestSleep.contains(where: { $0.competitionID == id.rawValue }) {
-                latestSleep.insert(CompetitionSleepMatch(competitionID: id.rawValue, nights: []), at: 0)
+            try await remoteAPI.setCompetitionMetrics(id.rawValue, metrics)
+            latestMetrics.removeAll { $0.competitionID == id.rawValue }
+            if !metrics.isDefaultRings {
+                latestMetrics.insert(
+                    CompetitionMetricsRecord(competitionID: id.rawValue, metrics: metrics),
+                    at: 0
+                )
+            }
+            if metrics.includesSleep {
+                if !latestSleep.contains(where: { $0.competitionID == id.rawValue }) {
+                    latestSleep.insert(CompetitionSleepMatch(competitionID: id.rawValue, nights: []), at: 0)
+                }
+            } else {
+                latestSleep.removeAll { $0.competitionID == id.rawValue }
             }
             return await publish(
                 materializations: inputs.materializations,
@@ -1416,15 +1465,26 @@ private actor RemoteCompetitionClientCoordinator {
         let preference = SleepBeta.sourcePreference
         for index in latestSleep.indices {
             let match = latestSleep[index]
-            guard let materialization = materializations.first(where: {
+            let schedule: CompetitionSchedule?
+            if let materialization = materializations.first(where: {
                 $0.descriptor.competitionID == match.competitionID
-            }) else { continue }
-            let competition = materialization.journal.projection.competition
-            switch competition.lifecycle {
-            case .active, .endsToday, .tallying: break
-            default: continue
+            }) {
+                let competition = materialization.journal.projection.competition
+                switch competition.lifecycle {
+                case .active, .endsToday, .tallying:
+                    schedule = competition.schedule
+                default:
+                    schedule = nil
+                }
+            } else if let group = latestGroupMatches.first(where: { $0.id == match.competitionID }),
+                      group.result == nil,
+                      group.seats.first(where: { $0.profileID == profile.id })?.leftAt == nil,
+                      let groupSchedule = try? group.schedule() {
+                schedule = groupSchedule
+            } else {
+                schedule = nil
             }
-            guard let schedule = competition.schedule,
+            guard let schedule,
                   let days = try? schedule.calendar.sevenDayWindow(startingOn: schedule.startDay),
                   let first = days.first.flatMap(SleepScore.window(for:)),
                   let last = days.last.flatMap(SleepScore.window(for:)),
@@ -1460,6 +1520,33 @@ private actor RemoteCompetitionClientCoordinator {
                     } + [night]
                 )
             }
+        }
+    }
+
+    private func syncPracticeSleep() async {
+        let now = await environment.context().instant.wallDate
+        let preference = SleepBeta.sourcePreference
+        for loaded in practiceJournals {
+            let competition = loaded.projection.competition
+            let metrics = PracticeMetricsStore.metrics(for: competition.id)
+            guard metrics.includesSleep,
+                  let schedule = competition.schedule,
+                  let days = try? schedule.calendar.sevenDayWindow(startingOn: schedule.startDay),
+                  let first = days.first.flatMap(SleepScore.window(for:)),
+                  let last = days.last.flatMap(SleepScore.window(for:)),
+                  now > first.start,
+                  let samples = try? await environment.readSleepSamples(
+                      DateInterval(
+                          start: first.start.addingTimeInterval(-Double(SleepScore.historyNights) * 86_400),
+                          end: min(now, last.end)
+                      )
+                  )
+            else { continue }
+            let through = LocalCompetitionProjector.currentDayOrdinal(schedule: schedule, now: now) ?? 7
+            practiceSleepReadings[competition.id.rawValue] = competitionOwnSleep(
+                days: days, through: through, samples: samples,
+                preference: preference, readAt: now
+            )
         }
     }
 
@@ -1625,7 +1712,9 @@ private actor RemoteCompetitionClientCoordinator {
             latestChallenges = .empty
             latestReactions = []
             latestSleep = []
+            latestMetrics = []
             ownSleepReadings = [:]
+            practiceSleepReadings = [:]
             latestGroupMatches = []
             publicationRevision = 0
             hasStarted = false
@@ -1961,7 +2050,9 @@ private actor RemoteCompetitionClientCoordinator {
         latestChallenges = .empty
         latestReactions = []
         latestSleep = []
+        latestMetrics = []
         ownSleepReadings = [:]
+        practiceSleepReadings = [:]
         latestGroupMatches = []
         if stoppedTasks.realtime != nil {
             await realtimeClient.stop()
@@ -2302,21 +2393,59 @@ private actor RemoteCompetitionClientCoordinator {
             issues: Self.deduplicated(issues + practiceIssues),
             challenges: latestChallenges,
             reactions: latestReactions,
+            metrics: latestMetrics,
             sleep: latestSleep,
             sleepReadings: ownSleepReadings
         )
-        dashboard.groupMatches = latestGroupMatches.compactMap {
-            $0.presentation(viewer: profile.id, now: context.instant.wallDate)
+        let metricsByMatch = Dictionary(latestMetrics.map { ($0.competitionID, $0.metrics) }) { first, _ in first }
+        let sleepByMatch = Dictionary(latestSleep.map { ($0.competitionID, $0) }) { first, _ in first }
+        dashboard.groupMatches = latestGroupMatches.compactMap { match in
+            let metrics = metricsByMatch[match.id] ?? (sleepByMatch[match.id] != nil ? .all : .threeRings)
+            return match.presentation(
+                viewer: profile.id,
+                now: context.instant.wallDate,
+                metrics: metrics,
+                sleep: sleepByMatch[match.id]
+            )
+        }
+        let practiceByID = Dictionary(
+            practiceJournals.map { ($0.projection.competition.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let practicePresentations = LocalCompetitionProjector.practicePresentations(
+            journals: practiceJournals,
+            context: context,
+            configuration: .live,
+            ownerDisplayName: profile.displayName
+        ).map { item -> CompetitionPresentation in
+            let metrics = PracticeMetricsStore.metrics(for: item.id)
+            guard !metrics.isDefaultRings else { return item }
+            var botSleepNights: [Int: Double]?
+            if metrics.includesSleep,
+               let plan = practiceByID[item.id]?.projection.competition.opponentPlan {
+                let mode = BotMode(rawValue: plan.difficulty.rawValue) ?? .pacer
+                let nights = CompetitionMetrics.botSleepWeekBasisPoints(seed: plan.seed, mode: mode)
+                let through: Int = switch item.lifecycle {
+                case let .active(day): day
+                case .endsToday, .tallying, .completed, .archived: 7
+                default: 0
+                }
+                if through > 0 {
+                    var mapped: [Int: Double] = [:]
+                    for ordinal in 1...min(through, 7) {
+                        mapped[ordinal] = Double(nights[ordinal - 1]) / 100
+                    }
+                    botSleepNights = mapped
+                }
+            }
+            return item.applyingMetrics(
+                metrics,
+                readings: practiceSleepReadings[item.id.rawValue] ?? [:],
+                practiceBotSleepNights: botSleepNights
+            )
         }
         let publication = publish(
-            dashboard: dashboard.addingPractice(
-                LocalCompetitionProjector.practicePresentations(
-                    journals: practiceJournals,
-                    context: context,
-                    configuration: .live,
-                    ownerDisplayName: profile.displayName
-                )
-            ).keepingFailedCompetitions(
+            dashboard: dashboard.addingPractice(practicePresentations).keepingFailedCompetitions(
                 from: latestPublication?.dashboard,
                 now: context.instant.wallDate
             ),
@@ -2498,15 +2627,22 @@ enum RemoteCompetitionProjector {
         issues: [CompetitionClientIssue],
         challenges: CompetitionChallengeList = .empty,
         reactions: [CompetitionReactionRecord] = [],
+        metrics: [CompetitionMetricsRecord] = [],
         sleep: [CompetitionSleepMatch] = [],
         sleepReadings: [UUID: [Int: CompetitionSleepReading]] = [:]
     ) -> CompetitionDashboard {
         let reactionsByMatch = Dictionary(grouping: reactions, by: \.competitionID)
+        let metricsByMatch = Dictionary(metrics.map { ($0.competitionID, $0.metrics) }) { first, _ in first }
         let sleepByMatch = Dictionary(sleep.map { ($0.competitionID, $0) }) { first, _ in first }
-        func addingSleep(_ item: CompetitionPresentation) -> CompetitionPresentation {
-            guard let match = sleepByMatch[item.id.rawValue] else { return item }
-            return item.addingSleep(
-                match, viewer: profile.id, readings: sleepReadings[item.id.rawValue] ?? [:]
+        func applyingMetrics(_ item: CompetitionPresentation) -> CompetitionPresentation {
+            let matchSleep = sleepByMatch[item.id.rawValue]
+            let matchMetrics = metricsByMatch[item.id.rawValue] ?? (matchSleep != nil ? .all : .threeRings)
+            guard !matchMetrics.isDefaultRings || matchSleep != nil else { return item }
+            return item.applyingMetrics(
+                matchMetrics,
+                sleep: matchSleep,
+                viewer: profile.id,
+                readings: sleepReadings[item.id.rawValue] ?? [:]
             )
         }
         let materialized = materializations.compactMap { materialization in
@@ -2526,14 +2662,14 @@ enum RemoteCompetitionProjector {
                     )
                 }
                 .sorted { $0.updatedAt > $1.updatedAt }
-            return item.map(addingSleep)
+            return item.map(applyingMetrics)
         }
         let all = (materialized + challengePresentations(
             challenges,
             excluding: Set(materialized.map(\.id)),
             profile: profile,
             context: context
-        ).map(addingSleep)).sorted { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
+        ).map(applyingMetrics)).sorted { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
         let visible = all.filter {
             competitionIsRetainedOnDashboard($0.lifecycle, now: context.instant.wallDate)
         }

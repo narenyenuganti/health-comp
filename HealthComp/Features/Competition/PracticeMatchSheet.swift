@@ -10,10 +10,12 @@ struct CompetitionPracticeStart {
 
 struct PracticeMatchSheet: View {
     let practice: CompetitionPracticeStart
+    var requestSleepAccess: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selection: OpponentDifficulty = .pacer
+    @State private var metrics: CompetitionMetrics = .threeRings
     @State private var shadowRivalID: String?
     @State private var hasAttempted = false
 
@@ -80,6 +82,11 @@ struct PracticeMatchSheet: View {
                     .transition(Motion.appear)
                 }
 
+                CompetitionMetricPicker(
+                    selection: $metrics,
+                    requestSleepAccess: requestSleepAccess
+                )
+
                 if dynamicTypeSize.isAccessibilitySize {
                     startControl
                 }
@@ -136,9 +143,9 @@ struct PracticeMatchSheet: View {
             Button {
                 hasAttempted = true
                 if selection == .shadow, let rival = selectedShadowRival {
-                    practice.start(.shadow(rival))
+                    practice.start(.shadow(rival, metrics: metrics))
                 } else {
-                    practice.start(.bot(selection))
+                    practice.start(.bot(selection, metrics: metrics))
                 }
             } label: {
                 BusyLabel("Start Tomorrow", isBusy: isBusy)

@@ -100,6 +100,7 @@ struct LocalCompetitionDayPresentation: Equatable, Sendable {
     var ownerSleepPoints: Double? = nil
     var opponentSleepPoints: Double? = nil
     var ownerSleepReading: CompetitionSleepReading? = nil
+    var metrics: CompetitionMetrics = .threeRings
     var dailyMaximum: Double = ActivityScore.maximumDailyPoints
 
     init(
@@ -179,6 +180,7 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
     let opponentUpdatedAt: Date?
     var rematchParentID: CompetitionID?
     var reactions: [CompetitionReaction] = []
+    var metrics: CompetitionMetrics = .threeRings
     var sleep: CompetitionSleepPresentation? = nil
 
     init(

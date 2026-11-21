@@ -273,7 +273,7 @@ struct CompetitionDetailView: View {
                                 $0.schedule, now: competition.evaluatedAt, locale: locale
                             )
                         },
-                        withSleep: competition.isSleepMatch
+                        metrics: competition.metrics
                     )
                 }
             }
@@ -1071,6 +1071,7 @@ private struct CompetitionScoreboardPanel: View {
                 }
                 Text(status.title).foregroundStyle(Theme.ink)
                     + Text(isMuted ? " · Muted" : "").foregroundStyle(Theme.secondary)
+                CompetitionMetricBadge(metrics: competition.metrics)
             }
             .contentTransition(.opacity)
             .animation(Motion.fade, value: isMuted)

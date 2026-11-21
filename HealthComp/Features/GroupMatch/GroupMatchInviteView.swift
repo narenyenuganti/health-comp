@@ -17,6 +17,7 @@ struct GroupMatchInviteView: View {
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.secondary)
             GroupMatchHeading(match.format.title, detail: detail)
+            CompetitionMetricTagStrip(metrics: match.metrics)
             VStack(alignment: .leading, spacing: 16) {
                 GroupMatchLineupPanels(match: match, identifier: "competition.group.invite.seat", title: "WHO’S IN")
             }

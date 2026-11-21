@@ -128,6 +128,9 @@ struct CompetitionClient: Sendable {
     var enableSleep: @Sendable (CompetitionID) async throws -> CompetitionPublication = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
+    var setCompetitionMetrics: @Sendable (CompetitionID, CompetitionMetrics) async throws -> CompetitionPublication = { _, _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
     var requestSleepAuthorization: @Sendable () async throws -> Void = {}
 
     init(
