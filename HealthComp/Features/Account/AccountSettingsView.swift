@@ -153,11 +153,12 @@ struct AccountSettingsView: View {
     private var appearance = AppAppearance.system
     @AppStorage(Sounds.enabledKey) private var soundsAreOn = true
     @AppStorage(SleepBeta.sourceKey) private var sleepSource = SleepSourcePreference.automatic.rawValue
-    @State private var showsChallengeCode = false
+    @State private var challengeCodeItem: ChallengeCodeSheetItem?
     @State private var hasLoaded = false
     @FocusState private var isNameFocused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .headline) private var blockedInitialSize: CGFloat = 34
+    @ScaledMetric(relativeTo: .caption2) private var editBadgeIconSize: Double = 11
 
     private var listShape: [AnyHashable] {
         [
@@ -179,10 +180,8 @@ struct AccountSettingsView: View {
             .onChange(of: store.isEditingDisplayName) { _, isEditing in
                 isNameFocused = isEditing
             }
-            .sheet(isPresented: $showsChallengeCode) {
-                if let url = challengeLink?.url {
-                    ChallengeLinkCodeView(url: url) { showsChallengeCode = false }
-                }
+            .sheet(item: $challengeCodeItem) { item in
+                ChallengeLinkCodeView(url: item.url) { challengeCodeItem = nil }
             }
             .overlay {
                 AccountProgressOverlay(store: store)
@@ -468,7 +467,7 @@ struct AccountSettingsView: View {
         .overlay(alignment: .bottomTrailing) {
             if profilePhoto != nil {
                 Image(systemName: "pencil")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: editBadgeIconSize, weight: .bold))
                     .foregroundStyle(Theme.onInk)
                     .frame(width: 24, height: 24)
                     .background(Theme.ink, in: Circle())
@@ -510,7 +509,7 @@ struct AccountSettingsView: View {
                         .animation(Motion.fade, value: url)
                     let buttons = Group {
                         Button {
-                            showsChallengeCode = true
+                            challengeCodeItem = ChallengeCodeSheetItem(url: url)
                         } label: {
                             Label("Show Code", systemImage: "qrcode")
                         }
@@ -886,6 +885,11 @@ private struct AccountSleepBetaPage: View {
     }
 }
 
+private struct ChallengeCodeSheetItem: Identifiable {
+    let url: URL
+    var id: URL { url }
+}
+
 private struct AccountSoundsPage: View {
     @AppStorage(Sounds.enabledKey) private var isOn = true
     @AppStorage(Sounds.volumeKey) private var volume = 1.0
@@ -896,17 +900,29 @@ private struct AccountSoundsPage: View {
                 Toggle("Sound Effects", isOn: $isOn)
                     .tint(Theme.youFill)
                     .accessibilityIdentifier("account.sounds.enabled")
-                HStack(spacing: 12) {
-                    Image(systemName: "speaker.fill")
-                        .accessibilityHidden(true)
-                    Slider(value: $volume, in: 0...1, step: 0.05) { isDragging in
-                        if !isDragging { Sounds.play(.ahead) }
-                    }
+                LabeledContent {
+                    Slider(
+                        value: $volume,
+                        in: 0...1,
+                        step: 0.05,
+                        label: { Text("Volume") },
+                        minimumValueLabel: {
+                            Image(systemName: "speaker.fill")
+                                .accessibilityHidden(true)
+                        },
+                        maximumValueLabel: {
+                            Image(systemName: "speaker.wave.3.fill")
+                                .accessibilityHidden(true)
+                        },
+                        onEditingChanged: { isDragging in
+                            if !isDragging { Sounds.play(.ahead) }
+                        }
+                    )
                     .tint(Theme.youFill)
                     .accessibilityLabel("Volume")
                     .accessibilityIdentifier("account.sounds.volume")
-                    Image(systemName: "speaker.wave.3.fill")
-                        .accessibilityHidden(true)
+                } label: {
+                    EmptyView()
                 }
                 .foregroundStyle(Theme.secondary)
                 .frame(minHeight: 44)
@@ -1574,9 +1590,9 @@ private struct AppearanceThumbnail: View {
             }
         }
         .frame(width: 56, height: 96)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(
                     isSelected ? Theme.ink : Theme.outline,
                     lineWidth: isSelected ? 2 : 1

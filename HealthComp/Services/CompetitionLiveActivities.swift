@@ -182,7 +182,7 @@ actor CompetitionLiveActivities {
     private let now: @Sendable () -> Date
     private var latest: (publication: CompetitionPublication, knownCompetitionIDs: Set<CompetitionID>?)?
 
-    init(client: CompetitionLiveActivityClient, now: @escaping @Sendable () -> Date = { Date() }) {
+    init(client: CompetitionLiveActivityClient, now: @escaping @Sendable () -> Date = { Date.now }) {
         self.client = client
         self.now = now
     }

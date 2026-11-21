@@ -172,8 +172,9 @@ struct ActivityRingsView: View {
             SlantedBar()
                 .fill(row.metric.color)
                 .frame(width: 10, height: 10)
-            (Text(row.title).fontWeight(.semibold).foregroundStyle(Theme.ink)
-                + Text(" · \(row.detail)").foregroundStyle(Theme.secondary))
+            let title = Text(row.title).fontWeight(.semibold).foregroundStyle(Theme.ink)
+            let detail = Text(" · \(row.detail)").foregroundStyle(Theme.secondary)
+            Text("\(title)\(detail)")
                 .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -456,10 +457,10 @@ struct CompetitionTodayRingsSheet: View {
             }
             Group {
                 if let points = today.points {
-                    Text(competitionPointsText(points, locale: locale))
+                    let pointsText = Text(competitionPointsText(points, locale: locale))
                         .fontWeight(.semibold)
                         .foregroundStyle(Theme.ink)
-                        + Text(" of \(Self.dailyMaximum) points today")
+                    Text("\(pointsText) of \(Self.dailyMaximum) points today")
                 } else {
                     Text("No points yet today")
                 }

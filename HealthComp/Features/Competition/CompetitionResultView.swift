@@ -162,22 +162,22 @@ struct CompetitionResultView: View {
                         CompetitionMoreLabel()
                     }
                     .accessibilityIdentifier("competition.more")
+                    .confirmationDialog(
+                        "Delete this match from this iPhone?",
+                        isPresented: $isDeleteConfirmationPresented,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Delete Local Data", role: .destructive) {
+                            send(.deleteTapped(competition.id))
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text(
+                            "This permanently removes the match and its notifications from this iPhone."
+                        )
+                    }
                 }
             }
-        }
-        .confirmationDialog(
-            "Delete this match from this iPhone?",
-            isPresented: $isDeleteConfirmationPresented,
-            titleVisibility: .visible
-        ) {
-            Button("Delete Local Data", role: .destructive) {
-                send(.deleteTapped(competition.id))
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(
-                "This permanently removes the match and its notifications from this iPhone."
-            )
         }
         .sheet(isPresented: $showsWeek) {
             weekDrawer
@@ -681,7 +681,7 @@ struct CompetitionResultView: View {
         }
         .frame(maxWidth: .infinity)
         .themePanel()
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("competition.result.belt")
     }
@@ -935,10 +935,10 @@ struct CompetitionResultView: View {
         }
         .buttonStyle(CompetitionRowButtonStyle())
         .themePanel(cornerRadius: 14)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            [title, detail?.replacingOccurrences(of: " · ", with: ", ")]
+            [title, detail?.replacing(" · ", with: ", ")]
                 .compactMap { $0 }
                 .joined(separator: ". ")
         )

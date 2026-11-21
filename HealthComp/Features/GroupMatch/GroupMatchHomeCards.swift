@@ -112,8 +112,9 @@ private struct GroupMatchHomeCard: View {
                 if isLive {
                     Circle().fill(Theme.ink).frame(width: 8, height: 8)
                 }
-                Text(stateWord).foregroundStyle(Theme.ink)
-                    + Text(" · \(match.format.title)").foregroundStyle(Theme.secondary)
+                let state = Text(stateWord).foregroundStyle(Theme.ink)
+                let format = Text(" · \(match.format.title)").foregroundStyle(Theme.secondary)
+                Text("\(state)\(format)")
                 CompetitionMetricBadge(metrics: match.metrics)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

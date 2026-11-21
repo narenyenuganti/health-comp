@@ -146,10 +146,11 @@ struct GroupMatchLiveDoublesView: View {
     private func memberLegend(_ seat: GroupMatchSeat, percent: Int?) -> some View {
         let isYou = seat.id == match.viewerSeatID
         return HStack(spacing: 6) {
-            Text("\(isYou ? "You" : seat.name) \(competitionPointsText(seatPoints(seat), locale: locale))")
+            let namePoints = Text("\(isYou ? "You" : seat.name) \(competitionPointsText(seatPoints(seat), locale: locale))")
                 .fontWeight(isYou ? .bold : .regular)
                 .foregroundStyle(isYou ? Theme.you : Theme.ink)
-                + Text(percent.map { " · \($0)%" } ?? "").foregroundStyle(Theme.secondary)
+            let suffix = Text(percent.map { " · \($0)%" } ?? "").foregroundStyle(Theme.secondary)
+            Text("\(namePoints)\(suffix)")
             if seat.isBot { GroupMatchTag("BOT") }
             if match.hasLeft(seat) { GroupMatchTag("LEFT") }
         }

@@ -1,19 +1,23 @@
 import Foundation
+import Observation
+import OSLog
 import UserNotifications
 import WatchConnectivity
 import WidgetKit
 
 @MainActor
-final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, UNUserNotificationCenterDelegate {
+@Observable
+final class WatchSnapshotModel: NSObject, WCSessionDelegate, UNUserNotificationCenterDelegate {
     static let shared = WatchSnapshotModel()
 
-    @Published private(set) var snapshot: CompetitionWidgetSnapshot?
-    @Published private(set) var seen = CompetitionWatchSeen()
-    @Published var tappedAlert: UUID?
+    private(set) var snapshot: CompetitionWidgetSnapshot?
+    private(set) var seen = CompetitionWatchSeen()
+    var tappedAlert: UUID?
 
-    private let fileURL = CompetitionWidgetSnapshot.fileURL()
-    private let seenURL = URL.applicationSupportDirectory.appendingPathComponent("WatchSeen.json")
-    private var isFixture = false
+    @ObservationIgnored private let fileURL = CompetitionWidgetSnapshot.fileURL()
+    @ObservationIgnored private let seenURL = URL.applicationSupportDirectory.appending(path: "WatchSeen.json")
+    @ObservationIgnored private let logger = Logger(subsystem: "com.narenyenuganti.HealthComp.watchkitapp", category: "WatchStore")
+    @ObservationIgnored private var isFixture = false
 
     override init() {
         super.init()
@@ -32,7 +36,7 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, U
             }
             seen = CompetitionWatchSeen()
             try? FileManager.default.removeItem(at: seenURL)
-            if let fixture = CompetitionWidgetSnapshot.testLab(scenario, now: Date(), scheme: "healthcomp"),
+            if let fixture = CompetitionWidgetSnapshot.testLab(scenario, now: .now, scheme: "healthcomp"),
                let data = try? JSONEncoder().encode(fixture) {
                 _ = write(data)
                 snapshot = fixture
@@ -56,8 +60,8 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, U
     }
 
     func finishDelivery() async {
-        let deadline = Date().addingTimeInterval(5)
-        while WCSession.default.hasContentPending, Date() < deadline {
+        let deadline = Date.now.addingTimeInterval(5)
+        while WCSession.default.hasContentPending, Date.now < deadline {
             try? await Task.sleep(for: .milliseconds(100))
         }
         refresh()
@@ -117,6 +121,7 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, U
             values.isExcludedFromBackup = true
             try url.setResourceValues(values)
         } catch {
+            logger.error("Failed to save watch seen state: \(error.localizedDescription, privacy: .public)")
         }
     }
 

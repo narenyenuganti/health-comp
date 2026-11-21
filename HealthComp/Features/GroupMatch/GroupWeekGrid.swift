@@ -77,12 +77,12 @@ struct GroupMatchTag: View {
 
     var body: some View {
         Text(title)
-            .font(.caption2.weight(.bold).width(.condensed))
+            .font(.caption.weight(.bold).width(.condensed))
             .kerning(1.2)
             .foregroundStyle(Theme.secondary)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.secondary, lineWidth: 1.5))
+            .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.secondary, lineWidth: 1.5) }
             .fixedSize()
     }
 }

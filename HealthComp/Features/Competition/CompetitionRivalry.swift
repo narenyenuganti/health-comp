@@ -679,14 +679,15 @@ struct CompetitionRecordsView: View {
                 .font(.headline)
                 .foregroundStyle(week.terminalResult?.outcome == .win ? Theme.you : Theme.ink)
             Spacer(minLength: 8)
-            (Text(competitionPointsText(week.userPoints, locale: locale)).foregroundStyle(Theme.you)
-                + Text(" / ").foregroundStyle(Theme.faint)
-                + Text(competitionPointsText(week.opponentPoints, locale: locale)).foregroundStyle(Theme.ink))
+            let you = Text(competitionPointsText(week.userPoints, locale: locale)).foregroundStyle(Theme.you)
+            let slash = Text(" / ").foregroundStyle(Theme.faint)
+            let them = Text(competitionPointsText(week.opponentPoints, locale: locale)).foregroundStyle(Theme.ink)
+            Text("\(you)\(slash)\(them)")
                 .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
             DisclosureChevron()
         }
         .padding(12)
-        .background(Theme.control, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Theme.control, in: RoundedRectangle(cornerRadius: 14))
         .contentShape(Rectangle())
     }
 
@@ -718,15 +719,20 @@ struct CompetitionRecordsView: View {
     private func value(_ value: CompetitionRivalryRecord.Value) -> Text {
         switch value {
         case let .sides(you, them):
-            Text(you).foregroundStyle(Theme.you)
-                + Text(" / ").foregroundStyle(Theme.faint)
-                + Text(them).foregroundStyle(Theme.ink)
+            let youText = Text(you).foregroundStyle(Theme.you)
+            let slash = Text(" / ").foregroundStyle(Theme.faint)
+            let themText = Text(them).foregroundStyle(Theme.ink)
+            return Text("\(youText)\(slash)\(themText)")
         case let .tally(won, lost, tied):
-            Text(String(won)).foregroundStyle(Theme.you)
-                + Text("–" + String(lost)).foregroundStyle(Theme.ink)
-                + (tied > 0 ? Text("–" + String(tied)).foregroundStyle(Theme.secondary) : Text(""))
+            let wonText = Text(String(won)).foregroundStyle(Theme.you)
+            let lostText = Text("–\(lost)").foregroundStyle(Theme.ink)
+            if tied > 0 {
+                let tiedText = Text("–\(tied)").foregroundStyle(Theme.secondary)
+                return Text("\(wonText)\(lostText)\(tiedText)")
+            }
+            return Text("\(wonText)\(lostText)")
         case let .text(text, holder):
-            Text(text).foregroundStyle(holder == .you ? Theme.you : Theme.ink)
+            return Text(text).foregroundStyle(holder == .you ? Theme.you : Theme.ink)
         }
     }
 }
@@ -1091,15 +1097,26 @@ struct CompetitionOwnProfileView: View {
     }
 }
 
-private struct OpenCompetitionProfileKey: EnvironmentKey {
-    static let defaultValue: ((CompetitionHomeRoute) -> Void)? = nil
+struct OpenCompetitionProfileAction: Equatable {
+    let id: UUID
+    private let perform: (CompetitionHomeRoute) -> Void
+
+    init(id: UUID, perform: @escaping (CompetitionHomeRoute) -> Void) {
+        self.id = id
+        self.perform = perform
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func callAsFunction(_ route: CompetitionHomeRoute) {
+        perform(route)
+    }
 }
 
 extension EnvironmentValues {
-    var openCompetitionProfile: ((CompetitionHomeRoute) -> Void)? {
-        get { self[OpenCompetitionProfileKey.self] }
-        set { self[OpenCompetitionProfileKey.self] = newValue }
-    }
+    @Entry var openCompetitionProfile: OpenCompetitionProfileAction?
 }
 
 func competitionProfileRoute(for competition: LocalCompetitionPresentation) -> CompetitionHomeRoute? {
@@ -1123,6 +1140,7 @@ struct CompetitionProfileTap: ViewModifier {
             content
                 .contentShape(Rectangle().inset(by: -8))
                 .onTapGesture { open(route) }
+                .accessibilityAddTraits(.isButton)
         } else {
             content
         }

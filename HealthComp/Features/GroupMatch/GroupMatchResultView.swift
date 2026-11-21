@@ -202,7 +202,7 @@ struct GroupMatchResultView: View {
                 .frame(maxWidth: .infinity, minHeight: height, alignment: .top)
                 .background(
                     isYou ? Theme.youFill : row.place >= 3 ? Theme.tertiary : Theme.ink,
-                    in: UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12, style: .continuous)
+                    in: UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12)
                 )
                 .padding(.top, 4)
         }
@@ -386,7 +386,7 @@ struct GroupMatchResultView: View {
 
     @ViewBuilder
     private func segment(_ seat: GroupMatchSeat, isYours: Bool, isLead: Bool) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 4)
         if seat.id == match.viewerSeatID {
             shape.fill(Theme.youFill)
         } else if isYours {

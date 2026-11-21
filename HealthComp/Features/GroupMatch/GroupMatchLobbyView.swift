@@ -9,7 +9,7 @@ struct GroupMatchLobbyView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
-    @State private var confirms: GroupMatchCommand?
+    @State private var isConfirmingCommand = false
 
     var body: some View {
         Group {
@@ -20,20 +20,6 @@ struct GroupMatchLobbyView: View {
         }
         .navigationTitle(match.format.title)
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(
-            confirms == .cancel(match.id) ? "Cancel this match?" : "Withdraw from this match?",
-            isPresented: Binding(get: { confirms != nil }, set: { if !$0 { confirms = nil } }),
-            titleVisibility: .visible
-        ) {
-            if let confirms {
-                Button(confirms == .cancel(match.id) ? "Cancel Match" : "Withdraw", role: .destructive) {
-                    store.send(.commandTapped(confirms))
-                }
-            }
-            Button("Keep Match", role: .cancel) {}
-        } message: {
-            Text("It won’t start, and everyone in it sees that.")
-        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.group.lobby")
     }
@@ -117,13 +103,25 @@ struct GroupMatchLobbyView: View {
 
     private func quietCommand(_ title: String, _ command: GroupMatchCommand, identifier: String) -> some View {
         Button(role: .destructive) {
-            confirms = command
+            isConfirmingCommand = true
         } label: {
             BusyLabel(title, isBusy: store.inFlight.contains(command))
         }
         .buttonStyle(QuietButtonStyle())
         .disabled(store.inFlight.contains(command))
         .accessibilityIdentifier(identifier)
+        .confirmationDialog(
+            command == .cancel(match.id) ? "Cancel this match?" : "Withdraw from this match?",
+            isPresented: $isConfirmingCommand,
+            titleVisibility: .visible
+        ) {
+            Button(title, role: .destructive) {
+                store.send(.commandTapped(command))
+            }
+            Button("Keep Match", role: .cancel) {}
+        } message: {
+            Text("It won’t start, and everyone in it sees that.")
+        }
     }
 
     @ViewBuilder

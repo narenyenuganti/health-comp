@@ -60,7 +60,9 @@ struct CompetitionReactionsSeen: RawRepresentable, Equatable {
     }
 
     var rawValue: String {
-        guard let data = try? JSONEncoder().encode(seenAt) else { return "{}" }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        guard let data = try? encoder.encode(seenAt) else { return "{}" }
         return String(decoding: data, as: UTF8.self)
     }
 
@@ -96,7 +98,9 @@ struct CompetitionMotionSeen: RawRepresentable, Equatable {
     }
 
     var rawValue: String {
-        guard let data = try? JSONEncoder().encode(weekDrawn) else { return "{}" }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        guard let data = try? encoder.encode(weekDrawn) else { return "{}" }
         return String(decoding: data, as: UTF8.self)
     }
 
@@ -393,7 +397,7 @@ struct CompetitionReactionEmoji: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        if let image = renderedImage {
+        if let image = Self.cachedImage(kind: kind, size: size, displayScale: displayScale) {
             Image(decorative: image, scale: displayScale)
                 .resizable()
                 .scaledToFit()
@@ -402,23 +406,53 @@ struct CompetitionReactionEmoji: View {
         }
     }
 
+    private struct CacheKey: Hashable {
+        let kind: CompetitionReactionKind
+        let size: CGFloat
+        let displayScale: CGFloat
+    }
+
     @MainActor
-    private var renderedImage: CGImage? {
+    private static var cache: [CacheKey: CGImage] = [:]
+
+    @MainActor
+    private static func cachedImage(
+        kind: CompetitionReactionKind,
+        size: CGFloat,
+        displayScale: CGFloat
+    ) -> CGImage? {
+        let key = CacheKey(kind: kind, size: size, displayScale: displayScale)
+        if let cached = cache[key] { return cached }
         let renderer = ImageRenderer(content: Text(kind.emoji).font(.system(size: size)))
         renderer.scale = displayScale
-        return renderer.cgImage
+        guard let image = renderer.cgImage else { return nil }
+        cache[key] = image
+        return image
     }
 }
 
-private struct CompetitionReactionRainKey: EnvironmentKey {
-    static let defaultValue: (CompetitionReactionKind) -> Void = { _ in }
+struct CompetitionReactionRainAction: Equatable {
+    static let noop = Self(id: UUID(), perform: { _ in })
+
+    let id: UUID
+    private let perform: (CompetitionReactionKind) -> Void
+
+    init(id: UUID, perform: @escaping (CompetitionReactionKind) -> Void) {
+        self.id = id
+        self.perform = perform
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func callAsFunction(_ kind: CompetitionReactionKind) {
+        perform(kind)
+    }
 }
 
 extension EnvironmentValues {
-    var competitionReactionRain: (CompetitionReactionKind) -> Void {
-        get { self[CompetitionReactionRainKey.self] }
-        set { self[CompetitionReactionRainKey.self] = newValue }
-    }
+    @Entry var competitionReactionRain = CompetitionReactionRainAction.noop
 }
 
 extension View {
@@ -436,10 +470,14 @@ private struct CompetitionReactionRainHost: ViewModifier {
 
     @State private var rain: CompetitionReactionRainDrops?
     @State private var isOnScreen = false
+    @State private var actionID = UUID()
 
     func body(content: Content) -> some View {
         content
-            .environment(\.competitionReactionRain, { start([$0]) })
+            .environment(
+                \.competitionReactionRain,
+                CompetitionReactionRainAction(id: actionID) { start([$0]) }
+            )
             .overlay {
                 if let rain {
                     CompetitionReactionRainView(rain: rain)
@@ -487,7 +525,7 @@ private struct CompetitionReactionRainDrops: Equatable {
     }
 
     let id = UUID()
-    let start = Date()
+    let start = Date.now
     let kinds: [CompetitionReactionKind]
     let drops: [Drop]
 

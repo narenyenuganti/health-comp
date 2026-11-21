@@ -458,15 +458,17 @@ struct GroupMatchCreateView: View {
     private var linkScreen: some View {
         GroupMatchPage {
             GroupMatchHeading("Their challenge link", detail: "Paste the link they shared. It adds them, and only them.")
-            TextField("Challenge link", text: Binding(get: { linkText }, set: { text in
-                let clean = text.filter { !$0.isNewline }
-                if clean != linkText {
-                    linkText = clean
+            TextField("Challenge link", text: $linkText, axis: .vertical)
+                .onChange(of: linkText) { _, newValue in
+                    let clean = newValue.filter { !$0.isNewline }
+                    if clean != newValue {
+                        linkText = clean
+                        findLink()
+                        return
+                    }
                     link = .idle
                     linkCode = nil
                 }
-                if text.contains(where: \.isNewline) { findLink() }
-            }), axis: .vertical)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(.body.monospaced())
@@ -588,7 +590,7 @@ struct GroupMatchOptionCard<Glyph: View>: View {
     let action: () -> Void
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 20)
         Button(action: action) {
             HStack(spacing: 16) {
                 glyph.accessibilityHidden(true)
@@ -640,13 +642,13 @@ private struct FormatGlyph: View {
 struct BotGlyph: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 2) {
-            ForEach([14, 5, 11] as [CGFloat], id: \.self) { height in
+            ForEach([14.0, 5.0, 11.0], id: \.self) { height in
                 Rectangle().fill(Theme.onInk).frame(width: 4, height: height)
             }
         }
         .padding(.bottom, 8)
         .frame(width: 32, height: 32, alignment: .bottom)
-        .background(Theme.ink, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(Theme.ink, in: RoundedRectangle(cornerRadius: 9))
         .accessibilityHidden(true)
     }
 }

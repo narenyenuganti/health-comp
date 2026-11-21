@@ -19,10 +19,10 @@ struct CompetitionSegments<Selection: Hashable>: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .background {
                             if isSelected {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: 10)
                                     .fill(Theme.ground)
                                     .overlay {
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        RoundedRectangle(cornerRadius: 10)
                                             .strokeBorder(Theme.outline, lineWidth: 1)
                                     }
                                     .matchedGeometryEffect(id: "thumb", in: thumb)
@@ -35,7 +35,7 @@ struct CompetitionSegments<Selection: Hashable>: View {
             }
         }
         .padding(3)
-        .background(Theme.control, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .background(Theme.control, in: RoundedRectangle(cornerRadius: 13))
         .moving(Motion.settle, value: selection)
     }
 }
@@ -212,27 +212,37 @@ struct CompetitionDetailView: View {
                     CompetitionMoreLabel()
                 }
                 .accessibilityIdentifier("competition.more")
+                .confirmationDialog(
+                    "Cancel your match with \(competition.opponentDisplayName)?",
+                    isPresented: $showsCancelConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Cancel Match", role: .destructive) { cancelMatch?.cancel() }
+                    Button("Keep Match", role: .cancel) {}
+                } message: {
+                    Text("It hasn’t started yet. \(competition.opponentDisplayName) will be told.")
+                }
+                .confirmationDialog(
+                    "Report \(competition.opponentDisplayName)’s photo?",
+                    isPresented: $showsReportPhotoConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Report Photo", role: .destructive) { reportPhoto?.report() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("You won’t see \(competition.opponentDisplayName)’s photo again. We’ll review it. \(competition.opponentDisplayName) isn’t notified.")
+                }
+                .confirmationDialog(
+                    "End this practice match?",
+                    isPresented: $showsEndPracticeConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("End Practice", role: .destructive) { endPractice?() }
+                    Button("Keep Going", role: .cancel) {}
+                } message: {
+                    Text("It’s removed from this iPhone.")
+                }
             }
-        }
-        .confirmationDialog(
-            "Cancel your match with \(competition.opponentDisplayName)?",
-            isPresented: $showsCancelConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Cancel Match", role: .destructive) { cancelMatch?.cancel() }
-            Button("Keep Match", role: .cancel) {}
-        } message: {
-            Text("It hasn’t started yet. \(competition.opponentDisplayName) will be told.")
-        }
-        .confirmationDialog(
-            "Report \(competition.opponentDisplayName)’s photo?",
-            isPresented: $showsReportPhotoConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Report Photo", role: .destructive) { reportPhoto?.report() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("You won’t see \(competition.opponentDisplayName)’s photo again. We’ll review it. \(competition.opponentDisplayName) isn’t notified.")
         }
         .onChange(of: reportPhoto?.isReported == true) { old, new in
             if !old, new {
@@ -240,16 +250,6 @@ struct CompetitionDetailView: View {
                     "Photo reported. You’ll see \(competition.opponentDisplayName)’s initial instead."
                 ).post()
             }
-        }
-        .confirmationDialog(
-            "End this practice match?",
-            isPresented: $showsEndPracticeConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("End Practice", role: .destructive) { endPractice?() }
-            Button("Keep Going", role: .cancel) {}
-        } message: {
-            Text("It’s removed from this iPhone.")
         }
         .sheet(item: $drawer) { item in
             switch item {
@@ -376,12 +376,13 @@ struct CompetitionDetailView: View {
     }
 
     private var leadText: Text {
-        competitionLeadText(
+        let lead = competitionLeadText(
             userPoints: competition.userPoints,
             opponentPoints: competition.opponentPoints,
             opponentDisplayName: competition.opponentDisplayName,
             locale: locale
-        ) + Text(scoresAreProvisional ? " Not final yet." : "")
+        )
+        return scoresAreProvisional ? Text("\(lead) Not final yet.") : lead
     }
 
     @ViewBuilder
@@ -1069,8 +1070,9 @@ private struct CompetitionScoreboardPanel: View {
                         .fill(Theme.ink)
                         .frame(width: 8, height: 8)
                 }
-                Text(status.title).foregroundStyle(Theme.ink)
-                    + Text(isMuted ? " · Muted" : "").foregroundStyle(Theme.secondary)
+                let title = Text(status.title).foregroundStyle(Theme.ink)
+                let muted = Text(isMuted ? " · Muted" : "").foregroundStyle(Theme.secondary)
+                Text("\(title)\(muted)")
                 CompetitionMetricBadge(metrics: competition.metrics)
             }
             .contentTransition(.opacity)
@@ -1241,15 +1243,14 @@ struct CompetitionScheduledSummary: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            (
-                Text("YOU").foregroundStyle(Theme.you)
-                    + Text("  VS  ")
-                    .font(.title3.weight(.heavy).width(.condensed))
-                    .foregroundStyle(Theme.tertiary)
-                    + Text(competition.opponentDisplayName.uppercased())
-                    .foregroundStyle(Theme.ink)
-            )
-            .font(.title.weight(.heavy).width(.condensed))
+            let you = Text("YOU").foregroundStyle(Theme.you)
+            let vs = Text("  VS  ")
+                .font(.title3.weight(.heavy).width(.condensed))
+                .foregroundStyle(Theme.tertiary)
+            let opponent = Text(competition.opponentDisplayName.uppercased(with: locale))
+                .foregroundStyle(Theme.ink)
+            Text("\(you)\(vs)\(opponent)")
+                .font(.title.weight(.heavy).width(.condensed))
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel("You versus \(competition.opponentDisplayName)")
             Text(dayOneText)
@@ -1278,7 +1279,7 @@ func competitionDayAccessibilityLabel(
     _ day: LocalCompetitionDayPresentation,
     currentDayOrdinal: Int? = nil,
     opponentName: String,
-    now: Date = Date(),
+    now: Date = Date.now,
     locale: Locale = .current
 ) -> String {
     let date = competitionDayText(day.day, now: now, locale: locale)
@@ -1304,7 +1305,7 @@ private func competitionDayScoresAccessibilityText(
 
 func competitionScheduleDateRangeText(
     _ schedule: CompetitionSchedule,
-    now: Date = Date(),
+    now: Date = Date.now,
     locale: Locale = .current
 ) -> String? {
     guard let window = try? schedule.calendar.sevenDayWindow(
@@ -1350,7 +1351,7 @@ func competitionOwnerAccessibilityText(
     case .missing:
         return "missing activity data, \(points)"
     case let .unavailable(reason):
-        return "\(competitionOwnerAvailabilityText(.unavailable(reason: reason), ordinal: day.ordinal).replacingOccurrences(of: ".", with: "")), \(points)"
+        return "\(competitionOwnerAvailabilityText(.unavailable(reason: reason), ordinal: day.ordinal).replacing(".", with: "")), \(points)"
     }
 }
 
@@ -1382,7 +1383,7 @@ struct CompetitionProvisionalTag: View {
             .foregroundStyle(Theme.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
-            .overlay(Capsule().stroke(Theme.outline))
+            .overlay { Capsule().stroke(Theme.outline) }
             .fixedSize()
     }
 }
@@ -1476,7 +1477,7 @@ func competitionRefreshStatusText(_ status: ActivityRefreshReadStatus) -> String
 func competitionRefreshTimelineText(
     lastRefresh: LocalCompetitionRefreshPresentation?,
     lastSuccessfulFullWindowRefreshAt: Date?,
-    now: Date = Date(),
+    now: Date = Date.now,
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> [String] {
@@ -1722,7 +1723,7 @@ private struct CompetitionNudgeButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         ViewThatFits(in: .horizontal) {
             pill(configuration.label.lineLimit(1), in: Capsule())
-            pill(configuration.label, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            pill(configuration.label, in: RoundedRectangle(cornerRadius: 16))
         }
         .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
         .animation(Motion.press, value: configuration.isPressed)

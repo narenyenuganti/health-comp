@@ -158,7 +158,7 @@ struct GroupMatchDayView: View {
             .fontWeight(isYou ? .bold : .regular)
             .foregroundStyle(isYou ? Theme.you : Theme.ink)
             .fixedSize(horizontal: false, vertical: true)
-        let pointsText = Text(competitionPointsText(points, locale: locale).replacingOccurrences(of: "--", with: "–"))
+        let pointsText = Text(competitionPointsText(points, locale: locale).replacing("--", with: "–"))
             .font(.score(size: pointsSize).monospacedDigit())
             .foregroundStyle(isYou ? Theme.you : Theme.ink)
             .fixedSize()
@@ -289,7 +289,7 @@ struct GroupMatchDayView: View {
                                     .fixedSize()
                                 Spacer(minLength: 8)
                                 Text(item.valueText)
-                                    .fontWeight(.bold)
+                                    .bold()
                                     .foregroundStyle(Theme.ink)
                                     .fixedSize()
                             }
@@ -305,7 +305,7 @@ struct GroupMatchDayView: View {
                                 .foregroundStyle(Theme.secondary)
                             ringBar(item.color, item.percent, maxPercent: item.maxPercent)
                             Text(item.valueText)
-                                .fontWeight(.bold)
+                                .bold()
                                 .foregroundStyle(Theme.ink)
                                 .gridColumnAlignment(.trailing)
                         }

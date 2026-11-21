@@ -127,17 +127,95 @@ func competitionDayOutcome(
     return .tied
 }
 
-private func competitionDateFormatter(
-    _ template: String,
-    locale: Locale,
-    timeZone: TimeZone
-) -> DateFormatter {
-    let formatter = DateFormatter()
-    formatter.calendar = Calendar(identifier: .gregorian)
-    formatter.locale = locale
-    formatter.timeZone = timeZone
-    formatter.setLocalizedDateFormatFromTemplate(template)
-    return formatter
+private final class CompetitionFormatterCache: @unchecked Sendable {
+    static let shared = CompetitionFormatterCache()
+
+    private struct Key: Hashable {
+        let template: String
+        let locale: String
+        let timeZone: String
+    }
+
+    private let lock = NSLock()
+    private var dateFormatters: [Key: DateFormatter] = [:]
+    private var intervalFormatters: [Key: DateIntervalFormatter] = [:]
+    private var ordinalFormatters: [String: NumberFormatter] = [:]
+
+    func formatDate(_ date: Date, template: String, locale: Locale, timeZone: TimeZone) -> String {
+        let key = Key(template: template, locale: locale.identifier, timeZone: timeZone.identifier)
+        lock.lock()
+        defer { lock.unlock() }
+        let formatter: DateFormatter
+        if let existing = dateFormatters[key] {
+            formatter = existing
+        } else {
+            let created = DateFormatter()
+            created.calendar = Calendar(identifier: .gregorian)
+            created.locale = locale
+            created.timeZone = timeZone
+            created.setLocalizedDateFormatFromTemplate(template)
+            dateFormatters[key] = created
+            formatter = created
+        }
+        return formatter.string(from: date)
+    }
+
+    func formatInterval(from first: Date, to last: Date, template: String, locale: Locale, timeZone: TimeZone) -> String {
+        let key = Key(template: template, locale: locale.identifier, timeZone: timeZone.identifier)
+        lock.lock()
+        defer { lock.unlock() }
+        let formatter: DateIntervalFormatter
+        if let existing = intervalFormatters[key] {
+            formatter = existing
+        } else {
+            let created = DateIntervalFormatter()
+            created.calendar = Calendar(identifier: .gregorian)
+            created.locale = locale
+            created.timeZone = timeZone
+            created.dateTemplate = template
+            intervalFormatters[key] = created
+            formatter = created
+        }
+        return formatter.string(from: first, to: last)
+    }
+
+    func formatOrdinal(_ value: Int, locale: Locale) -> String {
+        let key = locale.identifier
+        lock.lock()
+        defer { lock.unlock() }
+        let formatter: NumberFormatter
+        if let existing = ordinalFormatters[key] {
+            formatter = existing
+        } else {
+            let created = NumberFormatter()
+            created.locale = locale
+            created.numberStyle = .ordinal
+            ordinalFormatters[key] = created
+            formatter = created
+        }
+        return formatter.string(from: value as NSNumber) ?? String(value)
+    }
+}
+
+func competitionFormattedDate(
+    _ date: Date,
+    template: String,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> String {
+    CompetitionFormatterCache.shared.formatDate(
+        date,
+        template: template,
+        locale: locale,
+        timeZone: timeZone
+    )
+}
+
+func competitionOrdinalText(
+    _ value: Int,
+    locale: Locale = Locale(identifier: "en_US")
+) -> String {
+    CompetitionFormatterCache.shared.formatOrdinal(value, locale: locale)
 }
 
 private func competitionIsSameYear(_ date: Date, _ now: Date, timeZone: TimeZone) -> Bool {
@@ -155,7 +233,7 @@ func competitionYear(of now: Date, timeZone: TimeZone) -> Int {
 func competitionDayText(
     _ date: Date,
     weekday: Bool = true,
-    now: Date = Date(),
+    now: Date = .now,
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> String {
@@ -176,14 +254,13 @@ func competitionDayText(
     timeZone: TimeZone
 ) -> String {
     let template = (weekday ? "EEE" : "") + (includesYear ? "y" : "") + "MMMd"
-    return competitionDateFormatter(template, locale: locale, timeZone: timeZone)
-        .string(from: date)
+    return competitionFormattedDate(date, template: template, locale: locale, timeZone: timeZone)
 }
 
 func competitionWeekText(
     _ first: Date,
     _ last: Date,
-    now: Date = Date(),
+    now: Date = .now,
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> String {
@@ -203,17 +280,18 @@ func competitionWeekText(
     locale: Locale,
     timeZone: TimeZone
 ) -> String {
-    let formatter = DateIntervalFormatter()
-    formatter.calendar = Calendar(identifier: .gregorian)
-    formatter.locale = locale
-    formatter.timeZone = timeZone
-    formatter.dateTemplate = includesYear ? "yMMMd" : "MMMd"
-    return formatter.string(from: first, to: last)
+    CompetitionFormatterCache.shared.formatInterval(
+        from: first,
+        to: last,
+        template: includesYear ? "yMMMd" : "MMMd",
+        locale: locale,
+        timeZone: timeZone
+    )
 }
 
 func competitionMomentText(
     _ date: Date,
-    now: Date = Date(),
+    now: Date = .now,
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> String {
@@ -224,13 +302,12 @@ func competitionMomentText(
         template = competitionIsSameYear(date, now, timeZone: timeZone)
             ? "MMMdjmm" : "yMMMdjmm"
     }
-    return competitionDateFormatter(template, locale: locale, timeZone: timeZone)
-        .string(from: date)
+    return competitionFormattedDate(date, template: template, locale: locale, timeZone: timeZone)
 }
 
 func competitionDeadlineText(
     _ date: Date,
-    now: Date = Date(),
+    now: Date = .now,
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> String {
@@ -239,14 +316,18 @@ func competitionDeadlineText(
     guard calendar.startOfDay(for: date) == date else {
         return competitionMomentText(date, now: now, locale: locale, timeZone: timeZone)
     }
-    let weekday = competitionDateFormatter("EEE", locale: locale, timeZone: timeZone)
-        .string(from: date.addingTimeInterval(-1))
+    let weekday = competitionFormattedDate(
+        date.addingTimeInterval(-1),
+        template: "EEE",
+        locale: locale,
+        timeZone: timeZone
+    )
     return "\(weekday) night"
 }
 
 func competitionUpdatedText(
     _ date: Date,
-    now: Date = Date(),
+    now: Date = .now,
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> String {
@@ -255,6 +336,5 @@ func competitionUpdatedText(
     guard calendar.isDate(date, inSameDayAs: now) else {
         return competitionMomentText(date, now: now, locale: locale, timeZone: timeZone)
     }
-    return competitionDateFormatter("jmm", locale: locale, timeZone: timeZone)
-        .string(from: date)
+    return competitionFormattedDate(date, template: "jmm", locale: locale, timeZone: timeZone)
 }

@@ -469,9 +469,9 @@ struct CompetitionJudgesReveal: View {
             .font(.score(size: scaled(30))).minimumScaleFactor(0.5).lineLimit(1)
             .padding(.horizontal, 12).padding(.vertical, 6)
             .foregroundStyle(Theme.ink)
-            .overlay(Rectangle().stroke(Theme.ink, lineWidth: 3))
+            .overlay { Rectangle().stroke(Theme.ink, lineWidth: 3) }
             .padding(4)
-            .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))
+            .overlay { Rectangle().stroke(Theme.ink, lineWidth: 1) }
             .overlay {
                 if !reduceMotion {
                     Rectangle().stroke(Theme.ink, lineWidth: 2)
@@ -772,8 +772,8 @@ private struct CompetitionJudgesRing: View {
         let diameter = max(1, base + (big - base) * zoom)
         return PersonAvatar(name: fighter.name, photo: fighter.photo, size: diameter, isYou: fighter.isYou,
                             isBot: fighter.isBot, initialFont: .score(size: diameter * 0.5))
-            .overlay(Circle().stroke(isYours ? Theme.youFill : Theme.ink.opacity(0.2), lineWidth: isYours ? 2 : 1))
-            .overlay(Circle().fill(Theme.beltWell.opacity(0.75 * Double(1 - figure.lit))))
+            .overlay { Circle().stroke(isYours ? Theme.youFill : Theme.ink.opacity(0.2), lineWidth: isYours ? 2 : 1) }
+            .overlay { Circle().fill(Theme.beltWell.opacity(0.75 * Double(1 - figure.lit))) }
             .overlay(alignment: .bottom) {
                 Text(fighter.isYou ? "YOU" : fighter.name.uppercased())
                     .themeLabel(tracking: 1.5).foregroundStyle(isYours ? Theme.youFill : Theme.ink)

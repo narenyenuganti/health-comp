@@ -15,7 +15,7 @@ struct WatchMatchEntry: TimelineEntry {
 
 struct WatchMatchProvider: TimelineProvider {
     private var sample: CompetitionWidgetSnapshot {
-        .sample(now: Date(), url: URL(string: "healthcomp://competition/00000000-0000-0000-0000-000000000005")!)
+        .sample(now: Date.now, url: URL(string: "healthcomp://competition/00000000-0000-0000-0000-000000000005")!)
     }
 
     private var stored: CompetitionWidgetSnapshot? {
@@ -23,15 +23,15 @@ struct WatchMatchProvider: TimelineProvider {
     }
 
     func placeholder(in context: Context) -> WatchMatchEntry {
-        WatchMatchEntry(date: Date(), snapshot: sample)
+        WatchMatchEntry(date: Date.now, snapshot: sample)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (WatchMatchEntry) -> Void) {
-        completion(WatchMatchEntry(date: Date(), snapshot: context.isPreview ? sample : stored))
+        completion(WatchMatchEntry(date: Date.now, snapshot: context.isPreview ? sample : stored))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WatchMatchEntry>) -> Void) {
-        let now = Date()
+        let now = Date.now
         let snapshot = stored
         let stale = (snapshot?.matches ?? []).compactMap {
             $0.updatedAt?.addingTimeInterval(CompetitionWidgetSnapshot.Match.staleAfter)

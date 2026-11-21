@@ -34,7 +34,7 @@ struct AppAttestClient: Sendable {
         submit: @escaping @Sendable (
             CompetitionAttestedScoreRevisionRequest
         ) async throws -> CompetitionScoreRevisionResponse,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date.now }
     ) -> Self {
         let coordinator = AppAttestClientCoordinator(
             profileID: profileID,
@@ -88,7 +88,7 @@ enum AppAttestClientDataV1 {
         guard canonical != "00000000-0000-0000-0000-000000000000" else {
             throw CompetitionRemoteFailure.serverContractMismatch
         }
-        let hex = canonical.replacingOccurrences(of: "-", with: "")
+        let hex = canonical.replacing("-", with: "")
         var result = Data(capacity: 16)
         var index = hex.startIndex
         while index < hex.endIndex {

@@ -339,7 +339,7 @@ private struct CompetitionVersusIntroView: View {
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     private var reduceMotion: Bool { systemReduceMotion || CompetitionVersusIntroGate.assumesReduceMotion }
     @ScaledMetric(relativeTo: .subheadline) private var labelLine: CGFloat = 20
-    @State private var start = Date()
+    @State private var start = Date.now
     @State private var isSkipped = false
     @State private var isShown = false
     @State private var hits = 0
@@ -376,7 +376,7 @@ private struct CompetitionVersusIntroView: View {
         }
         .sensoryFeedback(.impact(weight: .heavy), trigger: hits)
         .sensoryFeedback(.impact(weight: .light), trigger: stamps)
-        .onAppear { start = Date() }
+        .onAppear { start = Date.now }
         .task(id: isSkipped) { await play() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(content.announcement)
@@ -387,7 +387,7 @@ private struct CompetitionVersusIntroView: View {
     private var isHeld: Bool { CompetitionVersusIntroGate.holds && !isSkipped }
 
     private func sleep(until t: Double) async throws {
-        try await Task.sleep(for: .seconds(max(t - Date().timeIntervalSince(start), 0)))
+        try await Task.sleep(for: .seconds(max(t - Date.now.timeIntervalSince(start), 0)))
     }
 
     private func play() async {
@@ -408,7 +408,7 @@ private struct CompetitionVersusIntroView: View {
                 try await Task.sleep(for: .seconds(0.2))
             } else {
                 if !isSkipped {
-                    Sounds.play(.versus, in: VersusClock.contact - Date().timeIntervalSince(start))
+                    Sounds.play(.versus, in: VersusClock.contact - Date.now.timeIntervalSince(start))
                     try await sleep(until: VersusClock.contact)
                     hits += 1
                     try await sleep(until: VersusClock.stamp)
@@ -423,10 +423,10 @@ private struct CompetitionVersusIntroView: View {
     }
 
     private func skip() {
-        guard isHeld || !isSkipped && Date().timeIntervalSince(start) < VersusClock.split else {
+        guard isHeld || !isSkipped && Date.now.timeIntervalSince(start) < VersusClock.split else {
             return
         }
-        start = Date().addingTimeInterval(-VersusClock.split)
+        start = Date.now.addingTimeInterval(-VersusClock.split)
         isSkipped = true
     }
 
@@ -525,8 +525,8 @@ private struct CompetitionVersusIntroView: View {
             .value(target: 1.0, time: max(t - VersusClock.names, 0))
         let tape = isYours ? content.yourTape : content.theirTape
         let name = (isYours ? content.you : content.them).uppercased()
-            .replacingOccurrences(of: "-", with: "-\n")
-            .replacingOccurrences(of: " ", with: "\n")
+            .replacing("-", with: "-\n")
+            .replacing(" ", with: "\n")
         return VStack(alignment: isYours ? .leading : .trailing, spacing: 8 * stage.k) {
             Text(name)
                 .font(.score(size: 128 * stage.k))

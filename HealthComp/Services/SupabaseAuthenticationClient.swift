@@ -100,7 +100,7 @@ enum SupabaseAuthenticationClient {
         nonce: @escaping @Sendable () throws -> AppleSignInNonce = {
             try AppleSignInNonce.generate()
         },
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date.now }
     ) -> AuthenticationClient {
         var client = AuthenticationClient(
             restoreSession: {

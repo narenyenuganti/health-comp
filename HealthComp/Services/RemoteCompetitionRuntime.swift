@@ -534,7 +534,7 @@ actor RemoteCompetitionRuntime {
         outboxStore: (any CompetitionOutboxStore)? = nil,
         cacheStore: (any RemoteCompetitionCacheStore)? = nil,
         groupMatchStore: GroupMatchStore? = nil,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date.now }
     ) {
         self.profileID = profileID
         self.store = store

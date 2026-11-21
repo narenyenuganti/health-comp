@@ -89,20 +89,20 @@ struct CompetitionWidgetEntry: TimelineEntry {
 
 struct CompetitionWidgetProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> CompetitionWidgetEntry {
-        .sample(Date())
+        .sample(Date.now)
     }
 
     func snapshot(for configuration: CompetitionWidgetIntent, in context: Context) async -> CompetitionWidgetEntry {
-        guard !context.isPreview else { return .sample(Date()) }
+        guard !context.isPreview else { return .sample(Date.now) }
         return CompetitionWidgetEntry(
-            date: Date(),
+            date: Date.now,
             snapshot: CompetitionWidgetSnapshot.load(from: CompetitionWidgetSnapshot.fileURL()),
             personID: configuration.personID
         )
     }
 
     func timeline(for configuration: CompetitionWidgetIntent, in context: Context) async -> Timeline<CompetitionWidgetEntry> {
-        let now = Date()
+        let now = Date.now
         let snapshot = CompetitionWidgetSnapshot.load(from: CompetitionWidgetSnapshot.fileURL())
         let boundaries = snapshot?.timelineDates(after: now) ?? []
         let entries = ([now] + boundaries).map {
