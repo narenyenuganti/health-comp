@@ -22,13 +22,17 @@ The Apple Watch app, watchOS complications, iOS Home/Lock Screen widgets, and Dy
   - `finishDelivery()` polls `hasContentPending` and calls `refresh()` directly before the system re-suspends, because `hasContentPending` flipping false does not guarantee the delegate's actor hop has executed yet.
   - `seen.sentAt` advances only after `write(data)` succeeds atomically so a failed write retries on the next delivery.
 
-### 3. Watch First-Result Reveal Choreography and Screen Layout
-- `HealthCompWatch/WatchBoardView.swift`:
+### 3. Watch Crown-Paged Architecture, Reveal Choreography, and Layout
+- `HealthCompWatch/WatchBoardView.swift` & `HealthComp/Features/Widgets/CompetitionWidgetSnapshot.swift`:
+  - `CompetitionWidgetSnapshot.Match` carries optional, backward-compatible `todayRings`, `chase.suggestion`, and `rivalry` fields populated on iPhone (`CompetitionWidgetSnapshotClient`) so Watch stays strictly read-only with zero HealthKit or network dependencies.
+  - `WatchRootView` launches directly onto the featured match (or notification-routed match) instead of forcing multi-match users through a flat list; when multiple matches exist, a `.topBarLeading` toolbar button toggles the tonal card-based `WatchMatchesListView` switcher.
+  - Each active match renders inside a vertical Digital Crown `TabView(.verticalPage(transitionStyle: .blur))` with semantic top-down `containerBackground` washes: Page 1 (Match Overview scoreboard, labeled 7-day strip, belt chip, and Today swing or chase bar), Page 2 (Today's Rings slanted progress bars + actionable What It Takes chase card), Page 3 (7-day paired column chart masking upcoming days + Best Day / Daily Avg + scrollable per-day exact scores, enabled for both 1v1 and Group matches), and Page 4 (Rivalry H2H record, 5-week form strip, Belt reign card, and strongest ring edge).
   - `drawn` trails `model.snapshot` so a background delivery while the wrist is down does not mutate the visible screen until the user raises their wrist.
-  - `WatchScreen` is its own view struct so pushed navigation destinations continue tracking `drawn` and `path` updates.
-  - First-result reveal (`WatchBoardPage.reveal()`) plays once per match per device: `stage == .done` guards duplicate trigger flips before `markSeen` runs (guaranteeing one clock and one haptic), and `markSeen` runs at the start so dropping the wrist never replays the reveal. `numberAnimation` is `nil` when entering rest state so a live match turning final does not flash the final number early.
-  - `WatchBeltCard` holds for `(reduceMotion ? 0.2 : 0.75) + 1.2` seconds—sanctioned timing outside `Motion.swift`—and VoiceOver skips the overlay card while appending its copy (`spokenCard`) to the Board's accessibility label.
-  - Pushed boards add `12 pt` top padding so the watchOS back button does not overlap content on 40 mm cases; group boards scroll because four seats overflow 40 mm at large Dynamic Type; `WatchBeltPlate` reuses `MarkPolygon.bars` and `MarkPolygon.block` so the belt matches the brand mark.
+  - First-result reveal (`WatchOverviewPage.reveal()`) plays once per match per device: `stage == .done` guards duplicate trigger flips before `markSeen` runs (guaranteeing one clock and one haptic), and `markSeen` runs at the start so dropping the wrist never replays the reveal. `numberAnimation` is `nil` when entering rest state so a live match turning final does not flash the final number early.
+  - `WatchBeltCard` holds for `(reduceMotion ? 0.2 : 0.75) + 1.2` seconds—sanctioned timing outside `Motion.swift`—and VoiceOver skips the overlay card while appending its copy (`spokenCard`) to the Overview's accessibility label.
+  - Every vertical page adds right-edge clearance (`10 pt`) so watchOS vertical page dots never overlap scores, wraps taller infographic pages in `.scrollIndicators(.hidden)` `ScrollView`s so 40 mm cases and large Dynamic Type stay clear of the status bar and toolbar, and reuses `MarkPolygon.bars` and `MarkPolygon.block` in `WatchBeltPlate`.
+- `HealthCompWatchWidgets/HealthCompWatchWidgets.swift`:
+  - Rectangular Smart Stack widgets pair a subtle semantic `.containerBackground(for: .widget)` wash (amber when leading and fresh, neutral slate when trailing/stale) with HealthComp's 12° slanted score divider and inline `"<N> to lead"` status when trailing.
 
 ### 4. WidgetKit Timelines, Staleness, and Person Picker Stability
 - `HealthCompWatchWidgets/HealthCompWatchWidgets.swift` & `HealthCompWidgets/HealthCompWidgets.swift`:
