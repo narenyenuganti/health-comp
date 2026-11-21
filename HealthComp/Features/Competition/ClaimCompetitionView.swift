@@ -69,10 +69,14 @@ struct ClaimCompetitionView: View {
                     }
                     .frame(maxWidth: 440)
 
-                    if showsPreview {
+                    if showsPreview, let preview {
+                        CompetitionMetricTagStrip(metrics: preview.metrics)
+                            .frame(maxWidth: 440, alignment: .leading)
+                            .transition(Motion.appear)
                         CompetitionRulesCard(
                             source: .remoteParticipants,
-                            opponentName: preview?.sender.displayName
+                            opponentName: preview.sender.displayName,
+                            metrics: preview.metrics
                         )
                         .frame(maxWidth: 440)
                         .transition(Motion.appear)

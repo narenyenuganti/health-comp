@@ -1,4 +1,5 @@
 import CompetitionCore
+import ComposableArchitecture
 import XCTest
 @testable import HealthComp
 
@@ -195,5 +196,114 @@ final class CompetitionSleepTests: XCTestCase {
         let scoring = sections.first { $0.title == "SCORING" }?.rows ?? []
         XCTAssertEqual(scoring.first { $0.label == "Best week" }?.value, "2,400")
         XCTAssertEqual(scoring.first { $0.label == "Best day" }?.value, "2,400")
+    }
+
+    @MainActor
+    func testAcceptingSleepGroupMatchRequestsSleepAuthorization() async throws {
+        let sleepMatchID = CompetitionID(UUID())
+        let ringsMatchID = CompetitionID(UUID())
+        let seat1 = UUID()
+        let seat2 = UUID()
+        let seat3 = UUID()
+        let seats = [
+            GroupMatchSeat(id: seat1, number: 1, name: "Alex", occupant: .person(profileID: them, invite: .accepted)),
+            GroupMatchSeat(id: seat2, number: 2, name: "Naren", occupant: .person(profileID: me, invite: .invited)),
+            GroupMatchSeat(id: seat3, number: 3, name: "Pacer", occupant: .bot(.pacer)),
+        ]
+        let now = Date(timeIntervalSince1970: 1_786_867_200)
+        let sleepGroup = try GroupMatchPresentation(
+            id: sleepMatchID,
+            lifecycle: .pending(direction: .incoming, createdAt: now, expiresAt: now.addingTimeInterval(3_600)),
+            format: .threeWay,
+            seats: seats,
+            viewerSeatID: seat2,
+            metrics: [.move, .sleep]
+        )
+        let ringsGroup = try GroupMatchPresentation(
+            id: ringsMatchID,
+            lifecycle: .pending(direction: .incoming, createdAt: now, expiresAt: now.addingTimeInterval(3_600)),
+            format: .threeWay,
+            seats: seats,
+            viewerSeatID: seat2,
+            metrics: .threeRings
+        )
+        let publication = CompetitionPublication(
+            publicationRevision: 1,
+            dashboard: CompetitionDashboard(
+                competitions: [],
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0,
+                groupMatches: [sleepGroup, ringsGroup]
+            )
+        )
+        let authCount = LockIsolated(0)
+        var state = CompetitionFeature.State()
+        state.publication = publication
+        let store = TestStore(initialState: state) {
+            CompetitionFeature()
+        } withDependencies: {
+            $0.competitionClient = .testValue
+            $0.competitionClient.groupMatchCommand = { _ in publication }
+            $0.competitionClient.requestSleepAuthorization = { authCount.withValue { $0 += 1 } }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.group(.commandTapped(.accept(ringsMatchID))))
+        await store.finish()
+        XCTAssertEqual(authCount.value, 0)
+
+        await store.send(.group(.commandTapped(.accept(sleepMatchID))))
+        await store.finish()
+        XCTAssertEqual(authCount.value, 1)
+    }
+
+    @MainActor
+    func testAcceptingSleepClaimPreviewRequestsSleepAuthorization() async {
+        let now = Date(timeIntervalSince1970: 1_786_867_200)
+        let sender = AuthenticatedProfile(id: them, displayName: "Alex")
+        let authCount = LockIsolated(0)
+
+        var sleepState = MainTabFeature.State()
+        sleepState.inviteClaimStatus = .ready
+        sleepState.inviteClaimPreview = CompetitionInvitePreview(
+            competitionID: UUID(),
+            state: .pending,
+            sender: sender,
+            timeZoneIdentifier: "UTC",
+            expiresAt: now.addingTimeInterval(3_600),
+            metrics: [.sleep]
+        )
+        let sleepStore = TestStore(initialState: sleepState) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = .testValue
+            $0.competitionClient.requestSleepAuthorization = { authCount.withValue { $0 += 1 } }
+        }
+        sleepStore.exhaustivity = .off
+        await sleepStore.send(.acceptClaimTapped)
+        await sleepStore.finish()
+        XCTAssertEqual(authCount.value, 1)
+
+        var ringsState = MainTabFeature.State()
+        ringsState.inviteClaimStatus = .ready
+        ringsState.inviteClaimPreview = CompetitionInvitePreview(
+            competitionID: UUID(),
+            state: .pending,
+            sender: sender,
+            timeZoneIdentifier: "UTC",
+            expiresAt: now.addingTimeInterval(3_600),
+            metrics: .threeRings
+        )
+        let ringsStore = TestStore(initialState: ringsState) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = .testValue
+            $0.competitionClient.requestSleepAuthorization = { authCount.withValue { $0 += 1 } }
+        }
+        ringsStore.exhaustivity = .off
+        await ringsStore.send(.acceptClaimTapped)
+        await ringsStore.finish()
+        XCTAssertEqual(authCount.value, 1)
     }
 }

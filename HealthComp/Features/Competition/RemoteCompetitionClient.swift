@@ -207,7 +207,7 @@ extension CompetitionClient {
                 try await coordinator.remote { try await $0.reportProfile(profileID) }
             },
             previewInvite: { request in
-                try await coordinator.remote { try await $0.previewInvite(request) }
+                try await coordinator.previewInvite(request)
             },
             loadChallengeLinkCode: {
                 try await coordinator.remote { try await $0.loadChallengeLinkCode() }
@@ -1065,7 +1065,12 @@ private actor RemoteCompetitionClientCoordinator {
                 remote = .create(creator: profile.id, draft, timeZoneIdentifier: saved.zone, idempotencyKey: saved.key)
             } else {
                 switch command {
-                case let .accept(id): remote = .accept(id.rawValue)
+                case let .accept(id):
+                    if latestMetrics.first(where: { $0.competitionID == id.rawValue })?.metrics.includesSleep == true
+                        || latestSleep.contains(where: { $0.competitionID == id.rawValue }) {
+                        try? await environment.requestSleepAuthorization()
+                    }
+                    remote = .accept(id.rawValue)
                 case let .decline(id), let .withdraw(id): remote = .decline(id.rawValue)
                 case let .cancel(id): remote = .cancel(id.rawValue)
                 case let .leave(id): remote = .leave(id.rawValue)
@@ -1624,6 +1629,29 @@ private actor RemoteCompetitionClientCoordinator {
             }
             guard runtime != nil else { throw CompetitionRemoteFailure.unauthenticated }
             return try await remoteAPI.resolveInviteRecipient(profileID)
+        }
+    }
+
+    func previewInvite(_ request: CompetitionInviteClaimRequest) async throws -> CompetitionInvitePreview {
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
+            guard runtime != nil else { throw CompetitionRemoteFailure.unauthenticated }
+            var preview = try await remoteAPI.previewInvite(request)
+            if let found = latestMetrics.first(where: { $0.competitionID == preview.competitionID }) {
+                preview.metrics = found.metrics
+            } else if let fetched = try? await remoteAPI.listCompetitionMetrics() {
+                latestMetrics = fetched
+                if let found = fetched.first(where: { $0.competitionID == preview.competitionID }) {
+                    preview.metrics = found.metrics
+                } else if latestSleep.contains(where: { $0.competitionID == preview.competitionID }) {
+                    preview.metrics = .all
+                }
+            } else if latestSleep.contains(where: { $0.competitionID == preview.competitionID }) {
+                preview.metrics = .all
+            }
+            return preview
         }
     }
 
