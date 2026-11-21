@@ -60,7 +60,7 @@ final class HealthCompWatchUITests: XCTestCase {
         }
     }
 
-    func testGroupMatches() {
+    func testGroupMatchesAndGroupWeek() {
         for (scenario, label) in [
             ("groupFFA", "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam. 1st, Sam, 1,712 points. "
                 + "2nd, You, 1,664 points. 3rd, Priya, 1,498 points. 4th, Leo, 1,203 points."),
@@ -70,11 +70,11 @@ final class HealthCompWatchUITests: XCTestCase {
             let match = element(app, "watch.match")
             XCTAssertTrue(match.waitForExistence(timeout: 15), scenario)
             XCTAssertEqual(match.label, label)
-            let shot = XCTAttachment(screenshot: app.screenshot())
-            shot.name = "watch-\(scenario)"
-            shot.lifetime = .keepAlways
-            add(shot)
+            shoot(app, "watch-\(scenario)")
         }
+
+        let groupWeek = launch("groupFFA", "--watch-page", "week")
+        XCTAssertTrue(element(groupWeek, "watch.week").waitForExistence(timeout: 15))
     }
 
     func testTheBeltIsSpoken() {
@@ -111,8 +111,13 @@ final class HealthCompWatchUITests: XCTestCase {
             .firstMatch
     }
 
-    private func back(_ app: XCUIApplication) {
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.14)).tap()
+    private func openMatches(_ app: XCUIApplication) {
+        let button = element(app, "watch.matches.button")
+        if button.waitForExistence(timeout: 5), button.isHittable {
+            button.tap()
+        } else {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.14)).tap()
+        }
     }
 
     private func shoot(_ app: XCUIApplication, _ name: String) {
@@ -122,10 +127,16 @@ final class HealthCompWatchUITests: XCTestCase {
         add(shot)
     }
 
-    func testTheCardListsEveryMatch() {
+    func testMultiMatchLaunchesOnFeaturedAndSwitchesViaMatchesList() {
         let app = launch("card")
-        XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 15))
-        XCTAssertFalse(element(app, "watch.match").exists)
+        let featured = element(app, "watch.match")
+        XCTAssertTrue(featured.waitForExistence(timeout: 15))
+        XCTAssertTrue(featured.label.hasPrefix("Sam, Day 5 of 7."), featured.label)
+        XCTAssertTrue(element(app, "watch.matches.button").waitForExistence(timeout: 5))
+        shoot(app, "watch-featured")
+
+        openMatches(app)
+        XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 5))
         XCTAssertEqual(rows(app), [
             "You lead Sam by 54 points. Day 5.",
             "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam.",
@@ -134,63 +145,54 @@ final class HealthCompWatchUITests: XCTestCase {
             "Jo, Final.",
         ])
         shoot(app, "watch-card")
+
         app.swipeUp()
         sleep(1)
-        shoot(app, "watch-card-end")
-
         let jo = row(app, "Jo")
+        XCTAssertTrue(jo.waitForExistence(timeout: 5))
         jo.tap()
         let board = element(app, "watch.match")
         XCTAssertTrue(board.waitForExistence(timeout: 5))
         XCTAssertTrue(board.label.hasPrefix("Jo, Final."), board.label)
         sleep(4)
-        back(app)
+
+        openMatches(app)
         XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 5))
+        app.swipeUp()
+        sleep(1)
         XCTAssertTrue(row(app, "Jo").label.contains("Won by 114 points."), row(app, "Jo").label)
     }
 
-    func testARowOpensTheBoardAndTheBoardOpensTheWeek() {
-        let app = launch("card")
-        XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 15))
-        row(app, "Robin").tap()
-        let board = element(app, "watch.match")
-        XCTAssertTrue(board.waitForExistence(timeout: 5))
-        XCTAssertTrue(board.label.hasPrefix("Robin, Day 3 of 7."), board.label)
-        shoot(app, "watch-card-board")
+    func testVerticalPagesShowTodayRingsWeekChartAndRivalry() {
+        let todayApp = launch("trailing", "--watch-page", "today")
+        let today = element(todayApp, "watch.today")
+        XCTAssertTrue(today.waitForExistence(timeout: 15))
+        XCTAssertTrue(today.label.contains("165 kcal"), today.label)
+        shoot(todayApp, "watch-today-chase")
 
-        board.tap()
-        let week = element(app, "watch.week")
-        XCTAssertTrue(week.waitForExistence(timeout: 5))
-        let first = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label ENDSWITH '. You 142. Robin 388.'")).firstMatch
-        XCTAssertTrue(first.exists, app.debugDescription)
-        let empty = app.descendants(matching: .any).matching(NSPredicate(format: "label ENDSWITH '. No points.'"))
+        let weekApp = launch("trailing", "--watch-page", "week")
+        let week = element(weekApp, "watch.week")
+        XCTAssertTrue(week.waitForExistence(timeout: 15))
+        let first = weekApp.descendants(matching: .any)
+            .matching(NSPredicate(format: "label ENDSWITH '. You 200. Sam 220.'")).firstMatch
+        XCTAssertTrue(first.exists, weekApp.debugDescription)
+        let empty = weekApp.descendants(matching: .any).matching(NSPredicate(format: "label ENDSWITH '. No points.'"))
         XCTAssertEqual(empty.count, 4)
-        shoot(app, "watch-week")
+        shoot(weekApp, "watch-week")
 
-        back(app)
-        XCTAssertTrue(week.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(element(app, "watch.match").waitForExistence(timeout: 5))
+        let rivalryApp = launch("beltLive", "--watch-page", "rivalry")
+        let rivalry = element(rivalryApp, "watch.rivalry")
+        XCTAssertTrue(rivalry.waitForExistence(timeout: 15))
+        XCTAssertTrue(rivalry.label.contains("4 wins, 2 losses"), rivalry.label)
+        XCTAssertTrue(rivalry.label.contains("You hold the belt, 2 defenses."), rivalry.label)
+        shoot(rivalryApp, "watch-rivalry")
     }
 
-    func testAGroupBoardHasNoWeek() {
-        let app = launch("card")
-        XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 15))
-        row(app, "Four-Way").tap()
-        let board = element(app, "watch.match")
-        XCTAssertTrue(board.waitForExistence(timeout: 5))
-        board.tap()
-        sleep(1)
-        XCTAssertFalse(element(app, "watch.week").exists)
-    }
-
-    func testOneMatchOpensOnTheBoard() {
+    func testOneMatchHidesMatchesButton() {
         let app = launch("live")
-        let board = element(app, "watch.match")
-        XCTAssertTrue(board.waitForExistence(timeout: 15))
+        XCTAssertTrue(element(app, "watch.match").waitForExistence(timeout: 15))
+        XCTAssertFalse(element(app, "watch.matches.button").exists)
         XCTAssertFalse(element(app, "watch.card").exists)
-        board.tap()
-        XCTAssertTrue(element(app, "watch.week").waitForExistence(timeout: 5))
     }
 
     func testATappedAlertOpensItsMatch() {
@@ -198,7 +200,7 @@ final class HealthCompWatchUITests: XCTestCase {
         let board = element(app, "watch.match")
         XCTAssertTrue(board.waitForExistence(timeout: 15))
         XCTAssertTrue(board.label.hasPrefix("Robin, Day 3 of 7."), board.label)
-        back(app)
+        openMatches(app)
         XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 5))
     }
 
