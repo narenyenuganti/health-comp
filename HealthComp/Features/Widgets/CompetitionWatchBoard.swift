@@ -86,6 +86,55 @@ enum CompetitionWatchAlert {
     }
 }
 
+struct CompetitionWatchChase: Equatable, Sendable {
+    var fill: Double
+    var lead: String?
+    var line: String
+    var suggestion: String?
+    var spoken: String
+}
+
+struct CompetitionWatchPlayedDay: Equatable, Sendable {
+    var day: String
+    var spoken: String
+    var you: Double?
+    var them: Double?
+    var isToday: Bool
+    var isUpcoming: Bool
+}
+
+extension CompetitionWidgetSnapshot.TodayRings.RingKind {
+    var displayName: String {
+        switch self {
+        case .move: "Move"
+        case .exercise: "Exercise"
+        case .stand: "Stand"
+        case .sleep: "Sleep"
+        }
+    }
+}
+
+extension CompetitionWidgetSnapshot.Rivalry {
+    var recordText: String {
+        ([wins, losses] + (ties > 0 ? [ties] : [])).map(String.init).joined(separator: "–")
+    }
+
+    func accessibilityLabel(opponentName: String) -> String {
+        func count(_ value: Int, _ one: String, _ many: String) -> String {
+            "\(value) \(value == 1 ? one : many)"
+        }
+        var parts = [
+            "All-time versus \(opponentName): \(count(wins, "win", "wins")), \(count(losses, "loss", "losses"))"
+                + (ties > 0 ? ", \(count(ties, "tie", "ties"))" : "") + ".",
+        ]
+        if let formLine { parts.append(formLine.hasSuffix(".") ? formLine : formLine + ".") }
+        if let edgeRing, let edgeRecord {
+            parts.append("Strongest ring: \(edgeRing.displayName), \(edgeRecord).")
+        }
+        return parts.joined(separator: " ")
+    }
+}
+
 extension CompetitionWidgetSnapshot.Match {
     static let staleAfter: TimeInterval = 3_600
 
@@ -130,19 +179,69 @@ extension CompetitionWidgetSnapshot.Match {
     func chase(
         at date: Date,
         locale: Locale = .current
-    ) -> (fill: Double, lead: String?, line: String, spoken: String)? {
+    ) -> CompetitionWatchChase? {
         guard let chase, side == .them, state(at: date) == .live(day: chase.day) else { return nil }
         guard let points = chase.points else {
-            return (0, nil, "Out of reach today", "Out of reach today.")
+            return CompetitionWatchChase(
+                fill: 0, lead: nil, line: "Out of reach today", suggestion: nil, spoken: "Out of reach today."
+            )
         }
         let today = userDayPoints.indices.contains(chase.day - 1) ? userDayPoints[chase.day - 1] ?? 0 : 0
         let total = competitionPointsText(today + points, locale: locale)
         let line = "\(competitionPointsText(today, locale: locale)) of \(total) today"
+        return CompetitionWatchChase(
+            fill: today / max(today + points, 1),
+            lead: competitionPointsText(points, locale: locale),
+            line: line,
+            suggestion: chase.suggestion,
+            spoken: "\(competitionPointsAccessibilityText(points, locale: locale)) to take the lead. \(line)."
+        )
+    }
+
+    func activeTodayRings(at date: Date) -> CompetitionWidgetSnapshot.TodayRings? {
+        guard let todayRings, state(at: date) == .live(day: todayRings.dayOrdinal), !todayRings.rows.isEmpty
+        else { return nil }
+        return todayRings
+    }
+
+    func todayScores(at date: Date) -> (you: Double?, them: Double?) {
+        let index: Int? = switch state(at: date) {
+        case let .live(day): day - 1
+        case .finalPending: 6
+        default: nil
+        }
+        guard let index else { return (nil, nil) }
         return (
-            today / max(today + points, 1),
-            competitionPointsText(points, locale: locale),
-            line,
-            "\(competitionPointsAccessibilityText(points, locale: locale)) to take the lead. \(line)."
+            userDayPoints.indices.contains(index) ? userDayPoints[index] : nil,
+            opponentDayPoints.indices.contains(index) ? opponentDayPoints[index] : nil
+        )
+    }
+
+    func playedDayPoints(at date: Date, locale: Locale = .current) -> [CompetitionWatchPlayedDay] {
+        let rows = weekRows(locale: locale)
+        let outcomes = dayOutcomes(at: date)
+        let currentIndex: Int? = if case let .live(day) = state(at: date) { day - 1 } else { nil }
+        return rows.enumerated().map { index, row in
+            let upcoming = outcomes.indices.contains(index) && outcomes[index] == .upcoming
+            let you = !upcoming && userDayPoints.indices.contains(index) ? userDayPoints[index] : nil
+            let them = !upcoming && opponentDayPoints.indices.contains(index) ? opponentDayPoints[index] : nil
+            return CompetitionWatchPlayedDay(
+                day: row.day,
+                spoken: row.spoken,
+                you: you,
+                them: them,
+                isToday: index == currentIndex,
+                isUpcoming: upcoming
+            )
+        }
+    }
+
+    func roundTally(at date: Date) -> (won: Int, lost: Int, tied: Int) {
+        let outcomes = dayOutcomes(at: date)
+        return (
+            outcomes.filter { $0 == .won }.count,
+            outcomes.filter { $0 == .lost }.count,
+            outcomes.filter { $0 == .tied }.count
         )
     }
 

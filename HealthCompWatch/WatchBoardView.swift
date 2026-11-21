@@ -476,7 +476,7 @@ private struct WatchBoardPage: View {
         .animation(Motion.fade, value: status)
     }
 
-    private func chaseBar(_ chase: (fill: Double, lead: String?, line: String, spoken: String)) -> some View {
+    private func chaseBar(_ chase: CompetitionWatchChase) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             if let lead = chase.lead {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
