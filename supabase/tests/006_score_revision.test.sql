@@ -64,7 +64,6 @@ select throws_ok(
   $$select public.submit_score_revision('63000000-0000-0000-0000-000000000001','64000000-0000-4000-8000-000000000016',1,5,statement_timestamp()+interval '2 days','activeEnergyKilocalories','standHours',0,0,0,'available','healthcomp.activity-score.v1')$$,
   '22023', 'day_mismatch', 'catch-up rejects an evaluation beyond the server calendar day');
 
--- A real Day-8 grace window, independent of the SQL session's calendar.
 set local time zone 'Pacific/Kiritimati';
 insert into public.competitions (id, creator_profile_id, time_zone_identifier, start_day, scoring_policy_identity, lifecycle, invitation_expires_at, best_available_deadline)
 values

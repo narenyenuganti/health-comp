@@ -20,11 +20,9 @@ final class GroupMatchResultUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["UNANIMOUS DECISION"].waitForExistence(timeout: 4))
         XCTAssertTrue(app.staticTexts["YOUR WINNER"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.groupElement("competition.judges.payoff").waitForExistence(timeout: 4))
-        // It ends by itself on the result.
         XCTAssertTrue(app.groupElement("competition.judges.reveal").waitForNonExistence(timeout: 8))
         XCTAssertEqual(app.groupElement("competition.group.result.title").label, "You won")
 
-        // Doubles, skipped.
         app.terminate()
         app = XCUIApplication.launchGroupLab("result-doubles", arguments: ["--judges-decision"])
         XCTAssertTrue(app.groupElement("competition.judges.seal").waitForExistence(timeout: 8))
@@ -43,7 +41,6 @@ final class GroupMatchResultUITests: XCTestCase {
         )
         XCTAssertTrue(app.groupElement("competition.group.result.row.1").label.hasPrefix("1st, You"))
         XCTAssertTrue(app.groupElement("competition.group.result.row.4").label.hasPrefix("4th, Leo"))
-        // Rematch Everyone opens New Match on the same format; nothing is sent yet.
         app.buttons["competition.group.result.rematch"].tap()
         XCTAssertTrue(app.groupElement("competition.group.format.four-way").waitForExistence(timeout: 4))
         app.buttons["competition.group.format.duel"].tap()
@@ -59,7 +56,6 @@ final class GroupMatchResultUITests: XCTestCase {
         XCTAssertTrue(places[1].hasPrefix("1st, tied"), places[1])
         XCTAssertTrue(places[2].hasPrefix("3rd, Priya"), places[2])
 
-        // A tie across the podium's edge lists every place the same way.
         app.terminate()
         app = XCUIApplication.launchGroupLab("result-ffa-tied-third")
         XCTAssertTrue(app.groupElement("competition.group.result.title").waitForExistence(timeout: 8))

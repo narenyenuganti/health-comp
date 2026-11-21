@@ -1,5 +1,4 @@
 begin;
--- Included inside each group test transaction; no product fixture state persists.
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
@@ -29,7 +28,6 @@ begin
  insert into gm values(label,result);
  return result;
 end; $$;
--- All registration generations must clear capabilities they cannot advertise.
 select pg_temp.as_user(2);
 select is(public.register_current_device_installation(md5('group-install-2')::uuid,repeat('ab',32),'sandbox',true,true,true,array['friend_request','friend_accepted','reaction'],true),
   jsonb_build_object('installation_id',md5('group-install-2')::uuid,'environment','sandbox','state','active'),'combined registration retains exact response');

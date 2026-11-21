@@ -154,8 +154,6 @@ insert into public.competition_participants (
 
 set constraints all immediate;
 
--- Exercise the public presentation/feed seam before deletion so the final
--- privacy assertion cannot pass merely because no historical name was stored.
 set local role authenticated;
 select set_config(
   'request.jwt.claims',

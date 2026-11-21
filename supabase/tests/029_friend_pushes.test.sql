@@ -72,7 +72,6 @@ select pg_temp.send(1,2);
 select is((select count(*) from private.competition_notification_work where kind='friend_request'),6::bigint,'request can notify again after 24 hours');
 select pg_temp.respond(2,1,false);
 select is((select count(*) from private.competition_notification_work where state in ('pending','leased')),0::bigint,'decline supersedes request and queues nothing');
--- Crossed requests notify the person whose original request was accepted.
 select pg_temp.register(3,6,true);
 select pg_temp.register(4,7,true);
 select pg_temp.send(3,4);
@@ -84,7 +83,6 @@ select public.report_profile(pg_temp.pid(4));
 select is((select count(*) from private.competition_notification_work where kind='friend_accepted' and recipient_profile_id=pg_temp.pid(3)),1::bigint,'report queues no new work');
 select public.block_profile(pg_temp.pid(4));
 select is((select count(*) from private.competition_notification_work where state in ('pending','leased')),0::bigint,'block supersedes accepted work');
--- Pending requests disappear for either blocker direction and either deactivated side.
 select pg_temp.register(5,8,true);
 select pg_temp.register(6,9,true);
 select pg_temp.send(5,6);
@@ -102,7 +100,6 @@ select pg_temp.send(9,10);
 select pg_temp.respond(10,9,true);
 update public.profiles set state='deleting' where id=pg_temp.pid(9);
 select is((select count(*) from private.competition_notification_work where state in ('pending','leased')),0::bigint,'recipient deactivation supersedes acceptance');
--- Re-registration immediately revokes capability; leases must recheck both switches.
 select pg_temp.register(11,14,true);
 select pg_temp.register(12,15,true);
 select pg_temp.send(11,12);
@@ -115,7 +112,6 @@ select pg_temp.send(12,11);
 select pg_temp.register(11,14,true,array['friend_request']);
 select is(pg_temp.lease(true),' {"items":[]}'::jsonb,'mute added after enqueue prevents delivery');
 select is((select state from private.competition_notification_work where recipient_profile_id=pg_temp.pid(11)),'suppressed','new mute suppresses pending work');
--- Old registration overloads retain response shape, disable capability, and keep their mute semantics.
 select pg_temp.as_user(2);
 select public.register_current_device_installation(pg_temp.iid(2),md5('2')||md5('2'),'sandbox',true,true,array['friend_request','reaction']);
 select ok((select not supports_friends and muted_push_kinds=array['friend_request','reaction'] from public.device_installations where installation_id=pg_temp.iid(2)),'six-argument overload preserves supplied mutes and disables friends');
@@ -128,7 +124,6 @@ select ok((select not supports_friends and not supports_reactions from public.de
 select pg_temp.register(2,2,true);
 select public.register_current_device_installation(pg_temp.iid(2),md5('2')||md5('2'),'sandbox');
 select ok((select not supports_friends and not supports_challenges from public.device_installations where installation_id=pg_temp.iid(2)),'three-argument overload disables friends');
--- Friend work retains the shared durable retry and compare-and-set contract.
 select pg_temp.register(13,16,true);
 select pg_temp.register(14,17,true);
 select pg_temp.send(13,14);
@@ -150,7 +145,6 @@ select set_config('request.jwt.claims','{"role":"service_role"}',true);
 select is(public.resolve_competition_notification_work(
   ((select data->'items'->0->>'workId' from leases))::uuid,
   ((select data->'items'->0->>'leaseToken' from leases))::uuid,'sent',null),false,'decline invalidates stale friend completion');
--- Per-kind mute and rolling guard also apply to acceptance.
 select pg_temp.register(15,18,true,array['friend_accepted']);
 select pg_temp.register(16,19,true);
 select pg_temp.send(15,16);
@@ -160,8 +154,6 @@ select pg_temp.remove(15,16);
 select pg_temp.send(15,16);
 select pg_temp.respond(16,15,true);
 select is((select count(*) from private.competition_notification_work where kind='friend_accepted' and recipient_profile_id=pg_temp.pid(15)),1::bigint,'accept/remove/reaccept guarded for 24 hours');
--- Actual deletion preparation revokes installations and leaves no deliverable
--- work referencing the deleting profile, as source or as recipient.
 select pg_temp.register(17,20,true);
 select pg_temp.register(18,21,true);
 select pg_temp.register(19,22,true);
@@ -187,7 +179,6 @@ select pg_temp.respond(22,20,true);
 update public.profiles set state='deleting' where id=pg_temp.pid(22);
 select is((select count(*) from private.competition_notification_work where state in ('pending','leased')
  and pg_temp.pid(22) in (source_profile_id,recipient_profile_id)),0::bigint,'source deactivation supersedes acceptance');
--- Invalid route combinations cannot bypass the existing competition FKs.
 select throws_ok($$insert into private.competition_notification_work(
  semantic_id,kind,source_profile_id,recipient_profile_id,installation_id,state)
  values('healthcomp.server-notification:v1:invalid-match','reaction',pg_temp.pid(1),pg_temp.pid(2),pg_temp.iid(2),'pending')$$,
@@ -198,7 +189,6 @@ select throws_ok($$insert into private.competition_notification_work(
  '23514',null,'friend kind requires event identity');
 select ok(not has_function_privilege('authenticated','public.lease_competition_notification_work(integer,integer,boolean)','execute')
  and has_function_privilege('service_role','public.lease_competition_notification_work(integer,integer,boolean)','execute'), 'opted-in lease remains service-only');
--- Match mutes apply only to match work, even in a mixed new-worker batch.
 create function pg_temp.challenge(a integer, b integer) returns uuid language plpgsql as $$
 declare code text;
 begin
@@ -232,7 +222,6 @@ truncate leases;
 insert into leases select pg_temp.lease(true);
 select is((select array_agg(i->>'kind') from leases,jsonb_array_elements(data->'items') i),
  array['friend_accepted'],'match-opponent mute still permits friend acceptance delivery');
--- New worker can parse both shapes in the same batch.
 select pg_temp.register(25,28,true);
 select pg_temp.register(26,29,true);
 select pg_temp.challenge(25,26);
@@ -259,7 +248,6 @@ select is((select pg_temp.item_keys(data->'items'->0) from leases),
  'old lease match item retains exactly seven expected keys');
 select is((select state from private.competition_notification_work
  where recipient_profile_id=pg_temp.pid(28) and kind='friend_request'),'pending','old lease leaves friend work pending');
--- Direct profile FKs cover friend rows whose nullable composite FKs skip checks.
 select ok((select count(*)=2 and bool_and(convalidated and confdeltype='a'
  and confrelid='public.profiles'::regclass and cardinality(conkey)=1)
  from pg_constraint where conrelid='private.competition_notification_work'::regclass
@@ -272,7 +260,6 @@ select throws_ok($$insert into private.competition_notification_work(
 select throws_ok($$update private.competition_notification_work set recipient_profile_id=pg_temp.pid(999)
  where recipient_profile_id=pg_temp.pid(28) and kind='friend_request'$$,
  '23503',null,'friend row cannot reference nonexistent recipient profile');
--- No delete trigger runs here: this exercises the lease-time stale-work check.
 insert into private.competition_notification_work(
  semantic_id,friend_event_id,kind,source_profile_id,recipient_profile_id,installation_id,state)
 values('healthcomp.server-notification:v1:stale-request',gen_random_uuid(),'friend_request',pg_temp.pid(25),pg_temp.pid(28),pg_temp.iid(31),'pending'),
@@ -281,7 +268,6 @@ select pg_temp.lease(true);
 select is((select count(*) from private.competition_notification_work
  where semantic_id in ('healthcomp.server-notification:v1:stale-request','healthcomp.server-notification:v1:stale-accepted') and state='superseded'),
  2::bigint,'lease supersedes request and acceptance with no backing relationship');
--- Observe only worker wakeups; realtime Friends wakeups retain their own path.
 create temporary table worker_wakeups(n integer generated always as identity);
 create or replace function private.request_competition_notification_worker()
 returns void language sql security definer set search_path = '' as $$

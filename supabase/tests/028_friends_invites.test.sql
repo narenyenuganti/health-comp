@@ -46,7 +46,6 @@ select pg_temp.as_user(3);
 select lives_ok($$select public.cancel_competition((select id from r where label='cancelled'))$$,'seed cancelled history');
 insert into r values('default',null,pg_temp.link(5)),('reset',null,pg_temp.link(6)),('only',null,pg_temp.link(7));
 update public.profiles set username='invite_'||n from generate_series(2,7) n where id=pg_temp.pid(n);
--- B: new discovery cannot bypass links; old clients' usernameless route still works.
 select throws_ok($$select pg_temp.invite(1,5)$$,'P0001','recipient_unavailable','B id from search rejected');
 select pg_temp.as_user(1);
 select throws_ok($$select public.resolve_invitation_recipient(pg_temp.pid(5))$$,'P0001','recipient_unavailable','B id preview rejected');
@@ -58,7 +57,6 @@ select lives_ok($$select pg_temp.invite(1,2)$$,'B shipped Challenge Again null p
 select lives_ok($$select pg_temp.invite(3,4)$$,'B played any lifecycle includes cancelled challenges');
 select pg_temp.as_user(1);
 select is(public.resolve_invitation_recipient(pg_temp.pid(2)),jsonb_build_object('id',pg_temp.pid(2),'display_name','Invite Person 2'),'B prior players id preview old shape');
--- A: reset link history; friends bypass reset but keep all retry/pair rules.
 insert into r values('reset-seed',pg_temp.invite(9,6,(select code from r where label='reset')),null);
 select pg_temp.as_user(9);
 select lives_ok($$select public.cancel_competition((select id from r where label='reset-seed'))$$,'reset seed cancelled');
@@ -72,10 +70,8 @@ insert into private.friendships values(least(pg_temp.pid(9),pg_temp.pid(6)),grea
 select pg_temp.as_user(9);
 select is(public.resolve_invitation_recipient(pg_temp.pid(6)),jsonb_build_object('id',pg_temp.pid(6),'display_name','Invite Person 6'),'A friend bypass id preview guard');
 select lives_ok($$select pg_temp.invite(9,6)$$,'A friend bypass create reset guard');
--- A/B: friendship with no prior competition authorizes direct challenges.
 insert into private.friendships values(least(pg_temp.pid(10),pg_temp.pid(7)),greatest(pg_temp.pid(10),pg_temp.pid(7)),now());
 select lives_ok($$select pg_temp.invite(10,7)$$,'B friend with no history can challenge by id');
--- C: policy is enforced after rematch validation, before pending pair conflicts.
 update public.profiles set challenge_policy='friends_only' where id in(pg_temp.pid(2),pg_temp.pid(5),pg_temp.pid(7));
 select throws_ok($$select pg_temp.invite(1,2)$$,'P0001','recipient_unavailable','C id with played history denied before existing pending conflict');
 select throws_ok($$select pg_temp.invite(1,2,null,(select id from r where label='parent'))$$,'P0001','recipient_unavailable','C valid rematch denied');
@@ -91,12 +87,10 @@ select is(public.resolve_challenge_link((select code from r where label='only'))
   jsonb_build_object('display_name','Invite Person 7'),'C friend can preview friends_only link');
 select is(public.resolve_invitation_recipient(pg_temp.pid(7)),jsonb_build_object('id',pg_temp.pid(7),'display_name','Invite Person 7'),'C friend can preview id');
 select throws_ok($$select pg_temp.invite(10,7)$$,'P0001','pending_invitation_exists','friend keeps pending conflict');
--- Friends-only valid rematch success on a separate completed pair.
 insert into r values('friend-parent',pg_temp.finished(11,12),pg_temp.link(12));
 update public.profiles set username='invite_12',challenge_policy='friends_only' where id=pg_temp.pid(12);
 insert into private.friendships values(least(pg_temp.pid(11),pg_temp.pid(12)),greatest(pg_temp.pid(11),pg_temp.pid(12)),now());
 select lives_ok($$select pg_temp.invite(11,12,null,(select id from r where label='friend-parent'))$$,'C friends_only friend rematch permitted');
--- Retry return precedes new privacy checks, and restores exactly the same invite.
 insert into r values('retry-key',gen_random_uuid(),null);
 insert into r values('retry',pg_temp.invite(13,14,null,null,(select id from r where label='retry-key'),decode(repeat('ab',32),'hex')),null);
 update public.profiles set username='invite_14',challenge_policy='friends_only' where id=pg_temp.pid(14);
@@ -108,7 +102,6 @@ select is(pg_temp.invite(13,14,null,null,(select id from r where label='retry-ke
   (select id from r where label='retry'),'retry also survives reset');
 select throws_ok($$select pg_temp.invite(13,14,null,null,(select id from r where label='retry-key'),decode(repeat('cd',32),'hex'))$$,
   'P0001','idempotency_conflict','retry mismatch remains idempotency conflict');
--- C friends-only applies to usernameless old-app targets too.
 update public.profiles set challenge_policy='friends_only' where id=pg_temp.pid(15);
 select throws_ok($$select pg_temp.invite(1,15)$$,'P0001','recipient_unavailable','C old-app id path respects policy');
 select pg_temp.as_user(1);

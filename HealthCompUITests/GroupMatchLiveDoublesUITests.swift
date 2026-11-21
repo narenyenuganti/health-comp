@@ -1,7 +1,5 @@
 import XCTest
 
-/// Live doubles in the `group-matches` lab: you and Priya against Sam and
-/// Leo, Day 4.
 final class GroupMatchLiveDoublesUITests: XCTestCase {
     private static let audit = XCUIAccessibilityAuditType.textClipped
         .union(.hitRegion)
@@ -54,7 +52,6 @@ final class GroupMatchLiveDoublesUITests: XCTestCase {
         let theirs = labeled("Sam + Leo, 739 points", in: app)
         XCTAssertTrue(yours.exists)
         XCTAssertTrue(theirs.exists)
-        // Each team's players sit under its own header.
         let you = app.groupElement("competition.group.day.player.1")
         let priya = app.buttons["competition.group.day.player.3"]
         let sam = app.buttons["competition.group.day.player.2"]
@@ -67,7 +64,6 @@ final class GroupMatchLiveDoublesUITests: XCTestCase {
 
     func testLeaveMatchLeavesYourPartnerPlaying() {
         let app = XCUIApplication.launchGroupLab("live-doubles")
-        // iOS 18 exposes Menu's identified wrapper, not its nested button, as hittable.
         let more = app.groupElement("competition.more")
         XCTAssertTrue(more.waitForExistence(timeout: 8))
         more.tap()

@@ -1,7 +1,5 @@
 import Foundation
 
-/// A pinned SplitMix64 stream. This implementation, including bounded sampling,
-/// is part of opponent generator version 1's replay contract.
 struct SplitMix64: Sendable {
     private var state: UInt64
 
@@ -17,8 +15,6 @@ struct SplitMix64: Sendable {
         return value ^ (value >> 31)
     }
 
-    /// Rejection sampling avoids modulo bias without relying on a standard
-    /// library helper whose implementation may change between toolchains.
     mutating func next(upperBound: UInt64) -> UInt64 {
         precondition(upperBound > 0)
         let rejectionThreshold = (0 &- upperBound) % upperBound
@@ -31,9 +27,6 @@ struct SplitMix64: Sendable {
     }
 }
 
-/// Pure Swift SHA-256 used for deterministic integrity commitments. A plan
-/// digest detects accidental or untrusted-local-file changes; it is not an
-/// authentication code and does not establish provenance.
 enum SHA256Digest {
     private static let initialState: [UInt32] = [
         0x6A09_E667, 0xBB67_AE85, 0x3C6E_F372, 0xA54F_F53A,

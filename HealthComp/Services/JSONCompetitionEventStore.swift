@@ -766,8 +766,6 @@ private struct CompetitionEventStoreSynchronousStorage {
             do {
                 resolved = try resolve(id)
             } catch {
-                // One unreadable journal must not hide every other match:
-                // list it, and load(id) reports the failure for it alone.
                 resolvedIDs.append(id)
                 continue
             }

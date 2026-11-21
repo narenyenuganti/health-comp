@@ -1,11 +1,6 @@
 import CompetitionCore
 import SwiftUI
 
-// The reveal's clock (hold, cards, stamp, lights, raise, close-up) is an
-// editorial exception to "numbers live in Motion.swift", like the versus intro.
-
-/// Test Lab launches run without the reveal, so its tests stay untouched,
-/// unless `--judges-decision` asks for it.
 let competitionJudgesAreOn: Bool = {
     #if DEBUG
     let arguments = ProcessInfo.processInfo.arguments
@@ -16,10 +11,6 @@ let competitionJudgesAreOn: Bool = {
     return true
 }()
 
-// MARK: What the reveal draws
-
-/// The judges' reveal for any format: every fighter, the side each one scores
-/// for, and the result's places. Cards describe the week; places decide it.
 struct CompetitionJudgesBout: Equatable {
     struct Fighter: Equatable {
         let name: String
@@ -30,18 +21,15 @@ struct CompetitionJudgesBout: Equatable {
     }
 
     struct Side: Equatable {
-        /// "YOU", "SAM" or "YOU + PRIYA".
         let label: String
         let isYours: Bool
         let place: Int
         let total: Double
-        /// Move, Exercise, Stand: seven rounds each, nil without a breakdown.
         let cards: [[Double?]]
 
         func cardTotal(_ ring: Int) -> Double? {
             guard cards.indices.contains(ring), cards[ring].count == 7, cards[ring].allSatisfy({ $0 != nil })
             else { return nil }
-            // Whole centipoints, so two equal cards compare equal.
             return (cards[ring].compactMap { $0 }.reduce(0, +) * 100).rounded() / 100
         }
     }
@@ -49,7 +37,6 @@ struct CompetitionJudgesBout: Equatable {
     enum Format: Equatable { case duel, freeForAll, doubles }
 
     let format: Format
-    /// You first; in doubles your partner second.
     let fighters: [Fighter]
     let sides: [Side]
     let dayLabels: [String]
@@ -69,8 +56,6 @@ struct CompetitionJudgesBout: Equatable {
     var heading: String { sides.map(\.label).joined(separator: " VS ") + " · FINAL BELL" }
 }
 
-/// One rule for every format: unanimous when the winner tops all three cards
-/// alone, majority or split at two, otherwise total points.
 func competitionJudgesVerdict(winner: [Double], rest: [[Double]]) -> String {
     var wins = 0, even = 0
     for ring in 0..<3 {
@@ -106,7 +91,6 @@ extension CompetitionJudgesBout {
         )
     }
 
-    /// Nil until the server's result is in.
     init?(_ match: GroupMatchPresentation) {
         guard let rows = match.frozenStandings else { return nil }
         let isDoubles = match.format == .doubles
@@ -126,7 +110,6 @@ extension CompetitionJudgesBout {
         func points(_ side: MatchStandingSubject, ring: Int, ordinal: Int) -> Double? {
             var sum = 0
             for seat in members(side) {
-                // Days after a player left score nothing.
                 if let cutoff = match.configuration.leaveCutoffs[seat.id], ordinal > cutoff { continue }
                 guard let rings = match.rings.first(where: { $0.seatID == seat.id && $0.ordinal == ordinal }),
                       rings.centipoints.count == 3 else { return nil }
@@ -173,31 +156,21 @@ extension CompetitionJudgesBout {
     }
 }
 
-// MARK: Where everyone stands
-
 struct CompetitionJudgesStance: Equatable {
-    /// Where they wait, then where they stand for the raise.
     var lineupX: CGFloat
     var lineupScale: CGFloat
     var x: CGFloat
     var scale: CGFloat
-    /// 1 on the left, facing right.
     var facing: CGFloat
-    /// A doubles partner, behind the one the referee holds.
     var isOuter = false
-    /// The referee has their wrist.
     var isHeld = false
-    /// Their light is cut before the raise.
     var isOut = false
     var won = false
     var place = 1
 }
 
-/// Seconds from when the ring appears.
 struct CompetitionJudgesRingClock: Equatable {
-    /// When each cut place loses its light, last place first.
     var cuts: [Int: Double] = [:]
-    /// When the last two walk to the referee.
     var walk: Double?
     var raise = 1.0
     var hasReferee = true
@@ -206,9 +179,6 @@ struct CompetitionJudgesRingClock: Equatable {
 }
 
 extension CompetitionJudgesBout {
-    /// A duel and doubles are the shipped raise. A free-for-all cuts the
-    /// lights from last place up until two stand, then is the same raise.
-    /// When a tie means no cut leaves two, it cuts until only the winners stand.
     var ring: (stances: [CompetitionJudgesStance], clock: CompetitionJudgesRingClock) {
         let lineup: [(CGFloat, CGFloat)] = switch format {
         case .duel: [(72, 1), (288, 1)]
@@ -246,8 +216,6 @@ extension CompetitionJudgesBout {
                 stances[index].isHeld = true
             }
         } else {
-            // Only the winners stand, one or several: no referee, and each
-            // raises their own arms.
             clock.hasReferee = false
             clock.raise = lastCut + 1
         }
@@ -255,10 +223,6 @@ extension CompetitionJudgesBout {
     }
 }
 
-// MARK: The reveal
-
-/// The reveal's editorial clock: a 0.9 s hold, three 1.2 s cards, stamp,
-/// one held beat and the raise. Animation curves still belong to Motion.
 struct CompetitionJudgesReveal: View {
     let bout: CompetitionJudgesBout
     let onFinished: () -> Void
@@ -268,7 +232,6 @@ struct CompetitionJudgesReveal: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
-    /// Follows the reader's text size, capped so a headline still fits a line or two.
     @ScaledMetric(relativeTo: .title) private var textScale: CGFloat = 1
     @State private var stage = 0
     @State private var pressing = false
@@ -291,7 +254,6 @@ struct CompetitionJudgesReveal: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // One line when it fits; stacked rather than hyphenating the name.
             ViewThatFits(in: .horizontal) {
                 HStack {
                     Text("HEALTHCOMP /").foregroundStyle(Theme.ink)
@@ -329,7 +291,6 @@ struct CompetitionJudgesReveal: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.ground.ignoresSafeArea())
         .contentShape(Rectangle())
-        // The seal's card has its own tap and a Skip button; only the cards and the raise skip on a tap.
         .onTapGesture { if stage > 0 { skip() } }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.judges.reveal")
@@ -361,11 +322,9 @@ struct CompetitionJudgesReveal: View {
                     guard (try? await Task.sleep(for: .seconds(0.1))) != nil else { return }
                     if !reduceMotion { rows = row }
                 }
-                // On the pen's circle, just after the totals show.
                 if bout.sides.allSatisfy({ $0.cardTotal(card) != nil }) { Sounds.play(.total, in: 0.2) }
                 guard (try? await Task.sleep(for: .seconds(0.5))) != nil else { return }
             }
-            // The stamp slams on the versus intro's curve.
             withAnimation(reduceMotion ? Motion.fade : .timingCurve(VersusClock.slamCurve, duration: VersusClock.slam)) {
                 stamped = true
             }
@@ -381,7 +340,6 @@ struct CompetitionJudgesReveal: View {
             let clock = bout.ring.clock
             if bout.yoursWon { Sounds.play(.cheer, in: reduceMotion ? 0 : clock.raise) }
             if !reduceMotion {
-                // One thud for each light that cuts, then the raise.
                 var now = 0.0
                 for beat in clock.cuts.values.sorted() + [clock.raise] {
                     guard (try? await Task.sleep(for: .seconds(beat - now))) != nil else { return }
@@ -390,7 +348,6 @@ struct CompetitionJudgesReveal: View {
                 }
             }
             raised = true
-            // Let the raise settle and hold before the personal close-up.
             guard (try? await Task.sleep(for: .seconds(reduceMotion ? 0.8 : 1.25))) != nil else { return }
             focused = true
             guard (try? await Task.sleep(for: .seconds(1.5))) != nil else { return }
@@ -427,7 +384,6 @@ struct CompetitionJudgesReveal: View {
                         .frame(height: 150).rotationEffect(.degrees(-4))
                     SlantedBar().fill(Theme.faint.opacity(0.2)).frame(width: 2, height: 145)
                         .rotationEffect(.degrees(12))
-                    // Your side left of the cut, everyone else right of it.
                     HStack(spacing: -14) {
                         avatars(bout.fighters.filter { bout.sides[$0.side].isYours }, size: size)
                             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -437,7 +393,6 @@ struct CompetitionJudgesReveal: View {
                             .offset(x: spread, y: 6)
                     }
                     .moving(Motion.grow, value: breakingSeal)
-                    // The cut lights as the seal breaks.
                     Rectangle().fill(breakingSeal ? hot : Theme.beltWell)
                         .frame(width: breakingSeal ? 8 : 3, height: breakingSeal ? 160 : 140)
                         .shadow(color: hot.opacity(breakingSeal ? 0.6 : 0), radius: 11)
@@ -471,7 +426,6 @@ struct CompetitionJudgesReveal: View {
         guard stage == 0, !breakingSeal else { return }
         progress = 1
         withAnimation(Motion.fade) { breakingSeal = true }
-        // On the cut to the scorecards.
         Sounds.play(.final, in: 0.3)
     }
 
@@ -510,7 +464,6 @@ struct CompetitionJudgesReveal: View {
         }
     }
 
-    /// Lands a little crooked, with a ring of ink that spreads and fades.
     private var stamp: some View {
         Text(bout.label)
             .font(.score(size: scaled(30))).minimumScaleFactor(0.5).lineLimit(1)
@@ -560,7 +513,6 @@ struct CompetitionJudgesReveal: View {
                 HStack {
                     lead(Text(bout.dayLabels[row]).font(.themeLabel).foregroundStyle(Theme.secondary))
                     ForEach(bout.sides.indices, id: \.self) { side in
-                        // Each round ticks in with a short rise.
                         ZStack {
                             Text("—").opacity(row < rows ? 0 : 1).transaction { $0.animation = nil }
                             Text(score(bout.sides[side].cards[index], row))
@@ -588,12 +540,10 @@ struct CompetitionJudgesReveal: View {
         .background(Theme.panel, in: RoundedRectangle(cornerRadius: 12))
     }
 
-    /// The row's label; narrow once there are more than two columns of points.
     private func lead(_ text: Text) -> some View {
         text.frame(maxWidth: isWide && !typeSize.isAccessibilitySize ? 44 : .infinity, alignment: .leading)
     }
 
-    /// The winning total is circled by pen once the card is full.
     private func total(_ value: Double?, wins: Bool, own: Bool) -> some View {
         Text(value.map { competitionPointsText($0) } ?? "—")
             .font(.score(size: scaled(isWide ? 24 : 27))).lineLimit(1).minimumScaleFactor(0.6)
@@ -642,7 +592,6 @@ struct CompetitionJudgesReveal: View {
             .id(reduceMotion && focused)
             .transition(.opacity)
             .animation(Motion.fade, value: focused)
-            // One scale both ways, so the figures keep their drawn proportions.
             .aspectRatio(360.0 / 340.0, contentMode: .fit)
             .background(Theme.beltWell)
             .clipShape(RoundedRectangle(cornerRadius: 20))
@@ -671,7 +620,6 @@ struct CompetitionJudgesReveal: View {
     }
 }
 
-/// A loop of pen, not a clean ellipse: it starts inside and overshoots its start.
 private struct CompetitionJudgesPenCircle: Shape {
     func path(in rect: CGRect) -> Path {
         func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
@@ -686,9 +634,6 @@ private struct CompetitionJudgesPenCircle: Shape {
     }
 }
 
-// MARK: Group matches
-
-/// "You win, unanimous decision, you 512, Sam 498, Alex 450."
 func competitionJudgesAnnouncement(_ bout: CompetitionJudgesBout) -> String {
     func names(_ side: Int) -> String {
         bout.fighters.filter { $0.side == side }.map { $0.isYou ? "you" : $0.name }.joined(separator: " and ")
@@ -708,8 +653,6 @@ func competitionJudgesAnnouncement(_ bout: CompetitionJudgesBout) -> String {
 }
 
 extension View {
-    /// The judges' reveal over a finished group match, once, on the first
-    /// visit. A group match never moves a belt, so nothing follows it.
     func competitionGroupJudges(_ match: GroupMatchPresentation) -> some View {
         modifier(CompetitionGroupJudges(match: match))
     }
@@ -721,7 +664,6 @@ private struct CompetitionGroupJudges: ViewModifier {
     @AppStorage(CompetitionMotionSeen.storageKey) private var seen = CompetitionMotionSeen()
     @State private var didStart = false
     @State private var isShowing = false
-    /// Held from the start, so a refresh mid-reveal cannot change or empty it.
     @State private var playing: CompetitionJudgesBout?
 
     private var bout: CompetitionJudgesBout? {
@@ -732,7 +674,6 @@ private struct CompetitionGroupJudges: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            // Nothing of the result shows before the reveal covers it.
             .overlay { if isShowing || (!didStart && bout != nil && !voiceOver) { Theme.ground.ignoresSafeArea() } }
             .fullScreenCover(isPresented: $isShowing) {
                 if let playing {
@@ -745,12 +686,10 @@ private struct CompetitionGroupJudges: ViewModifier {
                 didStart = true
                 playing = bout
                 guard let playing else { return }
-                // VoiceOver gets the final state: the result, spoken, in place of the timed reveal.
                 if voiceOver {
                     seen = seen.marking(.judges, match.id)
                     let text = competitionJudgesAnnouncement(playing)
                     Task {
-                        // After the push, or VoiceOver's own reading of the new screen cuts it off.
                         try? await Task.sleep(for: .seconds(0.75))
                         AccessibilityNotification.Announcement(text).post()
                     }
@@ -772,11 +711,6 @@ private struct CompetitionGroupJudges: ViewModifier {
     }
 }
 
-// MARK: The ring
-
-/// Two fixed-length arm segments: the shoulder rotates first, then the
-/// elbow straightens late. The referee holds this exact wrist endpoint.
-/// `dip` is the beat before the raise; a `loose` arm hangs straight.
 func competitionJudgeArm(
     shoulder: CGPoint, inward: CGFloat, raised: Double, dip: Double = 0, loose: Double = 0
 ) -> (elbow: CGPoint, wrist: CGPoint) {
@@ -794,9 +728,6 @@ func competitionJudgeArm(
     return (elbow, wrist)
 }
 
-/// The fighters, the referee and the ring, drawn in code from one clock:
-/// original athletic figures with no image assets, lit from above. The
-/// profile photos are the heads. Reduce Motion holds one `still` moment.
 private struct CompetitionJudgesRing: View {
     let bout: CompetitionJudgesBout
     let start: Date
@@ -854,11 +785,9 @@ private struct CompetitionJudgesRing: View {
     }
 }
 
-/// The ring's drawing, in the shipped 360 x 340 space with the floor at 316.
 private enum JudgesRing {
     static let floor: CGFloat = 316
     static let refereeTone = Color(red: 150 / 255, green: 150 / 255, blue: 156 / 255)
-    /// You, then everyone else from near to far. Opaque, so limbs overlap cleanly.
     static let tones: [Color] = [
         Theme.youFill, Theme.secondary,
         Color(red: 134 / 255, green: 134 / 255, blue: 142 / 255),
@@ -932,26 +861,19 @@ private enum JudgesRing {
         var haze: CGFloat
     }
 
-    // MARK: Motion
-
     static func clamp(_ x: CGFloat) -> CGFloat { min(1, max(0, x)) }
     static func ramp(_ t: CGFloat, _ start: CGFloat, _ length: CGFloat) -> CGFloat { clamp((t - start) / length) }
     static func smooth(_ x: CGFloat) -> CGFloat { let x = clamp(x); return x * x * (3 - 2 * x) }
     static func mix(_ a: CGFloat, _ b: CGFloat, _ k: CGFloat) -> CGFloat { a + (b - a) * k }
-    /// The same scatter every time: nothing here may differ between frames.
     static func noise(_ index: Int) -> CGFloat {
         let x = sin(CGFloat(index) * 127.1 + 311.7) * 43758.5453
         return x - x.rounded(.down)
     }
-    /// The raise overshoots and settles; the referee's arm follows it.
     static func spring(_ x: CGFloat) -> CGFloat { x <= 0 ? 0 : 1 - exp(-8 * x) * cos(13 * x) }
-    /// A light that flickers twice and dies to a glow.
     static func cut(_ t: CGFloat) -> CGFloat {
         t < 0 ? 1 : t < 0.05 ? 0.35 : t < 0.1 ? 0.9 : t < 0.14 ? 0.25 : 0.16 + 0.3 * exp(-(t - 0.14) * 9)
     }
 
-    /// A fighter's joints with the feet at (0, 0). The held arm keeps the
-    /// shipped kinematics: shoulder first, elbow late.
     static func pose(
         facing s: CGFloat, rise: CGFloat, pump: CGFloat, drop d: CGFloat, breath: CGFloat, dip: CGFloat, loose: CGFloat
     ) -> Pose {
@@ -990,7 +912,6 @@ private enum JudgesRing {
         let walk = clock.walk.map { CGFloat($0) }
         let tau = t - raise
         let dip: CGFloat = tau > -0.24 && tau < 0 ? sin(.pi * (tau + 0.24) / 0.24) : 0
-        // Free-for-all: the two left standing walk in and the referee takes their wrists.
         let move: CGFloat = walk.map { smooth(ramp(t, $0, 0.5)) } ?? (isFreeForAll ? 0 : 1)
         let hold: CGFloat = walk.map { smooth(ramp(t, $0 + 0.2, 0.4)) } ?? 1
         let swing = smooth(ramp(tau, 0, 0.5))
@@ -1031,7 +952,6 @@ private enum JudgesRing {
             ))
         }
 
-        // The referee: one wrist in each hand, eyes on the winner after the raise.
         let lookTo: CGFloat = winnerX > 180 ? 1 : winnerX < 180 ? -1 : 0
         let refereeX = 180 + lookTo * 3 * swing
         var arms: [Arm] = []
@@ -1047,7 +967,6 @@ private enum JudgesRing {
             }
             arms.append(Arm(
                 shoulder: shoulder,
-                // The shipped elbow: most of the way out, sagging until the arm is up.
                 elbow: CGPoint(
                     x: shoulder.x + (wrist.x - shoulder.x) * 0.65,
                     y: (shoulder.y + wrist.y) / 2 + 17 * (1 - up) * hold + 6 * (1 - hold)
@@ -1056,7 +975,6 @@ private enum JudgesRing {
             ))
         }
 
-        // One light for the pair; in a free-for-all each has their own until the walk.
         var cones = [Cone(
             top: mix(180, lightX, 0.35), bottom: lightX, width: mix(150, 112, swing),
             alpha: isFreeForAll ? move : 1, amber: bout.yoursWon ? swing : 0
@@ -1069,7 +987,6 @@ private enum JudgesRing {
                 ))
             }
         }
-        // Cameras in the dark: a few while they wait, a burst at the raise.
         var flashes: [(point: CGPoint, glow: CGFloat)] = []
         for index in 0..<46 {
             let at = index < 20
@@ -1090,9 +1007,6 @@ private enum JudgesRing {
         )
     }
 
-    // MARK: Shapes
-
-    /// A tapered limb: the hull of two circles.
     static func limb(_ a: CGPoint, _ ra: CGFloat, _ b: CGPoint, _ rb: CGFloat) -> Path {
         let distance = max(hypot(b.x - a.x, b.y - a.y), 0.001)
         let along = atan2(b.y - a.y, b.x - a.x)
@@ -1118,7 +1032,6 @@ private enum JudgesRing {
         return path
     }
 
-    /// The glove's own space: wrist at the origin, the fist along +y.
     static func gloveSpace(_ wrist: CGPoint, _ elbow: CGPoint) -> CGAffineTransform {
         let dx = wrist.x - elbow.x, dy = wrist.y - elbow.y
         return CGAffineTransform(translationX: wrist.x, y: wrist.y).rotated(by: atan2(-dx, dy))
@@ -1140,7 +1053,6 @@ private enum JudgesRing {
         ])
     }
 
-    /// The whole silhouette, each part its own path so overlaps never cut holes.
     static func fighter(_ pose: Pose) -> [Path] {
         let lean = pose.lean, top = pose.shoulderY, waist = pose.waistY, hip = pose.hipX, width: CGFloat = 30
         var torso = Path()
@@ -1166,7 +1078,6 @@ private enum JudgesRing {
             + glove(pose.wristIn, pose.elbowIn, thumb: -pose.facing)
     }
 
-    /// Drawn inside the silhouette: shorts, glove cuffs, boots, a few lines of muscle.
     static func detail(_ pose: Pose, tone: Color, in context: GraphicsContext) {
         let lean = pose.lean, top = pose.shoulderY, waist = pose.waistY, hip = pose.hipX, s = pose.facing
         context.fill(shorts(pose, grow: 1), with: .color(Theme.beltWell))
@@ -1215,10 +1126,6 @@ private enum JudgesRing {
         context.stroke(laces, with: .color(.white.opacity(0.28)), style: StrokeStyle(lineWidth: 1.3, lineCap: .round))
     }
 
-    // MARK: Drawing
-
-    /// One figure: its flat shape, light from above, its details, then a
-    /// bright edge on the side that faces the light.
     static func figure(
         _ shape: [Path], tone: Color, lit: CGFloat, alpha: CGFloat, lightFrom: CGFloat,
         in context: GraphicsContext, detail: (GraphicsContext) -> Void
@@ -1254,7 +1161,6 @@ private enum JudgesRing {
 
     static func cone(_ cone: Cone, in context: GraphicsContext) {
         guard cone.alpha > 0.01 else { return }
-        // Warms to amber when the light finds your side.
         let light = Color(
             red: Double(mix(245, 248, cone.amber)) / 255,
             green: Double(mix(245, 214, cone.amber)) / 255,
@@ -1295,7 +1201,6 @@ private enum JudgesRing {
     }
 
     static func draw(_ frame: Frame, in context: GraphicsContext) {
-        // The dark, with cameras in it.
         for index in 0..<34 {
             context.fill(
                 dot(CGPoint(x: 8 + 344 * noise(index + 3), y: 14 + 122 * noise(index + 21)), 0.8 + 1.4 * noise(index + 40)),
@@ -1319,7 +1224,6 @@ private enum JudgesRing {
         }
         for light in frame.cones { cone(light, in: context) }
 
-        // The ropes are the three rings: Move, Exercise, Stand.
         for (tone, y) in [(Theme.move, 172), (Theme.exercise, 212), (Theme.stand, 252)] as [(Color, CGFloat)] {
             for (lift, colour, width) in [(0, tone.opacity(0.5), 2.4), (1, Color.white.opacity(0.13), 0.8)] as [(CGFloat, Color, CGFloat)] {
                 var rope = Path()
@@ -1332,7 +1236,6 @@ private enum JudgesRing {
             context.fill(Path(roundedRect: CGRect(x: x, y: 160, width: 13, height: 160), cornerRadius: 4),
                          with: .color(paper.opacity(0.1)))
         }
-        // The canvas floor.
         context.fill(Path(CGRect(x: 0, y: 300, width: 360, height: 40)), with: .linearGradient(
             Gradient(stops: [
                 .init(color: paper.opacity(0), location: 0),
@@ -1363,7 +1266,6 @@ private enum JudgesRing {
             context.draw(text, at: CGPoint(x: tag.x, y: 330))
         }
 
-        // The referee stays upright and quieter than any corner.
         let x = frame.refereeX, dy = frame.refereeDip, headX = x + frame.refereeLook * 1.5
         var body: [Path] = []
         for side: CGFloat in [-1, 1] {
@@ -1402,7 +1304,6 @@ private enum JudgesRing {
                        with: .color(Theme.beltWell))
         }
 
-        // Cut lights first, then partners, so whoever the referee holds is in front.
         let order = frame.figures.sorted {
             ($0.stance.isOut ? 0 : $0.stance.isOuter ? 1 : 2) < ($1.stance.isOut ? 0 : $1.stance.isOuter ? 1 : 2)
         }
@@ -1418,7 +1319,6 @@ private enum JudgesRing {
             }
         }
 
-        // His arms cross in front of the fighters: a sleeve, a white cuff, a hand.
         var sleeves: [Path] = []
         for arm in frame.arms {
             sleeves += [limb(arm.shoulder, 8, arm.elbow, 6.5), limb(arm.elbow, 6.5, arm.wrist, 5.5),
@@ -1436,7 +1336,6 @@ private enum JudgesRing {
             }
         }
 
-        // Haze in the light, and the edges fall away.
         for index in 0..<18 {
             let y = (noise(index + 60) * 300 + frame.time * (5 + 9 * noise(index + 70))).truncatingRemainder(dividingBy: 300)
             let x = frame.lightX + (noise(index + 80) - 0.5) * (60 + y * 0.45)

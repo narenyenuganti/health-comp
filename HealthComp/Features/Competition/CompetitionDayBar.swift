@@ -1,11 +1,5 @@
 import SwiftUI
 
-// The app, the widget extensions and the watch compile this file: SwiftUI,
-// Theme and the widget snapshot only.
-
-/// One day on the week strip: amber when you won it, ink when they did, grey
-/// for a tie, striped for no data, an outline when upcoming, and a dashed
-/// outline in the leader's color for today.
 struct CompetitionDayBar: View {
     let outcome: CompetitionDayOutcome
     let todayColor: Color
@@ -29,8 +23,6 @@ struct CompetitionDayBar: View {
     }
 }
 
-/// The week as seven bars. `decorate` lets a surface move or accent one bar,
-/// so this file needs no Motion and works in the widgets.
 struct CompetitionMatchStrip<Bar: View>: View {
     let match: CompetitionWidgetSnapshot.Match
     let date: Date
@@ -48,7 +40,6 @@ struct CompetitionMatchStrip<Bar: View>: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Today's dashed bar in the color of whoever leads the day.
     private var todayColor: Color {
         guard case let .live(day) = match.state(at: date),
               match.userDayPoints.indices.contains(day - 1),
@@ -67,7 +58,6 @@ extension CompetitionMatchStrip where Bar == CompetitionDayBar {
     }
 }
 
-/// Vertical 1 pt lines every 3 pt: the "no data" fill.
 struct HatchFill: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
@@ -81,7 +71,6 @@ struct HatchFill: Shape {
     }
 }
 
-/// A slanted bar filled with the "no data" stripe.
 struct HatchBar: View {
     var body: some View {
         HatchFill()

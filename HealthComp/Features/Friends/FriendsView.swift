@@ -2,7 +2,6 @@ import CompetitionCore
 import ComposableArchitecture
 import SwiftUI
 
-/// Home's Friends button. Same circle as the + button.
 struct FriendsToolbarButton: View {
     let requestCount: Int
     let action: () -> Void
@@ -40,7 +39,6 @@ struct FriendsToolbarButton: View {
     }
 }
 
-/// "Live · Day 3 of 7", "Starts Monday" or "You lead 3–2"; nil with no match.
 func friendStatusLine(
     identity: String,
     competitions: [LocalCompetitionPresentation],
@@ -74,15 +72,12 @@ func friendStatusLine(
     return record.wins > record.losses ? "You lead \(score)" : "\(record.opponentDisplayName) leads \(score)"
 }
 
-/// Why a friend can't be challenged now: what the Challenge sheet would
-/// otherwise turn up after the tap. Nil when they can be.
 func friendChallengeBlocker(
     identity: String,
     competitions: [LocalCompetitionPresentation]
 ) -> String? {
     let theirs = competitions.filter { $0.opponentIdentity == identity && !$0.isPractice }
     if theirs.contains(where: \.isPending) { return "Challenge pending" }
-    // As `matchInProgress`: tallying doesn't count, matching the server.
     let inMatch = theirs.contains {
         switch $0.lifecycle {
         case .scheduled, .active, .endsToday: true
@@ -102,8 +97,6 @@ extension FriendsFeature.ChangeFailure {
     }
 }
 
-/// Accept, Add and Requested on a row: the small version of the primary and
-/// control buttons.
 private struct FriendsRowButtonStyle: ButtonStyle {
     var isProminent = true
     @Environment(\.isEnabled) private var isEnabled
@@ -125,12 +118,9 @@ private struct FriendsRowButtonStyle: ButtonStyle {
     }
 }
 
-/// Avatar, name and one line under it. Beside each other, or stacked at
-/// accessibility sizes so the name gets the width.
 struct FriendsPersonLabel: View {
     let person: FriendPerson
     let detail: String?
-    /// Ink on a row that is dimmed as a whole, so it stays readable.
     var detailColor: Color = Theme.secondary
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -159,7 +149,6 @@ struct FriendsPersonLabel: View {
     }
 }
 
-/// Friends, and search in place of them while there's a query.
 struct FriendsView: View {
     let store: StoreOf<MainTabFeature>
 
@@ -182,13 +171,11 @@ struct FriendsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Pinned, so the query and its clear button never scroll away.
             searchField
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .padding(.bottom, 10)
             ScrollView {
-                // Not the field: a keystroke mustn't animate it.
                 VStack(alignment: .leading, spacing: 22) {
                     if isSearchShown {
                         searchContent
@@ -222,8 +209,6 @@ struct FriendsView: View {
         }
         .navigationTitle("Friends")
         .navigationBarTitleDisplayMode(.inline)
-        // Outside `.refreshable`, which a sheet presented from inside it
-        // inherits: a drag down would refresh, not close.
         .sheet(isPresented: Binding(
             get: { store.competition.friendSettings.sheet != nil },
             set: { if !$0 { store.send(.competition(.friendSettings(.usernameSheetClosed))) } }
@@ -231,7 +216,6 @@ struct FriendsView: View {
             UsernameSheet(friends: settings)
         }
         .friendsCancelRequestDialog($cancelling) { store.send(.competition(.friends(.changeTapped($0, .cancel)))) }
-        // Outcomes land away from the button that caused them.
         .onChange(of: spokenStatus) { _, new in
             if let new { AccessibilityNotification.Announcement(new).post() }
         }
@@ -240,14 +224,11 @@ struct FriendsView: View {
             store.send(.competition(.friendSettings(.requested)))
             store.send(.competition(.challengeLinkRequested))
         }
-        // The Challenge sheet's Search People.
         .onChange(of: state.focusesSearch, initial: true) { _, focuses in
             guard focuses else { return }
             isFieldFocused = true
             store.send(.competition(.friends(.searchFocusRequested(false))))
         }
-        // Not `saved?.username == nil`, which is true before the settings
-        // load and so never changes when they arrive with no username.
         .onChange(of: store.competition.friendSettings.saved.map { $0.username == nil } ?? false, initial: true) { _, _ in
             promptForUsernameOnce()
         }
@@ -272,8 +253,6 @@ struct FriendsView: View {
         }
     }
 
-    /// Once per account: Not Now is an answer. The key is only set here, so
-    /// a failed settings load never spends it.
     private func promptForUsernameOnce() {
         guard let saved = store.competition.friendSettings.saved, saved.username == nil,
               let id = store.competition.ownProfile?.id
@@ -292,8 +271,6 @@ struct FriendsView: View {
         store.send(.competition(.friends(.changeTapped(person, change))))
     }
 
-    // MARK: Search
-
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
@@ -305,7 +282,6 @@ struct FriendsView: View {
                     get: { state.query },
                     set: { store.send(.competition(.friends(.queryChanged($0)))) }
                 ),
-                // One line, so the long prompt would clip at accessibility sizes.
                 prompt: Text(dynamicTypeSize.isAccessibilitySize ? "Search" : "Search name or username")
                     .foregroundStyle(Theme.secondary)
             )
@@ -360,7 +336,6 @@ struct FriendsView: View {
         } else if state.isSearching {
             ProgressView().frame(maxWidth: .infinity)
         } else {
-            // Search starts at 3 (FriendsFeature.searchableQuery).
             quietLine("Type at least 3 characters.", id: "friends.search.short")
         }
     }
@@ -414,8 +389,6 @@ struct FriendsView: View {
         }
     }
 
-    // MARK: Friends
-
     @ViewBuilder
     private var listContent: some View {
         if let list = state.list {
@@ -455,7 +428,6 @@ struct FriendsView: View {
         return VStack(alignment: .leading, spacing: 8) {
             rowLayout {
                 personLink(person)
-                // Apart, so a slip off Accept doesn't decline.
                 HStack(spacing: 10) {
                     Button { change(person, .accept) } label: { BusyLabel("Accept", isBusy: isBusy) }
                         .buttonStyle(FriendsRowButtonStyle())
@@ -485,7 +457,6 @@ struct FriendsView: View {
         .accessibilityIdentifier("friends.request.\(id)")
     }
 
-    /// A request you sent; Requested asks before cancelling it.
     private func sentRow(_ person: FriendPerson) -> some View {
         let id = person.id.uuidString.lowercased()
         return VStack(alignment: .leading, spacing: 8) {
@@ -510,7 +481,6 @@ struct FriendsView: View {
             .accessibilityInputLabels(["Requested \(person.displayName)", "Requested"])
     }
 
-    /// Their name and photo, opening their page.
     private func personLink(_ person: FriendPerson) -> some View {
         NavigationLink(value: CompetitionHomeRoute.profile(person.identity)) {
             FriendsPersonLabel(person: person, detail: person.username.map { "@\($0)" })
@@ -559,9 +529,6 @@ struct FriendsView: View {
         .accessibilityIdentifier("friends.invite")
     }
 
-    // MARK: Pieces
-
-    /// Beside each other, or stacked at accessibility sizes.
     @ViewBuilder
     private func rowLayout<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         let layout = dynamicTypeSize.isAccessibilitySize
@@ -583,8 +550,6 @@ struct FriendsView: View {
         .accessibilityIdentifier(id)
     }
 
-    /// Dividers start where the row's text does: past the avatar, or at the
-    /// row's edge once rows stack at accessibility sizes.
     private func panel<Row: View>(
         _ people: [FriendPerson],
         @ViewBuilder row: @escaping (FriendPerson) -> Row
@@ -624,7 +589,6 @@ struct FriendsView: View {
 }
 
 extension View {
-    /// Cancelling a request, from Friends or a person page.
     func friendsCancelRequestDialog(
         _ person: Binding<FriendPerson?>,
         cancel: @escaping (FriendPerson) -> Void
@@ -644,10 +608,8 @@ extension View {
     }
 }
 
-/// Friend, block and report on a person page, for someone with a profile id.
 struct PersonFriendControls {
     let person: FriendPerson
-    /// Nil until your Friends list loads: Add, Cancel and Remove wait for it.
     let relationship: FriendRelationship?
     let isInFlight: Bool
     let failure: FriendsFeature.ChangeFailure?
@@ -657,24 +619,18 @@ struct PersonFriendControls {
     let report: (_ andBlock: Bool) -> Void
 }
 
-/// The person page's confirmations.
 enum PersonFriendDialog: Equatable {
     case cancelRequest, remove, block, report
 }
 
-/// Add Friend or Cancel Request, Remove Friend, Block, Unblock and Report,
-/// each only when it applies, in that order. Mute goes above them.
 struct PersonFriendMenuItems: View {
     let name: String
     let controls: PersonFriendControls?
-    /// Nil while your block list loads: Block and Report wait for it.
     let isBlocked: Bool?
     let unblock: (() -> Void)?
-    /// Whether you've played them: Add Friend is for people you've played.
     var hasPlayed = true
     @Binding var dialog: PersonFriendDialog?
 
-    /// Add Friend or Cancel Request, when either applies.
     enum RequestItem: Equatable { case add, cancel }
 
     static func requestItem(_ relationship: FriendRelationship?, hasPlayed: Bool) -> RequestItem? {
@@ -731,8 +687,6 @@ struct PersonFriendMenuItems: View {
 }
 
 extension View {
-    /// Remove, Block and Report ask first, in the tone of Decline and Block.
-    /// `blocking` runs before a block is sent, so the page can pop once it lands.
     func personFriendDialogs(
         _ dialog: Binding<PersonFriendDialog?>,
         name: String,
@@ -782,8 +736,6 @@ extension View {
     }
 }
 
-/// The quiet lines a person page shows after Remove, Block or Report:
-/// why one failed, or that a report went in.
 struct PersonFriendNotes: View {
     let failure: FriendsFeature.ChangeFailure?
     let isReported: Bool
@@ -807,22 +759,16 @@ struct PersonFriendNotes: View {
     }
 }
 
-/// One page for a person, from their photo on a score or from Friends: who
-/// they are, what the two of you have played, and what to do next.
 struct FriendProfileView: View {
     let controls: PersonFriendControls
     var isBlocked: Bool? = false
     var unblock: (() -> Void)? = nil
-    /// The Challenge sheet with this person chosen.
     var challenge: (() -> Void)? = nil
-    /// A challenge or match with them, finished or not.
     var hasPlayed = false
     var rivalry: CompetitionProfileRivalry? = nil
-    /// Theirs, only when they share it with you.
     var career: CompetitionCareer? = nil
     var ownCareer: CompetitionCareer? = nil
     var muteButton: CompetitionMuteButton? = nil
-    /// Non-nil inside the Challenge drawer: renders the drawer's own Back and ••• bar.
     var drawerBack: (() -> Void)? = nil
 
     @State private var dialog: PersonFriendDialog?
@@ -837,15 +783,12 @@ struct FriendProfileView: View {
 
     private var person: FriendPerson { controls.person }
     private var hasWeeks: Bool { rivalry?.weeks.isEmpty == false }
-    /// Something with them is under way, before any week has finished.
     private var isFirstMatch: Bool {
         guard let rivalry else { return false }
         return rivalry.weeks.isEmpty && rivalry.challengeTitle == nil
     }
 
     var body: some View {
-        // Accessibility sizes scroll the button with the text; pinned, it
-        // would squeeze both.
         let pinsButton = !dynamicTypeSize.isAccessibilitySize
         VStack(spacing: 0) {
             if let drawerBack {
@@ -912,7 +855,6 @@ struct FriendProfileView: View {
             }
         }
         .personFriendDialogs($dialog, name: person.displayName, controls: controls) { isBlocking = true }
-        // Back to wherever they were found, once the block lands.
         .onChange(of: isBlocked) { _, blocked in
             if isBlocking, blocked == true { dismiss() }
         }
@@ -941,7 +883,6 @@ struct FriendProfileView: View {
         .accessibilityIdentifier("competition.more")
     }
 
-    /// Side by side, stacking at accessibility sizes where the name needs the width.
     private var rowLayout: AnyLayout {
         dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
@@ -1082,7 +1023,6 @@ struct FriendProfileView: View {
         .accessibilityIdentifier("friends.person.belt")
     }
 
-    /// The gold belt on offer. Gold here is the owner's call: it's the prize.
     private func beltPrize(_ label: String, line: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             CompetitionBeltHeroArt(holder: .you)
@@ -1160,7 +1100,6 @@ struct FriendProfileView: View {
                     NavigationLink("All Weeks with \(person.displayName)", value: CompetitionHomeRoute.person(identity))
                         .buttonStyle(SecondaryButtonStyle())
                         .accessibilityIdentifier("competition.profile.weeks")
-                    // Their request is answered here too; it's the one primary until then.
                     if person.relationship == .incoming {
                         action
                     } else if let title = rivalry?.challengeTitle, let challenge {

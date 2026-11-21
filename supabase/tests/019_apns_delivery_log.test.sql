@@ -99,8 +99,6 @@ select ok((
   where recipient_profile_id = 'd2000000-0000-4000-8000-000000000002'
 ), 'production work never retains a development delivery-log identifier');
 
--- All rows below are transaction-local synthetic fixtures. Each scenario uses
--- the real lease/resolution RPCs; only an owner simulates the intervening race.
 select lives_ok($cases$
   do $$
   declare

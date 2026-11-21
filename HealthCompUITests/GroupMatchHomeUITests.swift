@@ -1,8 +1,5 @@
 import XCTest
 
-/// Home's group match cards, in their own block beside the duels: an invite,
-/// a lobby waiting on people, live free-for-all and doubles, two results and
-/// one that didn't start. Now is Day 4.
 final class GroupMatchHomeUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false

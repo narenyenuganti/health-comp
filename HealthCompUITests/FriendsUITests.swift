@@ -1,11 +1,5 @@
 import XCTest
 
-/// The Friends screen, search and the new-person page, through the app's own
-/// root view. `FriendsTestLabServer` scripts the server: every call takes
-/// 0.3 s; Jordan and Priya have asked to be friends; Maya is live, Sam starts
-/// soon, Dev has a finished week and Kai has nothing; Marcus and Mara can be
-/// added (Mara's first Add fails), Mateo is already requested; `ratelimit`
-/// hits the search limit.
 final class FriendsUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -27,11 +21,8 @@ final class FriendsUITests: XCTestCase {
         case noUsername = "friends-no-username"
     }
 
-    /// Wrapped or single-line text the clipping audit flags anyway, seen
-    /// whole in the attached screenshots.
     private static let readsClippedToTheAudit: Set<String> = [
         "REQUESTS · 2", "FRIENDS · 4",
-        // Replaced by "Search" at accessibility sizes.
         "Search name or username",
         "Can’t find them? Send your link from Friends.",
         "Friends can challenge each other without a link.",
@@ -63,7 +54,6 @@ final class FriendsUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["REQUESTS · 2"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["FRIENDS · 4"].exists)
         XCTAssertTrue(app.staticTexts["@jordanlee"].exists)
-        // The status line comes from match data: live, starts, record, none.
         XCTAssertTrue(app.staticTexts["Live · Day 3 of 7"].exists)
         XCTAssertTrue(app.staticTexts["You lead 1–0"].exists)
 
@@ -94,7 +84,6 @@ final class FriendsUITests: XCTestCase {
         action.tap()
         let cancel = app.buttons["Cancel Request"]
         XCTAssertTrue(cancel.waitForExistence(timeout: 3))
-        // Keeping it changes nothing.
         app.buttons["Keep Request"].tap()
         XCTAssertTrue(cancel.waitForNonExistence(timeout: 3))
         XCTAssertEqual(action.label, "Requested")
@@ -104,7 +93,6 @@ final class FriendsUITests: XCTestCase {
         cancel.tap()
         XCTAssertTrue(waitUntil(5) { action.label == "Add" })
 
-        // Someone already requested, and the friend label.
         search("mat")
         let mateo = app.buttons["friends.result.action.\(Person.mateo)"]
         expect(mateo)
@@ -119,7 +107,6 @@ final class FriendsUITests: XCTestCase {
         launch(.friends)
         openFriends()
         search("ma")
-        // Under three characters shows nothing.
         XCTAssertFalse(element("friends.search.empty").waitForExistence(timeout: 1))
         XCTAssertFalse(element("friends.result.\(Person.marcus)").exists)
 
@@ -136,8 +123,6 @@ final class FriendsUITests: XCTestCase {
         expect(error)
         XCTAssertEqual(error.label, "Too many searches. Try again in a minute.")
 
-        // Clearing returns to the list. Back is every pushed page's one,
-        // and leaves Friends from search too.
         let clear = element("friends.search.clear")
         XCTAssertGreaterThanOrEqual(clear.frame.width, 44)
         XCTAssertGreaterThanOrEqual(clear.frame.height, 44)
@@ -147,7 +132,6 @@ final class FriendsUITests: XCTestCase {
         expect(empty)
         back()
         XCTAssertTrue(app.buttons["friends.open"].waitForExistence(timeout: 5))
-        // Closing forgot the search.
         openFriends()
         XCTAssertTrue(app.staticTexts["REQUESTS · 2"].waitForExistence(timeout: 5))
         XCTAssertFalse(empty.exists)
@@ -188,7 +172,6 @@ final class FriendsUITests: XCTestCase {
         action.tap()
         XCTAssertTrue(waitUntil(5) { action.label == "Requested" })
 
-        // Back in the results, with the answer already applied.
         back()
         XCTAssertTrue(waitUntil(5) {
             self.app.buttons["friends.result.action.\(Person.marcus)"].label == "Requested"
@@ -202,21 +185,17 @@ final class FriendsUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
         XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
-        // All their weeks are one push further.
         let weeks = app.buttons["competition.profile.weeks"]
         XCTAssertTrue(weeks.waitForExistence(timeout: 5))
         weeks.tap()
         XCTAssertTrue(element("competition.person").waitForExistence(timeout: 5))
         back()
         XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
-        // Friends stays under it on the stack.
         back()
         XCTAssertTrue(row.waitForExistence(timeout: 3))
         XCTAssertTrue(app.navigationBars["Friends"].exists)
     }
 
-    /// Each side of Home's score opens that person; the rest of the card
-    /// still opens the match.
     func testAPhotoOnTheScoreOpensTheProfile() {
         launch(.friends)
         let hero = app.buttons[Self.mayaHero]
@@ -309,8 +288,6 @@ final class FriendsUITests: XCTestCase {
         XCTAssertTrue(element("friends.invite").waitForExistence(timeout: 3))
     }
 
-    /// Named `<screen>-<light|dark>-<default|ax5>`. Hit regions, clipping
-    /// and labels are audited in every combination.
     func testAppearancesAndLargestTextSize() throws {
         let sizes = [("default", "UICTContentSizeCategoryL"), ("ax5", "UICTContentSizeCategoryAccessibilityXXXL")]
         for appearance in ["Light", "Dark"] {
@@ -331,13 +308,10 @@ final class FriendsUITests: XCTestCase {
                 search("mar")
                 expect(element("friends.result.\(Person.marcus)"))
                 shot("search-results-\(suffix)")
-                // Everything is reachable with the keyboard up.
                 scrollTo(element("friends.search.hint"))
-                // Pinned: the query and its clear button stay on screen.
                 XCTAssertTrue(field.isHittable)
                 XCTAssertTrue(element("friends.search.clear").isHittable)
                 shot("search-results-scrolled-\(suffix)")
-                // Keyboard down: its predictive bar has no label to audit.
                 dismissKeyboard()
                 try audit("search \(suffix)")
                 search("qqq")
@@ -360,8 +334,6 @@ final class FriendsUITests: XCTestCase {
             }
         }
     }
-
-    // MARK: Helpers
 
     private var openButton: XCUIElement { app.buttons["friends.open"] }
     private var field: XCUIElement { app.textFields["friends.search.field"] }
@@ -398,8 +370,6 @@ final class FriendsUITests: XCTestCase {
         XCTAssertTrue(accept.waitForNonExistence(timeout: 5))
     }
 
-    /// Sets the query to exactly `text`, and waits until the field says so
-    /// before anyone waits on results: a slow runner can drop keys.
     private func search(_ text: String, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(field.waitForExistence(timeout: 5), file: file, line: line)
         for attempt in 1...2 where fieldText != text {
@@ -419,15 +389,12 @@ final class FriendsUITests: XCTestCase {
         XCTAssertEqual(fieldText, text, "The search field's text", file: file, line: line)
     }
 
-    /// The query as typed; empty, not the placeholder, when there's none.
     private var fieldText: String {
         guard field.exists else { return "<no field>" }
         let value = field.value as? String ?? ""
         return value == field.placeholderValue ? "" : value
     }
 
-    /// Waits for a result, and on failure says what the field held and
-    /// what was on screen.
     private func expect(
         _ target: XCUIElement,
         timeout: TimeInterval = 5,
@@ -455,11 +422,7 @@ final class FriendsUITests: XCTestCase {
     }
 
     private func scrollTo(_ target: XCUIElement) {
-        // A drag from mid-screen: the scroll view's own centre is on the
-        // keyboard's top edge, where a swipe scrolls nothing.
         let window = app.windows.firstMatch
-        // Fully on screen: a row cut by the bottom edge reports hittable,
-        // but a tap there lands on the home indicator.
         for _ in 0..<12 where !(target.exists && target.isHittable && app.frame.contains(target.frame)) {
             window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
                 .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)))
@@ -496,7 +459,6 @@ final class FriendsUITests: XCTestCase {
                     return true
                 }
                 guard let element = issue.element, !screen.contains(element.frame) else {
-                    // iOS 18 reports some clipping with no element; skip only that.
                     guard issue.element != nil || issue.auditType != .textClipped else {
                         skipped.append(issue.detailedDescription)
                         return true

@@ -10,10 +10,6 @@ struct CompetitionRealtimeWakeUp: Equatable, Sendable {
     let serverCursorHint: UInt64?
 }
 
-/// A wake-up-only boundary for remote competition changes.
-///
-/// Realtime payloads never become application state. Every element instructs
-/// the remote coordinator to reconcile against the durable server contract.
 struct CompetitionRealtimeClient: Sendable {
     var wakeUps: @Sendable (
         _ profileID: UUID

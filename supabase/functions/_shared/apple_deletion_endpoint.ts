@@ -29,12 +29,9 @@ export async function appleDeletionEndpoint(
     });
     if (!handlers) return unavailable();
     const response = await handlers[operation](request);
-    // Preserve an actual server-confirmed completion, but don't misreport
-    // budget exhaustion during authentication as invalid user credentials.
     if (transport.expired && response.status !== 200) return unavailable();
     return response;
   } catch {
-    // Never expose provider, credential or SDK construction diagnostics.
     return unavailable();
   } finally {
     transport.close();

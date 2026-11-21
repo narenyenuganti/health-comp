@@ -3,8 +3,6 @@ import CompetitionCore
 import Supabase
 
 enum SupabaseCompetitionRemoteAPI {
-    /// `supportsGroupMatches`: this build registers its pushes as able to
-    /// show group matches (the live app); off keeps the older call chain.
     static func make(
         transport: CompetitionRemoteTransport,
         supportsGroupMatches: Bool = false
@@ -248,13 +246,6 @@ enum SupabaseCompetitionRemoteAPI {
                 return page
             },
             registerInstallation: { request in
-                // Newest call first. A server without that overload answers
-                // PGRST202 (function not found), with or without an HTTP
-                // status, and only that falls back: 8 args (group matches,
-                // only where `GroupMatchRollout` shows them), 7 (Friends),
-                // 6 (muted push kinds, no Friends), then 5 (reactions),
-                // 4 (challenges) and the original 3. Any other failure,
-                // 404s included, is thrown.
                 let current = try encodeWire(request, contract: .installationRequest)
                 let bodies = (supportsGroupMatches ? [try groupInstallationBody(current)] : []) + [
                     current,
@@ -372,7 +363,6 @@ enum SupabaseCompetitionRemoteAPI {
                     )),
                     transport: transport
                 )
-                // Exactly the three keys, echoing the request.
                 guard let object = try? JSONSerialization.jsonObject(with: response.data)
                     as? [String: Any],
                       Set(object.keys) == ["competition_id", "day_ordinal", "reaction"],
@@ -475,7 +465,6 @@ enum SupabaseCompetitionRemoteAPI {
                     ),
                     transport: transport
                 )
-                // Exactly `{nudged_at}`.
                 guard let object = try? JSONSerialization.jsonObject(with: response.data)
                     as? [String: Any],
                       Set(object.keys) == ["nudged_at"],
@@ -653,7 +642,6 @@ enum SupabaseCompetitionRemoteAPI {
                     .rpc(name: "username_available", parameters: try encode(["username": username])),
                     transport: transport
                 )
-                // Exactly `{available}`.
                 guard let object = try? JSONSerialization.jsonObject(with: response.data)
                     as? [String: Any],
                       Set(object.keys) == ["available"],
@@ -718,7 +706,6 @@ enum SupabaseCompetitionRemoteAPI {
                 return try decodeFriendsList(response.data)
             },
             searchPeople: { query in
-                // Not read-only: each search counts against the limit.
                 let response = try await send(
                     .rpc(name: "search_people", parameters: try encode(["query": query])),
                     transport: transport
@@ -750,7 +737,6 @@ enum SupabaseCompetitionRemoteAPI {
                     )),
                     transport: transport
                 )
-                // Declining someone who is already a friend changes nothing.
                 return try decodeRelationship(response.data, allowed: accept ? [.friend] : [.none, .friend])
             },
             removeFriend: { profileID in
@@ -764,7 +750,6 @@ enum SupabaseCompetitionRemoteAPI {
                     )),
                     transport: transport
                 )
-                // Exactly a `list_blocked_profiles` row, for this person.
                 guard let object = try? JSONSerialization.jsonObject(with: response.data),
                       let profile = challengeProfile(object, idKey: "id", nameKey: "display_name"),
                       profile.id == profileID
@@ -781,7 +766,6 @@ enum SupabaseCompetitionRemoteAPI {
                     )),
                     transport: transport
                 )
-                // Exactly `{reported: true}`.
                 guard let object = try? JSONSerialization.jsonObject(with: response.data)
                     as? [String: Any],
                       Set(object.keys) == ["reported"],
@@ -802,8 +786,6 @@ enum SupabaseCompetitionRemoteAPI {
         )
     }
 
-    /// The eight-argument registration: the current body plus
-    /// `supports_group_matches` (20261110003500).
     private static func groupInstallationBody(_ current: Data) throws -> Data {
         guard var object = try? JSONSerialization.jsonObject(with: current) as? [String: Any] else {
             throw CompetitionRemoteFailure.serverContractMismatch
@@ -812,7 +794,6 @@ enum SupabaseCompetitionRemoteAPI {
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
     }
 
-    /// One group RPC and its exact answer.
     private static func sendGroupMatchCommand(
         _ command: GroupMatchRemoteCommand,
         _ transport: CompetitionRemoteTransport
@@ -838,7 +819,6 @@ enum SupabaseCompetitionRemoteAPI {
             guard Set(object.keys) == ["competition_id", "state"], echoed == id,
                   let state = object["state"] as? String, ["pending", "scheduled", "expired"].contains(state)
             else { throw CompetitionRemoteFailure.serverContractMismatch }
-            // Lapsed before the cleanup job closed it.
             if state == "expired" { throw CompetitionRemoteFailure.inviteUnavailable }
             return id
         case let .decline(id), let .cancel(id):
@@ -865,8 +845,6 @@ enum SupabaseCompetitionRemoteAPI {
         }
     }
 
-    /// Exactly `{photos}`, only ids that were asked for; an unreadable row
-    /// is skipped (initials).
     private static func decodeProfilePhotos(
         _ data: Data,
         requested: Set<UUID>
@@ -889,7 +867,6 @@ enum SupabaseCompetitionRemoteAPI {
         }
     }
 
-    /// get / reset your challenge link: exactly `{code}`.
     private static func challengeLinkCode(
         _ name: String,
         _ transport: CompetitionRemoteTransport
@@ -909,7 +886,6 @@ enum SupabaseCompetitionRemoteAPI {
         return code
     }
 
-    /// accept / decline / cancel: `{competition_id}` echoing the request.
     private static func sendCompetitionCommand(
         _ name: String,
         _ competitionID: UUID,
@@ -933,8 +909,6 @@ enum SupabaseCompetitionRemoteAPI {
     static func live(
         provider: SupabaseClientProvider
     ) -> CompetitionRemoteAPI {
-        // Only a build that shows group matches may say so: the server
-        // admits invites and leases group pushes on this flag.
         make(transport: .live(provider: provider), supportsGroupMatches: GroupMatchRollout.showsFormatPicker)
     }
 
@@ -960,8 +934,6 @@ enum SupabaseCompetitionRemoteAPI {
         case previewInvite
         case appAttestChallenge
         case appAttestSubmission
-        /// An RPC with an older overload to try: PGRST202 throws
-        /// MissingRPCFunction instead of a CompetitionRemoteFailure.
         case overloadFallback
     }
 
@@ -1114,7 +1086,6 @@ enum SupabaseCompetitionRemoteAPI {
         if identifiers.contains("group_creation_limit") {
             return .groupCreationLimit
         }
-        // Closed, expired, gone, or hidden by a block: one answer.
         if identifiers.contains("group_match_unavailable") {
             return .inviteUnavailable
         }
@@ -1146,7 +1117,6 @@ enum SupabaseCompetitionRemoteAPI {
             return .requestUnavailable
         }
         let isClaimContext = context == .claimInvite || context == .previewInvite
-        // Your own link says so; every other claim failure stays collapsed.
         if isClaimContext,
            !identifiers.isDisjoint(with: [
                "self_claim_forbidden",
@@ -1290,11 +1260,6 @@ enum SupabaseCompetitionRemoteAPI {
         )
     }
 
-    /// Exact keys, at most 50 rows each. Timestamps are Postgres JSON
-    /// (`2026-11-01T21:14:00.123456+00:00`). A closed row may name
-    /// "Former competitor"; an incoming sender never does. A row this app
-    /// can't read (say, a time zone iOS doesn't know) is skipped, so one
-    /// row never hides the rest.
     private static func decodeChallengeList(_ data: Data) throws -> CompetitionChallengeList {
         func date(_ value: Any?) -> Date? {
             (value as? String).flatMap { try? CompetitionWireCodec.date($0) }
@@ -1342,7 +1307,6 @@ enum SupabaseCompetitionRemoteAPI {
         return list
     }
 
-    /// Exactly `{reactions}`, at most 2000 rows; an unreadable row is skipped.
     private static func decodeReactionList(_ data: Data) throws -> [CompetitionReactionRecord] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(object.keys) == ["reactions"],
@@ -1372,7 +1336,6 @@ enum SupabaseCompetitionRemoteAPI {
         }
     }
 
-    /// Exactly `{matches}`; an unreadable match or night is skipped.
     private static func decodeSleepScoring(_ data: Data) throws -> [CompetitionSleepMatch] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(object.keys) == ["matches"],
@@ -1407,8 +1370,6 @@ enum SupabaseCompetitionRemoteAPI {
         return Int(exactly: number.doubleValue)
     }
 
-    /// `.some(nil)` for JSON null (the result), `.some(n)` for a day 1...7,
-    /// nil for anything else.
     private static func reactionDayOrdinal(_ value: Any?) -> Int?? {
         if value is NSNull { return .some(nil) }
         guard let number = value as? NSNumber,
@@ -1419,7 +1380,6 @@ enum SupabaseCompetitionRemoteAPI {
         return .some(ordinal)
     }
 
-    /// Exactly `{blocked}`, at most 200 rows; an unreadable row is skipped.
     private static func decodeBlockedProfiles(_ data: Data) throws -> [AuthenticatedProfile] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(object.keys) == ["blocked"],
@@ -1431,8 +1391,6 @@ enum SupabaseCompetitionRemoteAPI {
         return rows.compactMap { challengeProfile($0, idKey: "id", nameKey: "display_name") }
     }
 
-    /// Exactly `{username, show_in_search, challenge_policy}`.
-    /// Reads only the keys it knows, so the server can add more later.
     static func decodeCareerSummary(_ data: Data) throws -> CompetitionCareer? {
         let value = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
         if value is NSNull { return nil }
@@ -1498,7 +1456,6 @@ enum SupabaseCompetitionRemoteAPI {
         return try decodeRelationship(response.data, allowed: allowed)
     }
 
-    /// Exactly `{relationship}`, and a value this command can answer.
     private static func decodeRelationship(
         _ data: Data,
         allowed: Set<FriendRelationship>
@@ -1514,7 +1471,6 @@ enum SupabaseCompetitionRemoteAPI {
         return relationship
     }
 
-    /// Exactly `{friends, incoming, outgoing}`, each row in its own list.
     private static func decodeFriendsList(_ data: Data) throws -> FriendsList {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(object.keys) == ["friends", "incoming", "outgoing"]
@@ -1540,7 +1496,6 @@ enum SupabaseCompetitionRemoteAPI {
             throw CompetitionRemoteFailure.serverContractMismatch
         }
         return try rows.map { row in
-            // `{id, display_name}` is the profile rule; these two keys are new.
             guard var object = row as? [String: Any],
                   let usernameValue = object.removeValue(forKey: "username"),
                   let relationship = (object.removeValue(forKey: "relationship") as? String)
@@ -1562,7 +1517,6 @@ enum SupabaseCompetitionRemoteAPI {
         }
     }
 
-    /// JSON `true`/`false` only: `as? Bool` also accepts 0 and 1.
     private static func strictBool(_ value: Any?) -> Bool? {
         guard let number = value as? NSNumber,
               CFGetTypeID(number) == CFBooleanGetTypeID()
@@ -1579,8 +1533,6 @@ enum SupabaseCompetitionRemoteAPI {
               Set(object.keys) == [idKey, nameKey],
               let id = (object[idKey] as? String).flatMap(wireUUID),
               let name = object[nameKey] as? String,
-              // The server's display-name rule: 1-64 code points, no Cc
-              // control characters. Format characters such as ZWJ are fine.
               (1...64).contains(name.unicodeScalars.count),
               !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control })
         else {
@@ -1721,7 +1673,6 @@ private struct BootstrapProfileParameters: Encodable {
 
 private struct EmptyParameters: Encodable {}
 
-/// The three-argument registration body, for servers before 20261101002300.
 private struct LegacyInstallationParameters: Encodable {
     let installationID: String
     let apnsToken: String
@@ -1740,7 +1691,6 @@ private struct LegacyInstallationParameters: Encodable {
     }
 }
 
-/// The four-argument registration body, for servers before 20261102002700.
 private struct ChallengeInstallationParameters: Encodable {
     let installationID: String
     let apnsToken: String
@@ -1761,8 +1711,6 @@ private struct ChallengeInstallationParameters: Encodable {
     }
 }
 
-/// The six-argument registration body, for servers before 20261109003100.
-/// They reject Friends mutes, and never send Friends pushes anyway.
 private struct MutedKindsInstallationParameters: Encodable {
     let installationID: String
     let apnsToken: String
@@ -1791,7 +1739,6 @@ private struct MutedKindsInstallationParameters: Encodable {
     }
 }
 
-/// The five-argument registration body, for servers before 20261103002800.
 private struct ReactionInstallationParameters: Encodable {
     let installationID: String
     let apnsToken: String
@@ -1815,7 +1762,6 @@ private struct ReactionInstallationParameters: Encodable {
     }
 }
 
-/// `{competition_id, day_ordinal, reaction}` with explicit JSON nulls.
 private struct SubmitSleepNightParameters: Encodable {
     let competitionID: String
     let dayOrdinal: Int
@@ -1977,7 +1923,6 @@ private struct RemoteErrorEnvelope: Decodable {
 
     let code: String?
     let message: String?
-    /// PostgREST's `details`; nil inside an `error` body.
     var details: String?
     var hint: String?
 
@@ -2042,9 +1987,6 @@ private actor SupabaseCompetitionClientBox {
         do {
             try Task.checkCancellation()
             let client = try client()
-            // `SupabaseClient`'s request adapter resolves `try? await auth.session`,
-            // which swallows a wake-up network error on an expired JWT and sends
-            // an unauthenticated request that fails 401 instead of retrying.
             if let current = client.auth.currentSession, current.isExpired {
                 _ = try await client.auth.session
             }
@@ -2114,8 +2056,6 @@ private actor SupabaseCompetitionClientBox {
                     data: response.data
                 )
             case let .uploadProfilePhoto(path, data):
-                // No upsert: a version is written once (and the policy has
-                // no update rule).
                 _ = try await client.storage.from(Self.photoBucket).upload(
                     path,
                     data: data,

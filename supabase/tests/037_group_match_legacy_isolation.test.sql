@@ -1,5 +1,4 @@
 begin;
--- Included inside each group test transaction; no product fixture state persists.
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
@@ -44,7 +43,6 @@ begin
  update public.competitions set start_day=current_date-days_ago,invitation_expires_at=now()-interval '20 days',
    best_available_deadline=(current_date-days_ago+9)::timestamp at time zone 'UTC' where id=cid;
 end; $$;
--- Real submission path: fixed semantic identity and evaluation time allow exact replay.
 create function pg_temp.score(cid uuid,person integer,day integer,rev bigint,points integer default 30000) returns jsonb language plpgsql as $$
 declare evaluated timestamptz; d text;
 begin
@@ -96,7 +94,6 @@ select throws_ok($$select public.accept_competition_challenge(pg_temp.gid('pendi
 select throws_ok($$select public.decline_competition_challenge(pg_temp.gid('pending'))$$,'P0001',null,'old decline refuses group');
 select is(public.list_challenges()->'incoming','[]'::jsonb,'old incoming challenges excludes pending group');
 reset role;
--- Token RPCs still require authentication and reject group invites, even with their exact digest.
 create temporary table tokens(token bytea);
 insert into tokens select token_digest from public.competition_invites where competition_id=pg_temp.gid('pending');
 grant select on tokens to authenticated;
@@ -108,7 +105,6 @@ select pg_temp.as_user(1);
 select is(public.list_challenges()->'closed','[]'::jsonb,'old closed challenge list excludes declined group');
 reset role;
 select ok(private.match_in_progress_between(pg_temp.pid(1),pg_temp.pid(2))=pg_temp.gid('duel'),'group does not interfere with duel overlap guard');
--- Install capability can turn off safely through the historical registration overload.
 select pg_temp.as_user(2);
 select public.register_current_device_installation(md5('group-install-2')::uuid,md5('group-token-2')||md5('group-token-2'),'sandbox',true,true,'{}'::text[],true);
 select ok((select supports_group_matches from public.device_installations where profile_id=pg_temp.pid(2)),'new overload stores capability');

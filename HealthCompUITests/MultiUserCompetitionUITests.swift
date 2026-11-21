@@ -28,7 +28,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         create.tap()
         XCTAssertTrue(app.buttons["competition.create.share"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["Waiting for someone to accept. The link works once."].exists)
-        // Once sent, the sheet can't switch to someone else.
         XCTAssertTrue(app.staticTexts["Challenge sent"].exists)
         XCTAssertFalse(app.buttons["competition.create.find-recipient"].isEnabled)
         XCTAssertFalse(recipientCodeField.isEnabled)
@@ -65,15 +64,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
         launch(.sharing)
         defer { app.terminate() }
         let error = app.staticTexts["competition.create.recipient-error"]
-        // Each code goes into a freshly opened sheet, which starts empty.
-        // Return runs Find; Find is never tapped.
         func submit(_ code: String) {
             openChallengeDrawer()
             showLinkEntry()
             let field = recipientCodeField
             XCTAssertTrue(field.waitForExistence(timeout: 3))
             field.tap()
-            // Bulk Simulator typing can drop a repeated character.
             for character in code { field.typeText(String(character)) }
             XCTAssertEqual(field.value as? String, code)
             field.typeText("\n")
@@ -92,7 +88,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertEqual(error.label, "That’s your own link. Ask them for theirs.")
         closeChallengeDrawer()
 
-        // A challenge link finds the person too.
         submit("healthcomp://challenge/SamSamSamSamSamSamSam1")
         let linked = app.staticTexts["competition.create.recipient-name"]
         XCTAssertTrue(linked.waitForExistence(timeout: 3))
@@ -106,7 +101,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertFalse(error.exists)
     }
 
-    // The field wraps a long code, so XCTest may expose it as a text view.
     private var recipientCodeField: XCUIElement {
         let field = app.textFields["competition.create.recipient-code"]
         return field.exists ? field : app.textViews["competition.create.recipient-code"]
@@ -120,7 +114,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let create = app.buttons["competition.create.button"]
         XCTAssertTrue(create.waitForExistence(timeout: 3))
         create.tap()
-        // The drawer covers the lab's Paste control.
         assertSharedInvitationCopiesCompleteLink(
             app.buttons["competition.create.share"],
             beforePaste: closeChallengeDrawer
@@ -268,7 +261,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         completed.tap()
         XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["You beat Former competitor"].exists)
-        // A retired pair's past weeks keep their banner.
         XCTAssertEqual(element("competition.result.belt").label, "You took the belt")
         XCTAssertTrue(
             app.otherElements["competition.result"].label
@@ -371,7 +363,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
         XCTAssertTrue(element("competition.person.belt").waitForExistence(timeout: 3))
         attachScreenshot("belt-person-dark-ax5")
-        // No .dynamicType audit: the reused rows swap layouts with ViewThatFits.
         try app.performAccessibilityAudit(
             for: XCUIAccessibilityAuditType.textClipped
                 .union(.hitRegion)
@@ -386,7 +377,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
         let share = app.buttons["competition.result.share"]
         scrollToElement(share)
-        // Clear of the pinned Rematch for the capture.
         app.scrollViews.firstMatch.swipeUp()
         XCTAssertTrue(share.isHittable)
         attachScreenshot("remote-result-share")
@@ -394,7 +384,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
         let card = element("competition.recap.card")
         XCTAssertTrue(card.waitForExistence(timeout: 5))
-        // Normalizes a choice left over from an earlier run.
         app.buttons["Show Casey"].tap()
         let shown = "Casey won. Aug 13 to 19, 2026. You 2,692 points. Casey 2,800 points. Lost by 108 points, won 1 day, lost 6. Best day: Sunday, 512 points. Casey took the belt."
         XCTAssertEqual(card.label, shown)
@@ -415,7 +404,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertFalse(card.label.contains("Casey"))
         attachScreenshot("remote-recap-sheet-hidden")
 
-        // The choice is remembered on this iPhone.
         app.buttons["Close"].tap()
         XCTAssertTrue(card.waitForNonExistence(timeout: 3))
         scrollToElement(share)
@@ -426,14 +414,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.buttons["Close"].tap()
         XCTAssertTrue(card.waitForNonExistence(timeout: 3))
 
-        // A deleted account's name is always hidden, with no choice.
         navigateBackToSharing()
         let former = sharingCard(state: "completed", name: "Former competitor")
         scrollToElement(former)
         former.tap()
         XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
         scrollToElement(share)
-        // The reaction panel pushes Share Result under the pinned Rematch.
         app.scrollViews.firstMatch.swipeUp()
         share.tap()
         XCTAssertTrue(card.waitForExistence(timeout: 5))
@@ -455,7 +441,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
         openCaseyResult()
-        // The lab banner sits behind the sheet, so check it first.
         assertRemoteRenderedConfiguration("Appearance: Dark; Dynamic Type: accessibility5")
         let largeShare = app.buttons["competition.result.share"]
         scrollToElement(largeShare)
@@ -523,13 +508,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.buttons["Close"].firstMatch.tap()
         XCTAssertTrue(fire.waitForNonExistence(timeout: 3))
 
-        // Leaving the match marks Jordan's reaction seen.
         navigateBackToSharing()
         let jordanAfter = sharingCard(state: "active", name: "Jordan")
         XCTAssertTrue(jordanAfter.waitForExistence(timeout: 3))
         XCTAssertFalse(jordanAfter.label.contains("reacted"), jordanAfter.label)
 
-        // Morgan's archived week, from History.
         openHistory()
         let morganRecord = record(named: "Morgan")
         scrollToElement(morganRecord)
@@ -548,7 +531,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(waitForSelected(clap, true))
         attachScreenshot("reactions-result-morgan")
 
-        // A deleted account can't be reacted to, but its reaction still shows.
         launch(.sharing)
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
         let former = sharingCard(state: "completed", name: "Former competitor")
@@ -586,9 +568,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(dayThree)
         dayThree.tap()
 
-        // Drag the title to the top to reach .large, then scroll the drawer
-        // itself (the scroll view holding the chips, not the page behind
-        // it) in short drags until the last chip is fully on screen.
         let title = app.staticTexts["Day 3"]
         XCTAssertTrue(title.waitForExistence(timeout: 3))
         title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
@@ -612,7 +591,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         for kind in ["clap", "fire", "huffing", "salute"] {
             XCTAssertTrue(app.buttons["competition.react.\(kind)"].isHittable, kind)
         }
-        // No .dynamicType audit: it flags different elements on different runs.
         try app.performAccessibilityAudit(
             for: XCUIAccessibilityAuditType.textClipped
                 .union(.hitRegion)
@@ -655,7 +633,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let card = sharingCard(state: "active", name: "Pacer")
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         XCTAssertTrue(card.label.contains("Practice · Day 2 of 7"), card.label)
-        // Success closes the sheet.
         expectation(
             for: NSPredicate(format: "exists == false"),
             evaluatedWith: element("competition.practice.sheet")
@@ -685,7 +662,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No matches yet"].waitForExistence(timeout: 5))
         XCTAssertFalse(card.exists)
 
-        // A finished practice: Practice · Final, and Challenge Someone in place of Rematch.
         launch(.practice, appearanceArguments: ["-practiceLabFinished", "YES"])
         let result = sharingCard(state: "completed", name: "Pacer")
         XCTAssertTrue(result.waitForExistence(timeout: 8))
@@ -760,7 +736,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let riley = sharingCard(state: "active", name: "Riley")
         XCTAssertTrue(jordan.exists)
         XCTAssertTrue(riley.exists)
-        // Jordan's week ends a day before Riley's.
         XCTAssertLessThan(jordan.frame.minY, riley.frame.minY)
 
         let rileyID = "a1000000-0000-4000-8000-000000000006"
@@ -811,7 +786,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let retry = app.buttons["competition.issue.retry.\(andyID)"]
         XCTAssertFalse(issue.exists)
 
-        // Pull-to-refresh #1: transient failure + recovery must never flash the issue line.
         let scrollView = app.scrollViews.firstMatch
         XCTAssertTrue(scrollView.exists)
         scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
@@ -835,7 +809,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
             "Couldn’t update scores flashed during a transient refresh"
         )
 
-        // Pull-to-refresh #2: a persistent failure shows the issue line and keeps it there.
         scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
             .press(forDuration: 0.05, thenDragTo: scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
 
@@ -895,7 +868,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
             "A dismissed closed challenge must stay dismissed after leaving and relaunching the app"
         )
 
-        // Positive control: a fresh profile state without persisted dismissals shows the row again.
         launch(.sharing)
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
         scrollToElement(again)
@@ -988,7 +960,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 .waitForExistence(timeout: 3)
         )
 
-        // Not Now only closes the sheet.
         launch(.coldClaim)
         let notNow = app.buttons["competition.claim.not-now"]
         XCTAssertTrue(notNow.waitForExistence(timeout: 8))
@@ -1029,7 +1000,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let reset = element("account.challenge-link.reset")
         scrollToElement(reset)
         XCTAssertEqual(url.value as? String, "invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
-        // A predicate: a subscript query can't be longer than 128 characters.
         XCTAssertTrue(
             app.staticTexts.matching(NSPredicate(
                 format: "label == %@",
@@ -1037,7 +1007,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
             )).firstMatch.exists
         )
 
-        // Cancel keeps the link.
         reset.tap()
         let alert = app.alerts["Reset your challenge link?"]
         XCTAssertTrue(alert.waitForExistence(timeout: 3))
@@ -1048,7 +1017,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(alert.waitForNonExistence(timeout: 3))
         XCTAssertEqual(url.value as? String, "invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
 
-        // Reset Link shows the new link.
         reset.tap()
         XCTAssertTrue(alert.waitForExistence(timeout: 3))
         alert.buttons["Reset Link"].tap()
@@ -1068,7 +1036,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let cancel = app.buttons["competition.invite.cancel"]
         XCTAssertTrue(cancel.exists)
         cancel.tap()
-        // The dialog's destructive button, not the screen's.
         let confirm = app.buttons.matching(
             NSPredicate(
                 format: "label == %@ AND identifier != %@",
@@ -1123,7 +1090,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
             launch(.account, appearanceArguments: arguments)
             XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
-            // At AX5 the section starts below the fold, outside the lazy list.
             let url = element("account.challenge-link.url")
             scrollToElement(url)
             XCTAssertTrue(url.exists)
@@ -1270,13 +1236,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Decline and Block Naren"].exists)
         confirm.tap()
-        // Health is still next, in its own terms.
         XCTAssertTrue(
             app.staticTexts["Score with your rings"].waitForExistence(timeout: 5)
         )
         XCTAssertFalse(app.descendants(matching: .any)["competition.claim.sheet"].exists)
 
-        // Accept waits for Health, which is asked in the match's terms.
         launch(.healthOnboardingClaim)
         let accept = app.buttons["competition.claim.accept"]
         XCTAssertTrue(accept.waitForExistence(timeout: 8))
@@ -1332,7 +1296,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         assertRemoteRenderedConfiguration("Appearance: Light; Dynamic Type: large")
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
 
-        // Sounds: the switch greys the volume out, and the row says so.
         let sounds = element("account.sounds")
         scrollToElement(sounds)
         sounds.tap()
@@ -1340,11 +1303,9 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let soundSwitch = app.switches["account.sounds.enabled"].firstMatch
         let volume = app.sliders["account.sounds.volume"].firstMatch
         XCTAssertTrue(volume.exists)
-        // Flipped twice, so the simulator's setting ends as it began.
         for _ in 0..<2 {
             let wasOn = soundSwitch.value as? String == "1"
             XCTAssertEqual(volume.isEnabled, wasOn)
-            // A row-wide switch: its centre can land on the label.
             let knob = soundSwitch.switches.firstMatch
             if knob.exists {
                 knob.tap()
@@ -1383,8 +1344,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.navigationBars["Privacy"].buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
         let edit = app.buttons["account.settings.edit-display-name"]
-        // The lazy List drops the profile row this far below it, and
-        // scrollToElement only knows to scroll up to a row that exists.
         for _ in 0..<6 where !edit.exists {
             app.collectionViews.firstMatch.swipeDown(velocity: .fast)
         }
@@ -1406,8 +1365,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
             app.staticTexts["account.message"].label,
             "That name is reserved. Try another."
         )
-        // Sign out sits below Appearance, under the keyboard; Return
-        // dismisses it so the list can scroll.
         field.typeText("\n")
         scrollToElement(app.buttons["account.sign-out"])
     }
@@ -1454,7 +1411,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
             message.label,
             "Couldn’t delete your account. Check your connection and try again."
         )
-        // Delete is the last row, so the list scrolls to show all of it.
         let isOnScreen = NSPredicate { _, _ in message.frame.maxY <= self.app.frame.maxY }
         wait(for: [XCTNSPredicateExpectation(predicate: isOnScreen, object: nil)], timeout: 3)
         XCTAssertTrue(app.buttons["account.delete"].isEnabled)
@@ -1492,16 +1448,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
         launch(.account)
         defer { app.terminate() }
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
-        // BLOCKED sits above it, so the row can start below the fold.
         let notifications = element("account.notifications")
         scrollToElement(notifications)
         notifications.tap()
         XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Turned off in iOS Settings"].exists)
         XCTAssertTrue(app.staticTexts["DURING A MATCH"].exists)
-        // The remote suite's audit set. `.dynamicType` flags a different
-        // List element on each run here (header, name, initial), so it's
-        // left to the local suite's single-screen audit, as elsewhere.
         let audit = XCUIAccessibilityAuditType.textClipped
             .union(.hitRegion)
             .union(.sufficientElementDescription)
@@ -1513,7 +1465,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 .waitForExistence(timeout: 3)
         )
 
-        // Switches in page order.
         let rows: [(String, String)] = [
             ("lead-change", "Lead changes"), ("close-score", "Close scores"),
             ("what-it-takes", "What it takes"), ("final-day", "Last day"),
@@ -1529,7 +1480,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         }
         XCTAssertTrue(app.staticTexts["FRIENDS"].exists)
 
-        // The fixture has Live Activities off in iOS.
         let liveActivity = app.switches["account.notifications.choice.live-activity"].firstMatch
         scrollToElement(liveActivity)
         XCTAssertFalse(liveActivity.isEnabled)
@@ -1543,7 +1493,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 .waitForExistence(timeout: 3)
         )
 
-        // Flip one and back, so reruns start clean.
         let leadChanges = app.switches["account.notifications.choice.lead-change"].firstMatch
         scrollToElement(leadChanges)
         let before = leadChanges.value as? String
@@ -1559,7 +1508,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         try auditRecordingUnlocatedClipping(audit)
 
         let unmute = app.buttons["Unmute Hermes"]
-        // The section header can be visible while this row is below the screen.
         scrollToElement(unmute)
         XCTAssertTrue(unmute.exists)
         unmute.tap()
@@ -1567,8 +1515,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertFalse(app.buttons["account.notifications.unmute"].exists)
     }
 
-    /// On iOS 18, switch and blocked rows can report clipping with no element.
-    /// Keep those reports and the screenshots for review; located issues still fail.
     private func auditRecordingUnlocatedClipping(_ audit: XCUIAccessibilityAuditType) throws {
         try XCTContext.runActivity(named: "accessibility audit") { activity in
             try app.performAccessibilityAudit(for: audit) { issue in
@@ -1583,8 +1529,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         launch(.account)
         defer { app.terminate() }
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
-        // The photo header and BLOCKED sit above it, so the row can start
-        // at or below the fold.
         let health = element("account.health")
         scrollToElement(health)
         health.tap()
@@ -1755,7 +1699,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         }
     }
 
-    /// The link field sits behind Paste Their Challenge Link.
     private func showLinkEntry() {
         let paste = app.buttons["competition.create.paste-link"]
         XCTAssertTrue(paste.waitForExistence(timeout: 3))
@@ -1769,7 +1712,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(input)
         input.tap()
         let code = "a1000000-0000-4000-8000-000000000005"
-        // Bulk Simulator typing can drop a repeated character before Find.
         for character in code { input.typeText(String(character)) }
         XCTAssertEqual(input.value as? String, code)
         let done = app.buttons["competition.create.keyboard-done"]
@@ -1783,8 +1725,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
     }
 
     func testRemoteCompetitionDynamicTypeRemainsReadable() throws {
-        // XCTest changes the content-size category during this audit, so it
-        // must run without a fixed preferred-category launch override.
         launch(.sharing)
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
 
@@ -1818,7 +1758,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         add(resultScreenshot)
         try app.performAccessibilityAudit(for: .dynamicType)
     }
-
 
     func testRemoteActiveDayRemainsReadableAtXXXL() throws {
         try assertRemoteActiveDayReadability(
@@ -1881,8 +1820,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
         try assertNoPrivateFixtureContentIsSpoken()
 
-        // Spoken labels already passed before the visual defect. Retain
-        // the actual day presentation before the unsuppressed clipping audit.
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "remote-day-three-\(expectedDynamicTypeSize)"
         screenshot.lifetime = .keepAlways
@@ -1900,8 +1837,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
-        // At AX5 a Recent results row with a reaction line is taller than
-        // the screen; then its top (and so its centre) must be in view.
         func isRevealed(_ viewport: CGRect, _ frame: CGRect) -> Bool {
             frame.height <= viewport.height
                 ? viewport.contains(frame)
@@ -1919,10 +1854,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
             let targetY = elementFrame.height <= viewport.height
                 ? elementFrame.midY
                 : elementFrame.minY + viewport.height / 2 - 16
-            // Drag by the distance to centre, in the drag's own units. A
-            // fixed 8% minimum (about 44pt after touch slop) could step back
-            // and forth across a window narrower than that, e.g. a 584pt card
-            // in a 627pt viewport; touch slop keeps each move short of centre.
             let offset = (targetY - viewport.midY) / scrollView.frame.height
             let distance = min(0.35, max(0.03, abs(offset)))
             let startY = offset > 0 ? 0.7 : 0.3
@@ -1933,7 +1864,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
             let end = scrollView.coordinate(
                 withNormalizedOffset: CGVector(dx: 0.5, dy: endY)
             )
-            // Stop before releasing so scroll momentum cannot overshoot the element.
             start.press(
                 forDuration: 0.05,
                 thenDragTo: end,
@@ -1970,7 +1900,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         defer { app.terminate() }
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
 
-        // Jordan updated an hour ago: no nudge.
         let jordan = sharingCard(state: "active", name: "Jordan")
         scrollToElement(jordan)
         jordan.tap()
@@ -1979,7 +1908,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertFalse(app.buttons["competition.nudge"].exists)
         navigateBackToSharing()
 
-        // Riley's last update is 13 hours old.
         let riley = sharingCard(state: "active", name: "Riley")
         scrollToElement(riley)
         riley.tap()
@@ -2006,7 +1934,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         after.lifetime = .keepAlways
         add(after)
 
-        // Largest type, dark: the capsule wraps, stays tappable and unclipped.
         launch(
             .sharing,
             appearanceArguments: [
@@ -2081,13 +2008,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.launchArguments = [
             "--multi-user-competition-test-lab",
             "--multi-user-competition-scenario", scenario.rawValue,
-            // The one-time color hint would shift scoreboards by test order.
             "-healthcomp.colorHintSeen", "YES",
         ] + appearanceArguments
         app.launch()
     }
 
-    /// Subscripts reject identifiers over 128 characters; match the label.
     private func text(
         _ label: String,
         in root: XCUIElement? = nil
@@ -2097,7 +2022,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
             .firstMatch
     }
 
-    // List rows that push a page may surface as cells, not buttons.
     private func element(_ identifier: String) -> XCUIElement {
         app.descendants(matching: .any)
             .matching(identifier: identifier)
@@ -2156,8 +2080,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
-        // Fixture UUIDs can identify routing controls, but must never be spoken.
-        // Raw invitation tokens must not appear in any accessibility field.
         var remaining = [try app.snapshot()]
         var spokenContent: [String] = []
         var identifiers: [String] = []
@@ -2203,8 +2125,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
     }
 
     private func resetSharingScrollToTop() {
-        // Restore the page's first card, the competition in play, before
-        // searching downward again.
         let hero = sharingCard(state: "active", name: "Jordan")
         let scrollView = app.scrollViews.firstMatch
         XCTAssertTrue(scrollView.exists)
@@ -2226,7 +2146,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let open = app.buttons["competition.create.open"]
         XCTAssertTrue(open.waitForExistence(timeout: 8))
         open.tap()
-        // The sharing lab opens the Challenge sheet directly.
         XCTAssertTrue(
             app.buttons["competition.create.done"].waitForExistence(timeout: 3)
         )
@@ -2239,7 +2158,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(close.waitForNonExistence(timeout: 3))
     }
 
-    // A match opens on Today; the day rows live on Week.
     private func waitForStatus(_ prefix: String, timeout: TimeInterval = 5) -> Bool {
         app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@",
             "competition.status", prefix)).firstMatch.waitForExistence(timeout: timeout)
@@ -2251,7 +2169,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         week.tap()
     }
 
-    // iOS 18 exposes Menu's identified wrapper, not its nested button, as hittable.
     private var moreMenu: XCUIElement {
         element("competition.more")
     }
@@ -2265,8 +2182,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         item.tap()
     }
 
-    /// A `Toggle` in a `List` exposes a row-wide switch; a tap at its center
-    /// can land on the label, so tap the inner switch or the trailing edge.
     private func flip(_ toggle: XCUIElement) {
         let knob = toggle.switches.firstMatch
         if knob.exists {
@@ -2278,12 +2193,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
     private func scrollToElement(_ element: XCUIElement) {
         for _ in 0..<24 {
-            // Fully on screen: a row cut by the bottom edge reports hittable,
-            // but a tap there lands on the home indicator.
             if element.exists, element.isHittable,
                app.frame.contains(element.frame) { return }
-            // List is a CollectionView on iOS 18; keyboard dismissal can
-            // remove a transient ScrollView between coordinate lookups.
             let collectionView = app.collectionViews.firstMatch
             let scrollView = app.scrollViews.firstMatch
             let surface: XCUIElement = collectionView.exists

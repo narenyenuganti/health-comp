@@ -1,7 +1,6 @@
 import XCTest
 
 extension XCUIApplication {
-    /// The group match Test Lab on one `-groupLab` setup.
     static func launchGroupLab(
         _ setup: String, arguments: [String] = [], dark: Bool = false, largestText: Bool = false
     ) -> XCUIApplication {

@@ -90,8 +90,6 @@ final class AppleWebAccountDeletionClient {
     }
 
     func deleteConfirmedAccount() async throws {
-        // Caller must already hold the app-auth transition and user confirmation.
-        // Resume can advance server deletion; it is not an inventory operation.
         guard !isRunning else { throw AppleWebAccountDeletionFailure.operationInProgress }
         try Task.checkCancellation()
         guard clientID.range(of: #"\A[A-Za-z0-9.-]{1,255}\z"#, options: .regularExpression) != nil,
@@ -104,7 +102,6 @@ final class AppleWebAccountDeletionClient {
             _ = try await complete(.resume)
             return
         } catch AppleWebAccountDeletionFailure.reauthenticationRequired {
-            // Only this explicit server result permits a new Apple grant.
         }
         try Task.checkCancellation()
         let request = try secrets()
@@ -120,8 +117,6 @@ final class AppleWebAccountDeletionClient {
         try Task.checkCancellation()
         try configuration.validateDeletionCallback(callback, requestID: response.requestID)
         _ = try await complete(.claim(requestID: response.requestID, verifier: request.claimVerifier))
-        // Preserve an actual confirmed receipt even if cancellation raced it.
-        // No detached timeout and no inference that a failed request rolled back.
     }
 
     private func validate(_ response: AppleWebDeletionBeginResponse, nonce: String) throws {

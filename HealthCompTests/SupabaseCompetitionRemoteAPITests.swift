@@ -524,9 +524,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             "environment": "sandbox",
             "state": "active",
         ])
-        // A server with the five-argument call answers the second fallback,
-        // one with the four-argument call the third; five 404s in a row
-        // surface as notFound.
         let harness = CompetitionTransportHarness(stubs: [
             .response(404, notFound),
             .response(404, notFound),
@@ -608,9 +605,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         try assertRPC(requests[2], name: "register_current_device_installation", body: reactionBody)
     }
 
-    /// Before 20261109003100 the six-argument call rejects Friends mutes, so
-    /// the fallback drops them and keeps the rest; once the server has the
-    /// seven-argument call, the next registration sends every mute again.
     func testRegisterInstallationFallbackDropsFriendMutesThenSendsThemOnceMigrated() async throws {
         let notFound = try jsonData(["code": "PGRST202", "message": "redacted"])
         let active = try jsonData([
@@ -654,8 +648,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         try assertRPC(requests[2], name: "register_current_device_installation", body: currentBody)
     }
 
-    /// The live Supabase SDK reports a missing function as a PostgrestError,
-    /// which arrives with code PGRST202 and no HTTP status.
     func testRegisterInstallationFallsBackOnPGRST202WithoutStatus() async throws {
         let harness = CompetitionTransportHarness(stubs: [
             .failure(.server(statusCode: nil, code: "PGRST202", message: "redacted")),
@@ -688,8 +680,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         try assertRPC(requests[1], name: "register_current_device_installation", body: mutedBody)
     }
 
-    /// Only PGRST202 means "this overload doesn't exist"; every other
-    /// failure, including a 404 with another code, is thrown after one call.
     func testRegisterInstallationDoesNotFallBackOnOtherFailures() async throws {
         let cases: [(CompetitionTransportStub, CompetitionRemoteFailure)] = [
             (.response(404, try jsonData(["code": "not_found", "message": "redacted"])), .notFound),
@@ -728,7 +718,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
                 "competition_id": match, "day_ordinal": NSNull(), "author_profile_id": author,
                 "reaction": "clap", "updated_at": "2026-11-09T16:00:00+00:00",
             ],
-            // Skipped: an unknown reaction, an uppercase id, a day out of range.
             [
                 "competition_id": match, "day_ordinal": 1, "author_profile_id": author,
                 "reaction": "heart", "updated_at": "2026-11-09T16:00:00+00:00",
@@ -955,7 +944,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
     }
 
     func testListedCancelledMatchDecodesWithoutASchedule() async throws {
-        // What the server stores after Cancel Match: no start day or deadline.
         var cancelled = descriptorObject()
         cancelled["lifecycle"] = "cancelled"
         cancelled["time_zone_identifier"] = "America/Los_Angeles"
@@ -977,7 +965,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         let listed = try await makeAPI(harness).listCompetitions()
         XCTAssertEqual(listed.map(\.lifecycle), [.cancelled])
 
-        // A schedule left on a cancelled row would fail the whole listing.
         var stale = cancelled
         stale["start_day"] = "2026-11-02"
         stale["best_available_deadline"] = "2026-11-10T08:00:00+00:00"
@@ -1034,7 +1021,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
                 "expires_at": "2026-11-02T21:14:00+00:00",
             ]
         }
-        // A family emoji joined with U+200D, which the server accepts.
         let family = "Sam \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
         var extra = incoming("13000000-0000-4000-8000-000000000002", name: "Extra")
         extra["score"] = 1
@@ -1058,7 +1044,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         XCTAssertEqual(list.incoming.map(\.sender.displayName), [family, "Naren"])
         XCTAssertEqual(list.closed, [])
 
-        // The list's own shape still has to be exact.
         let malformed = CompetitionTransportHarness(stubs: [
             .response(200, try jsonData(["incoming": [], "closed": [], "history": []])),
         ])
@@ -1235,7 +1220,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         XCTAssertEqual(extraKey, .serverContractMismatch)
         let requests = await harness.recordedRequests()
         try assertRPC(requests[0], name: "set_username", body: ["username": "alice"])
-        // An invalid name never reaches the server.
         let invalid = await remoteFailure { _ = try await api.setUsername("Al") }
         XCTAssertEqual(invalid, .invalidUsername)
         let requestCount = await harness.requestCount()
@@ -1434,7 +1418,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         XCTAssertEqual(accepted, .friend)
         let declined = try await api.respondToFriendRequest(id, false)
         XCTAssertEqual(declined, FriendRelationship.none)
-        // Declining someone who is already a friend changes nothing.
         let already = try await api.respondToFriendRequest(id, false)
         XCTAssertEqual(already, .friend)
         let acceptWithNone = await remoteFailure { _ = try await api.respondToFriendRequest(id, true) }
@@ -1472,7 +1455,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         let other = "12000000-0000-4000-8000-0000000000ff"
         let harness = CompetitionTransportHarness(stubs: [
             .response(200, try jsonData(["id": friendID, "display_name": "Dev Patel"])),
-            // Someone else's row, extra keys, a missing name, the wrong shape.
             .response(200, try jsonData(["id": other, "display_name": "Dev Patel"])),
             .response(200, try jsonData(["id": friendID, "display_name": "Dev Patel", "username": "devp"])),
             .response(200, try jsonData(["id": friendID])),
@@ -1494,7 +1476,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         let harness = CompetitionTransportHarness(stubs: [
             .response(200, try jsonData(["reported": true])),
             .response(200, try jsonData(["reported": false])),
-            // 1 is not JSON true.
             .response(200, try jsonData(["reported": 1])),
             .response(200, try jsonData(["reported": true, "extra": 1])),
             .response(200, try jsonData([:])),
@@ -1545,7 +1526,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         let harness = CompetitionTransportHarness(stubs: [
             .response(200, try jsonData(["code": "Xb3kP9qL2mN8vR4tY6wZ1a"])),
             .response(200, try jsonData(["display_name": "Maya"])),
-            // A link never hands out an account id; the old shape is refused.
             .response(200, try jsonData(["id": profile, "display_name": "Maya"])),
             .failure(.server(statusCode: 400, code: "P0001", message: "own_challenge_link")),
             .response(200, try jsonData(["code": "short"])),
@@ -1592,14 +1572,12 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             "rematchParentId": NSNull(),
             "idempotencyKey": "84000000-0000-4000-8000-000000000001",
         ])
-        // A rematch is never by link.
         XCTAssertThrowsError(try CompetitionInviteCreationRequest(
             recipient: .challengeLink(code),
             timeZoneIdentifier: "UTC",
             rematchParentID: competitionID,
             idempotencyKey: UUID(uuidString: "84000000-0000-4000-8000-000000000002")!
         ))
-        // A stored request decodes back to the same link recipient.
         let decoded = try JSONDecoder().decode(
             CompetitionInviteCreationRequest.self,
             from: JSONEncoder().encode(request)
@@ -2065,8 +2043,6 @@ extension SupabaseCompetitionRemoteAPITests {
 
     func testListProfilePhotosAsksForIDsAndKeepsOnlyRequestedReadableRows() async throws {
         let stranger = "12000000-0000-4000-8000-0000000000c9"
-        // The server returns at most one row per id asked for, so three ids
-        // make room for the three rows below.
         let others = [
             UUID(uuidString: "12000000-0000-4000-8000-0000000000ca")!,
             UUID(uuidString: "12000000-0000-4000-8000-0000000000cb")!,

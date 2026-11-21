@@ -1,7 +1,5 @@
 import Foundation
 
-/// One shared active client, with explicit admission after confirmed retirement.
-/// The owner supplies retirement work; this registry does not certify its scope.
 final class SharedClientLifetime<Client: AnyObject & Sendable>: @unchecked Sendable {
     enum Failure: Error, Equatable { case unavailable }
     private let lock = NSLock()
@@ -31,7 +29,6 @@ final class SharedClientLifetime<Client: AnyObject & Sendable>: @unchecked Senda
         }
     }
 
-    /// The synchronous operation must not reenter this registry or escape work.
     func withActiveOwner<Result>(
         _ expected: Client,
         operation: () throws -> Result
@@ -62,15 +59,12 @@ final class SharedClientLifetime<Client: AnyObject & Sendable>: @unchecked Senda
             lock.withLock { phase = .retirementFailed }
             throw error
         }
-        // Confirmation owns its cancellation policy. Once it succeeds, do not
-        // misreport settled retirement because this caller was later cancelled.
         lock.withLock {
             cachedClient = nil
             phase = .retired
         }
     }
 
-    // Called only while holding lock. Construction must not reenter this owner.
     private func activeClient() throws -> Client {
         if let cachedClient { return cachedClient }
         let client = try makeClient()

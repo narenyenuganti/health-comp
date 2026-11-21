@@ -2,10 +2,6 @@ import CompetitionCore
 import Foundation
 import SwiftUI
 
-// Reactions (spec §9.8): one preset per person per target, on the other
-// person's day or on the result. They live outside the change log and reach
-// the app through `list_competition_reactions`.
-
 enum CompetitionReactionKind: String, CaseIterable, Sendable {
     case clap, fire, huffing, salute
 
@@ -37,7 +33,6 @@ enum CompetitionReactionTarget: Hashable, Sendable {
     }
 }
 
-/// On a presentation: who reacted is relative to you.
 struct CompetitionReaction: Equatable, Sendable {
     let target: CompetitionReactionTarget
     let kind: CompetitionReactionKind
@@ -50,18 +45,13 @@ struct CompetitionReactionKey: Hashable, Sendable {
     let target: CompetitionReactionTarget
 }
 
-/// Per match, the server `updatedAt` of the newest reaction you got that
-/// you've already seen (on its match or result screen). Device-local.
 struct CompetitionReactionsSeen: RawRepresentable, Equatable {
     static let storageKey = "healthcomp.reactionsSeen"
 
-    // ponytail: never pruned (about 60 bytes per match); prune against the dashboard if that ever matters.
     var seenAt: [String: TimeInterval]
 
     init() { seenAt = [:] }
 
-    // Encodes only `seenAt`: making the wrapper Codable would encode
-    // through `rawValue` and recurse.
     init?(rawValue: String) {
         guard let data = rawValue.data(using: .utf8),
               let seenAt = try? JSONDecoder().decode([String: TimeInterval].self, from: data)
@@ -91,12 +81,9 @@ struct CompetitionReactionsSeen: RawRepresentable, Equatable {
     }
 }
 
-/// Motion that plays once, not on every visit. Device-local, like the
-/// reaction marks: per match, the newest day your Week bars grew for.
 struct CompetitionMotionSeen: RawRepresentable, Equatable {
     static let storageKey = "healthcomp.motionSeen"
 
-    // ponytail: never pruned (about 50 bytes per match), like the reaction marks.
     var weekDrawn: [String: Int]
 
     init() { weekDrawn = [:] }
@@ -113,7 +100,6 @@ struct CompetitionMotionSeen: RawRepresentable, Equatable {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// True when your newest scored day is newer than the last one drawn.
     func weekGained(_ competition: LocalCompetitionPresentation) -> Bool {
         guard let newest = Self.newestScoredDay(competition) else { return false }
         return newest > weekDrawn[Self.key(competition)] ?? 0
@@ -134,11 +120,7 @@ struct CompetitionMotionSeen: RawRepresentable, Equatable {
     }
 }
 
-/// Reaction rain marks share the map under `rain:<match>`: the newest
-/// received reaction (in ms) that has rained on this phone.
 extension CompetitionMotionSeen {
-    /// Received, not yet seen on its match screen, and not yet rained.
-    /// Never for practice, which has no other person.
     func unrained(
         _ competition: LocalCompetitionPresentation,
         seen: CompetitionReactionsSeen
@@ -174,14 +156,11 @@ extension CompetitionMotionSeen {
     }
 }
 
-/// What rains when a screen showing these matches appears.
 struct CompetitionReactionRainBatch: Equatable {
-    /// Newest first, mixed into the drops.
     let kinds: [CompetitionReactionKind]
     let announcement: String
 }
 
-/// The newest few unrained reactions across `competitions`; nil when none.
 func competitionReactionRainBatch(
     _ competitions: [LocalCompetitionPresentation],
     seen: CompetitionReactionsSeen,
@@ -220,8 +199,6 @@ func competitionReactionAccessibilityText(
     "\(reaction.kind.spokenName). \(competitionReactionText(reaction, opponentName: opponentName))"
 }
 
-/// The week's REACTIONS list: the result first, then by day; yours first
-/// within each target.
 func competitionReactionsInWeekOrder(_ reactions: [CompetitionReaction]) -> [CompetitionReaction] {
     reactions.sorted { lhs, rhs in
         let left = lhs.target.dayOrdinal ?? 0
@@ -231,8 +208,6 @@ func competitionReactionsInWeekOrder(_ reactions: [CompetitionReaction]) -> [Com
     }
 }
 
-/// The newest reaction you got that you haven't seen, for Home and the match
-/// screen. Nil for matches that show no scores (scheduled, cancelled).
 func competitionUnseenReaction(
     _ competition: LocalCompetitionPresentation,
     seen: CompetitionReactionsSeen
@@ -245,9 +220,6 @@ func competitionUnseenReaction(
     return newest
 }
 
-/// A real other person who can still see it, once the match has started.
-/// Callers pick the target: days on the live screen, the result on the
-/// result screen.
 func competitionCanReact(_ competition: LocalCompetitionPresentation) -> Bool {
     competitionShouldShowScores(competition.lifecycle)
         && RemoteCompetitionOpponentIdentity.profileID(competition.opponentIdentity) != nil
@@ -264,10 +236,7 @@ extension LocalCompetitionPresentation {
     }
 }
 
-/// One match's reaction state and the tap handler, handed to its screens.
-/// Nil on a screen means no reactions there (local and simulated matches).
 struct CompetitionReactionControl {
-    /// The kind being saved per target; `.some(nil)` while removing.
     let pending: [CompetitionReactionTarget: CompetitionReactionKind?]
     let failed: Set<CompetitionReactionTarget>
     let react: (CompetitionReactionTarget, CompetitionReactionKind) -> Void
@@ -293,7 +262,6 @@ struct CompetitionReactionControl {
     }
 }
 
-/// Four preset chips: one row, or 2×2 at accessibility sizes.
 struct CompetitionReactionPicker: View {
     let selection: CompetitionReactionKind?
     let isPending: Bool
@@ -305,8 +273,6 @@ struct CompetitionReactionPicker: View {
     @ScaledMetric(relativeTo: .title2) private var chipSize: CGFloat = 48
 
     var body: some View {
-        // AnyLayout, not ViewThatFits: the Dynamic Type audit flags text
-        // that ViewThatFits swaps out.
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
             : AnyLayout(HStackLayout(spacing: 10))
@@ -339,7 +305,6 @@ struct CompetitionReactionPicker: View {
         let isSelected = selection == kind
         let hint: String = isSelected ? "Removes your reaction" : ""
         return Button {
-            // Setting or replacing rains; removing doesn't.
             if !isSelected { rain(kind) }
             select(kind)
         } label: {
@@ -348,7 +313,6 @@ struct CompetitionReactionPicker: View {
                 .frame(width: chipSize, height: chipSize)
                 .background(Theme.control, in: Circle())
                 .overlay {
-                    // A hairline keeps unselected chips visible on a panel.
                     Circle().strokeBorder(
                         isSelected ? Theme.you : Theme.hairline,
                         lineWidth: isSelected ? 2 : 1
@@ -357,9 +321,6 @@ struct CompetitionReactionPicker: View {
                 }
                 .contentShape(Circle())
         }
-        // A tap, never the end of a drag: in a drawer, the sheet's own drag
-        // (to resize or dismiss it) doesn't cancel a Button's touch, so
-        // scrolling from a chip sent a reaction.
         .buttonStyle(CompetitionReactionChipStyle())
         .disabled(isPending)
         .accessibilityLabel(kind.spokenName)
@@ -369,16 +330,12 @@ struct CompetitionReactionPicker: View {
     }
 }
 
-/// Fires on a tap only; any drag cancels it. Keeps Button's traits,
-/// disabled state and VoiceOver activation.
 private struct CompetitionReactionChipStyle: PrimitiveButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.onTapGesture(perform: configuration.trigger)
     }
 }
 
-/// `SectionLabel`'s look with kerning, not tracking: the text clipping
-/// audit flags tracked labels here ("REACT TO THE RESULT", a tracked ’).
 struct CompetitionReactionLabel: View {
     let title: String
 
@@ -396,7 +353,6 @@ struct CompetitionReactionLabel: View {
     }
 }
 
-/// "😤 Jordan reacted to your Day 2", read as one element.
 struct CompetitionReactionLine: View {
     let reaction: CompetitionReaction
     let opponentName: String
@@ -413,8 +369,6 @@ struct CompetitionReactionLine: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var line: some View {
-        // Emoji above the text at accessibility sizes: beside it, the text
-        // gets a column a word or two wide (and hyphenates) in Home rows.
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(spacing: 8))
@@ -432,9 +386,6 @@ struct CompetitionReactionLine: View {
     }
 }
 
-/// The emoji drawn as an image. The text clipping audit flags an emoji
-/// `Text` inside an accessibility container (the line, a Home card) because
-/// its glyph overflows the line box, even when it's hidden.
 struct CompetitionReactionEmoji: View {
     let kind: CompetitionReactionKind
 
@@ -451,7 +402,6 @@ struct CompetitionReactionEmoji: View {
         }
     }
 
-    // ponytail: rendered on every body pass (a few lines on screen); cache per kind if it ever shows in a profile.
     @MainActor
     private var renderedImage: CGImage? {
         let renderer = ImageRenderer(content: Text(kind.emoji).font(.system(size: size)))
@@ -460,14 +410,11 @@ struct CompetitionReactionEmoji: View {
     }
 }
 
-// MARK: - Rain
-
 private struct CompetitionReactionRainKey: EnvironmentKey {
     static let defaultValue: (CompetitionReactionKind) -> Void = { _ in }
 }
 
 extension EnvironmentValues {
-    /// Set by `competitionReactionRain`; a chip calls it when you react.
     var competitionReactionRain: (CompetitionReactionKind) -> Void {
         get { self[CompetitionReactionRainKey.self] }
         set { self[CompetitionReactionRainKey.self] = newValue }
@@ -475,10 +422,6 @@ extension EnvironmentValues {
 }
 
 extension View {
-    /// Rains reactions over this view: yours when you tap a chip inside it,
-    /// and `incoming` once while it is on screen, live too. `rained` writes
-    /// the seen mark. One rain at a time: a new one replaces it. A sheet
-    /// needs its own, or the rain falls behind it.
     func competitionReactionRain(
         incoming: CompetitionReactionRainBatch? = nil,
         rained: @escaping () -> Void = {}
@@ -531,8 +474,6 @@ private struct CompetitionReactionRainHost: ViewModifier {
     }
 }
 
-/// One rain's drops, drawn once at the start: kinds mixed in turn, each with
-/// its own column, size, delay, drift and spin.
 private struct CompetitionReactionRainDrops: Equatable {
     struct Drop: Equatable {
         let kind: CompetitionReactionKind
@@ -552,8 +493,6 @@ private struct CompetitionReactionRainDrops: Equatable {
 
     init(kinds: [CompetitionReactionKind]) {
         self.kinds = kinds
-        // 26 drops, the last leaving by `Motion.rain`: a delay up to 0.7 s,
-        // then a fall of 1.3 s or more.
         drops = (0..<26).map { index in
             let delay = Double.random(in: 0...0.7)
             return Drop(
@@ -570,8 +509,6 @@ private struct CompetitionReactionRainDrops: Equatable {
     }
 }
 
-/// Canvas over a timeline: no per-frame state, four resolved glyphs drawn
-/// many times. Reduce Motion: one emoji at centre fades in and out.
 private struct CompetitionReactionRainView: View {
     let rain: CompetitionReactionRainDrops
 
@@ -609,7 +546,6 @@ private struct CompetitionReactionRainView: View {
         guard progress > 0, progress < 1,
               let glyph = context.resolveSymbol(id: drop.kind)
         else { return }
-        // Falls from above the top to below the bottom, gathering speed.
         let fallen = 0.35 * progress + 0.65 * progress * progress
         var drawing = context
         drawing.translateBy(
@@ -628,7 +564,6 @@ private struct CompetitionReactionRainView: View {
         size: CGSize
     ) {
         guard let glyph = context.resolveSymbol(id: kind) else { return }
-        // A fade only, never a scale: in over 0.3 s, out over the last half second.
         var drawing = context
         drawing.opacity = min(max(elapsed / 0.3, 0), 1, max((Motion.rain - elapsed) / 0.5, 0))
         drawing.translateBy(x: size.width / 2, y: size.height / 2)

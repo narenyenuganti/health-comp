@@ -5,7 +5,6 @@ struct SupabaseConfiguration: Equatable, Sendable {
     let url: URL
     let publishableKey: String
 
-    // Preserve Supabase Swift's project-scoped storage namespace explicitly.
     var authStorageKey: String {
         "sb-\(url.host!.split(separator: ".")[0])-auth-token"
     }
@@ -213,8 +212,6 @@ final class FailClosedAuthLocalStorage: AuthLocalStorage, @unchecked Sendable {
     func store(key: String, value: Data) throws {
         let isSession = key == (try sessionKey())
         if isSession, isRemovalPending() {
-            // A fresh login cannot acknowledge retirement while the SDK could
-            // still migrate a surviving legacy account over that new session.
             try underlying.remove(key: "supabase.session")
             guard try underlying.retrieve(key: "supabase.session") == nil else {
                 throw AuthenticationClientFailure.operationFailed
@@ -226,9 +223,6 @@ final class FailClosedAuthLocalStorage: AuthLocalStorage, @unchecked Sendable {
 
     func retrieve(key: String) throws -> Data? {
         let expectedKey = try sessionKey()
-        // The SDK also uses this store for PKCE and legacy session migration.
-        // Neither auxiliary-key activity nor legacy migration may acknowledge
-        // successful removal of the actual project session.
         guard key == expectedKey || key == "supabase.session" else {
             return try underlying.retrieve(key: key)
         }
@@ -319,8 +313,6 @@ private final class AuthRemovalPendingStore: @unchecked Sendable {
     }
 }
 
-/// Immutable operation owner. Keep this reference across asynchronous cleanup;
-/// never reacquire another owner's callbacks after an await.
 final class SupabaseAuthenticationLifetime: Sendable {
     let eventTasks = AuthenticationLifetimeTasks()
 #if HEALTHCOMP_STAGING
@@ -396,7 +388,6 @@ struct SupabaseClientProvider: Sendable {
         try authenticationLifetime().client
     }
 
-    /// The signed-in auth user, from the stored session, without the network.
     func signedInUserID() -> UUID? {
         try? client().auth.currentSession?.user.id
     }
@@ -414,14 +405,11 @@ struct SupabaseClientProvider: Sendable {
         beforeStorage: @escaping @Sendable () async throws -> Void = {}
     ) async throws {
 #if HEALTHCOMP_STAGING
-        // Revoke debugger reads before registry admission closes or cancellation throws.
         owner.stagingScoringResponseCapture?.cancel()
         stagingOperatorControls?.cancel(for: owner.stagingScoringCaptureOwner)
         stagingOperatorControls?.cancelActivityObservation(for: owner.stagingScoringCaptureOwner)
 #endif
         try await sharedClient.retire(owner) { retiring in
-            // Registry admission is already closed while remote confirmation
-            // is pending. Failure retains the same owner for an explicit retry.
             try await beforeStorage()
             try retiring.retireAuthStorage()
             await retiring.eventTasks.cancelAndDrain()
@@ -546,8 +534,6 @@ struct SupabaseClientProvider: Sendable {
         )
         return Self(makeLifetime: {
             let configuration = try SupabaseConfiguration.parse(infoDictionary())
-            // Default transports belong to this owner, not the provider cache.
-            // An explicit session override remains a caller-owned testing seam.
 #if HEALTHCOMP_STAGING
             let urlSession = injectedURLSession ?? makeURLSession?() ?? SupabaseTransport.makeSession(
                 delegate: StagingScoringResponseCapture(
@@ -569,8 +555,6 @@ struct SupabaseClientProvider: Sendable {
                     pendingStore.setPending(isPending)
                 }
             )
-            // Construct a new immutable guard with every admitted owner. Injected
-            // backing storage is a test seam; the live backing adapter is also new.
             let lifetimeStorage = SupabaseAuthStorageLifetime(
                 underlying: authStorage,
                 prepareRemoval: { authStorage.prepareForRemovalVerification() },

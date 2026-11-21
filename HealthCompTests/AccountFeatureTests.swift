@@ -67,7 +67,6 @@ final class AccountFeatureTests: XCTestCase {
             (" Former competitor ", .reservedDisplayName),
             ("A\nB", .invalidDisplayName),
             (String(repeating: "a", count: 65), .invalidDisplayName),
-            // 10 characters on screen, 70 code points to the server.
             (String(repeating: "👨‍👩‍👧‍👦", count: 10), .invalidDisplayName),
         ]
         for (value, message) in cases {

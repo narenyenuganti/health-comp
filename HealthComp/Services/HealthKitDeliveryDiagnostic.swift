@@ -2,7 +2,6 @@
 import OSLog
 #endif
 
-/// Fixed labels only: never accept identities, Health values, tokens or errors.
 enum HealthKitDeliveryDiagnostic: String {
     case registrationStarted = "registration_started"
     case registrationSucceeded = "registration_succeeded"

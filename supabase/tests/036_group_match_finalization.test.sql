@@ -1,5 +1,4 @@
 begin;
--- Included inside each group test transaction; no product fixture state persists.
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
@@ -44,7 +43,6 @@ begin
  update public.competitions set start_day=current_date-days_ago,invitation_expires_at=now()-interval '20 days',
    best_available_deadline=(current_date-days_ago+9)::timestamp at time zone 'UTC' where id=cid;
 end; $$;
--- Real submission path: fixed semantic identity and evaluation time allow exact replay.
 create function pg_temp.score(cid uuid,person integer,day integer,rev bigint,points integer default 30000) returns jsonb language plpgsql as $$
 declare evaluated timestamptz; d text;
 begin
@@ -77,7 +75,6 @@ select ok((select immutable_hash=extensions.digest(convert_to('healthcomp-group-
 select is((select frozen_payload->'seats'->0->'window'->'days'->6->>'status' from public.competition_group_results where competition_id=pg_temp.gid('leave')),'afterLeave','later days are resolved zero after leave');
 select throws_ok($$update public.competition_group_results set standings='[]' where competition_id=pg_temp.gid('leave')$$,'55000','competition_group_results is append-only','frozen group results immutable');
 
--- 3/4 humans, two humans+bots, partial leave and doubles all dispatch through shared finalizer.
 create function pg_temp.finalize_case(label text,fmt text,humans integer,partial_leave boolean default false) returns setof text language plpgsql as $$
 declare cid uuid; n integer; d integer; revs bigint[]; com text; result jsonb;
 begin

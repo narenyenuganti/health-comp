@@ -68,8 +68,6 @@ Deno.test({
           ? result.reason
           : undefined;
 
-      // Seed: Maya challenges Naren and he declines, so a block has a valid
-      // key while a new create can still succeed.
       const code = await asUser(
         naren.user,
         async (tx) =>
@@ -82,7 +80,6 @@ Deno.test({
         (tx) => tx`select public.decline_competition_challenge(${seed}::uuid)`,
       );
 
-      // A create holds both profile locks until it ends: a block waits.
       const holder = await sql.reserve();
       try {
         await holder`begin`;
@@ -96,7 +93,6 @@ Deno.test({
         holder.release();
       }
 
-      // 20 by-id and link creates racing one block.
       const outcomes = await Promise.allSettled([
         ...Array.from(
           { length: 20 },
@@ -140,8 +136,6 @@ Deno.test({
       const after = await Promise.allSettled([create()]);
       assertEquals(failure(after[0])?.message, "recipient_unavailable");
 
-      // A block waiting on the locks while Naren's deletion starts: the
-      // deletion purges his blocks, so the block must not add one back.
       const deleter = await sql.reserve();
       try {
         await deleter`begin`;

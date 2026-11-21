@@ -29,7 +29,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             rootDirectory: root.appendingPathComponent("cache"),
             fileProtection: JSONCompetitionEventStoreFileProtection { _, _ in }
         )
-        // All snapshots come from actual local create/update-profile/claim/fetch calls, rolled back together.
         for snapshot in [initial, incremental] {
             let runtime = RemoteCompetitionRuntime(
                 profileID: creator, store: store,
@@ -46,7 +45,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let entries = try await cache.load(profileID: creator)
         XCTAssertEqual(entries.first?.lastSeenServerSequence, 3)
         XCTAssertEqual(entries.first?.descriptor.participants.last?.profile.displayName, "Fixture Renamed Recipient")
-        // A fresh creator bootstrap and both accepted-account bootstraps tolerate the presentation event.
         for (index, snapshot, owner) in [(0, renamed, creator), (1, accepted, creator), (2, accepted, recipient)] {
             let runtime = RemoteCompetitionRuntime(
                 profileID: owner, store: index == 1 ? store : makeStore(root: root.appendingPathComponent("fresh-\(index)")),
@@ -84,7 +82,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
     }
 
     func testRecipientBoundSQLHistoryMaterializesPendingThenAcceptedForBothAccounts() async throws {
-        // Captured from migration 018's real create/claim/fetch operations in one rolled-back local transaction.
         struct Snapshot: Decodable {
             let descriptor: CompetitionDescriptor
             let page: CompetitionChangePage
@@ -1722,7 +1719,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let harness = try ownerActivityHarness()
         defer { try? FileManager.default.removeItem(at: harness.root) }
         let first = try harness.snapshot(move: 420)
-        // Run 1 queues revision 1, but the upload doesn't go through.
         let offlineRuntime = ownerRuntime(
             harness, at: harness.dayOneNoon, snapshots: [1: first],
             acceptsAppend: { _ in false }
@@ -1735,18 +1731,12 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         XCTAssertEqual(queued.pendingSnapshot, first)
         XCTAssertEqual(queued.pendingClientRevision, 1)
 
-        // Run 2: revision 1 finally lands (the outbox wakes first), then a
-        // newer reading queues revision 2, which doesn't go through.
         let changed = try harness.snapshot(move: 480)
         let server = harness.server
         let secondRuntime = ownerRuntime(
             harness, at: harness.dayOneNoon.addingTimeInterval(3_600), snapshots: [1: changed],
             acceptsAppend: { $0.clientRevision == 1 },
             beforeList: {
-                // Let the woken outbox finish storing revision 1 before the
-                // match loads: its journal write can otherwise conflict with
-                // the run's own appends (revision reuse is covered by
-                // testRefreshNeverReusesARevisionTheOutboxStoredAfterTheMatchLoaded).
                 while await server.appendedScoreCount() < 1 {
                     try? await Task.sleep(nanoseconds: 10_000_000)
                 }
@@ -1775,7 +1765,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
     func testRefreshNeverReusesARevisionTheOutboxStoredAfterTheMatchLoaded() async throws {
         let harness = try ownerActivityHarness()
         defer { try? FileManager.default.removeItem(at: harness.root) }
-        // Run 1 queues revision 1, but the upload doesn't go through.
         let offlineRuntime = ownerRuntime(
             harness, at: harness.dayOneNoon, snapshots: [1: try harness.snapshot(move: 420)],
             acceptsAppend: { _ in false }
@@ -1783,9 +1772,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         _ = await offlineRuntime.synchronizeAll()
         await offlineRuntime.stop()
 
-        // Run 2: the woken outbox lands revision 1 only after the match has
-        // been listed, then a newer reading is scored. (sync-11: the listed
-        // cursor has not moved, so this pass sends no fetchChanges to hook.)
         let outbox = JSONCompetitionOutboxStore(
             rootDirectory: harness.root.appendingPathComponent("outbox"),
             fileProtection: JSONCompetitionEventStoreFileProtection { _, _ in }
@@ -1823,7 +1809,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let harness = try ownerActivityHarness()
         defer { try? FileManager.default.removeItem(at: harness.root) }
         let reading = try harness.snapshot(move: 420)
-        // Run 1: an auth blip rejects revision 1 for good.
         let rejected = ownerRuntime(
             harness, at: harness.dayOneNoon, snapshots: [1: reading],
             acceptsAppend: { _ in false }, failure: .unauthenticated
@@ -1831,7 +1816,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         _ = await rejected.synchronizeAll()
         await rejected.stop()
 
-        // Run 2: the reading hasn't changed, and it still goes out.
         let retried = ownerRuntime(
             harness, at: harness.dayOneNoon.addingTimeInterval(600), snapshots: [1: reading]
         )
@@ -1868,13 +1852,11 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         for ordinal in 1...7 { week[ordinal] = try harness.snapshot(move: 420) }
         let daySevenNoon = harness.dayOneNoon.addingTimeInterval(6 * 86_400)
         let dayEightNoon = daySevenNoon.addingTimeInterval(86_400)
-        // Every day lands while the match is still on (revisions 1...7).
         let live = ownerRuntime(harness, at: daySevenNoon, snapshots: week)
         let first = await live.synchronizeAll()
         await live.stop()
         XCTAssertEqual(first.failures, [])
 
-        // After the window: the phone is locked, so Health can't be read.
         let locked = ownerRuntime(
             harness, at: dayEightNoon, snapshots: week, readFailure: .protectedDataUnavailable
         )
@@ -1883,7 +1865,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let afterLockedRead = try await attestations()
         XCTAssertEqual(afterLockedRead, [])
 
-        // Day 7 grew before midnight, and that upload is backing off.
         week[7] = try harness.snapshot(move: 560)
         let backingOff = ownerRuntime(
             harness, at: dayEightNoon.addingTimeInterval(600), snapshots: week,
@@ -1894,7 +1875,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let afterBackoff = try await attestations()
         XCTAssertEqual(afterBackoff, [])
 
-        // Once it lands, the window is stable on day 7's last reading.
         let settled = ownerRuntime(harness, at: dayEightNoon.addingTimeInterval(1_200), snapshots: week)
         _ = await settled.synchronizeAll()
         await settled.stop()
@@ -1915,7 +1895,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             remoteAPI: remoteAPI(
                 listCompetitions: {
                     let listed = try await server.listCompetitions(for: ownerID)
-                    // The opponent's upload lands after the list call.
                     try await opponentRow.append(
                         for: opponentRow.creatorID, ordinal: 1, revision: 1, at: opponentRow.dayOneNoon
                     )
@@ -2056,7 +2035,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let harness = try ownerActivityHarness()
         defer { try? FileManager.default.removeItem(at: harness.root) }
         let newest = harness.dayOneNoon.addingTimeInterval(-3_600)
-        // The later revision carries the earlier read time.
         try await harness.append(for: harness.creatorID, ordinal: 1, revision: 1, at: newest)
         try await harness.append(for: harness.creatorID, ordinal: 1, revision: 2, at: newest.addingTimeInterval(-3_600))
         let snapshot = try harness.snapshot(move: 420)
@@ -2077,7 +2055,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
     func testNotificationSnapshotCarriesWhatItTakesFromOwnerActivity() async throws {
         let harness = try ownerActivityHarness()
         defer { try? FileManager.default.removeItem(at: harness.root) }
-        // Both score 255 on Day 1: level, so 1 takes the lead.
         try await harness.append(for: harness.creatorID, ordinal: 1, revision: 1, at: harness.dayOneNoon)
         try await harness.append(for: profileID, ordinal: 1, revision: 1, at: harness.dayOneNoon)
         let outcome = await ownerRuntime(harness, at: harness.dayOneNoon, snapshots: nil)
@@ -2168,8 +2145,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let tally = try XCTUnwrap(project(tallying.successfulCompetitions, at: afterWindow).first?.tally)
         XCTAssertEqual(tally.attention, .incomplete(missingOrdinals: [7], unavailableOrdinals: []))
 
-        // The empty Day 7 row still counts for the stable check, which locks
-        // your window: once it's back, the wait is the other person's.
         let ledger = try XCTUnwrap(tallying.successfulCompetitions.first?.journal.projection.remoteScoreLedgers[profileID])
         try await tallyHarness.server.appendAttestation(
             for: profileID,
@@ -2907,7 +2882,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             inviteeID: profileID,
             createdAt: createdAt
         ).changes
-        // Both people's days are in; the other person's check isn't.
         for (index, participantID) in [profileID, creatorID].enumerated() {
             for ordinal in 1...7 {
                 let sequence = Int64(index * 7 + ordinal + 3)
@@ -3021,7 +2995,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             materialized.journal.projection
                 .remoteWindowAttestations[profileID]
         )
-        // Your check is still on its way, so nobody else is named yet.
         XCTAssertEqual(
             project([materialized], at: descriptor.bestAvailableDeadline!.addingTimeInterval(-3_600))
                 .first?.tally?.attention,
@@ -3040,7 +3013,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let attestationChange = try CompetitionChange(
             serverSequence: 18,
             kind: .participantAttested,
-            // The feed entity is the attestation row, not its participant.
             entityID: UUID(
                 uuidString: "72000000-0000-4000-8000-000000000002"
             )!,
@@ -3086,8 +3058,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
                 .windowCommitment,
             request.windowCommitmentSHA256
         )
-        // Yours is in and the match is still open, so the server is
-        // waiting on theirs: both stable finalizes in the same transaction.
         XCTAssertEqual(
             project(reconciled.successfulCompetitions, at: attestedAt)
                 .first?.tally?.attention,
@@ -3303,8 +3273,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         XCTAssertEqual(completed.snapshot.userPoints, 300)
         XCTAssertEqual(completed.snapshot.opponentPoints, 0)
 
-        // The same immutable result must also reconstruct for the participant
-        // who never submitted a score, without borrowing the first user's store.
         let scorelessRoot = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: scorelessRoot) }
         let scorelessRuntime = RemoteCompetitionRuntime(
@@ -4103,7 +4071,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             try Self.snapshot(move: move)
         }
 
-        /// A score row on the server, as if `participantID`'s device sent it.
         func append(
             for participantID: UUID,
             ordinal: Int,
@@ -4176,8 +4143,6 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         )
     }
 
-    /// A runtime over the harness's stores. `snapshots` nil runs without
-    /// Health; otherwise unlisted days read as missing.
     private func ownerRuntime(
         _ harness: OwnerActivityHarness,
         at date: Date,
@@ -4582,15 +4547,12 @@ private actor TwoClientCompetitionServer {
                 competitionCursor: changes.last?.serverSequence ?? 0
             )
         }
-        // Like submit_score_revision: a participant spends each revision
-        // once, across all days.
         guard !acceptedBySemanticID.values.contains(where: {
             $0.participantID == profileID
                 && $0.request.clientRevision == request.clientRevision
         }) else {
             throw CompetitionRemoteFailure.divergentDuplicate
         }
-        // ...and refuses one below its highest (revision_regression).
         guard !acceptedBySemanticID.values.contains(where: {
             $0.participantID == profileID
                 && $0.request.clientRevision > request.clientRevision
@@ -4655,7 +4617,6 @@ private actor TwoClientCompetitionServer {
         acceptedBySemanticID.count
     }
 
-    /// A stable check on the server, as if `profileID`'s device sent it.
     func appendAttestation(
         for profileID: UUID,
         acceptedRevisions: [Int64],

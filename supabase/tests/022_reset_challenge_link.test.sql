@@ -27,7 +27,6 @@ select ok((
 ) and pg_temp.definer_with_empty_path('create_competition_invite_from_link'),
   'create_competition_invite_from_link is a security definer with an empty search path, for service_role only');
 
--- A Naren, B Maya (link owner), C Tess, D Dana (deleting), E Ana.
 insert into auth.users (id) values
   ('c8000000-0000-4000-8000-000000000001'), ('c8000000-0000-4000-8000-000000000002'),
   ('c8000000-0000-4000-8000-000000000003'), ('c8000000-0000-4000-8000-000000000004'),
@@ -62,7 +61,6 @@ create function pg_temp.code(link text) returns text language sql as $$
   select v->>'code' from r where label = link;
 $$;
 
--- Links, and resolve without an account id.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c8000000-0000-4000-8000-000000000001"}', true);
 insert into r (label, v) values ('naren-link', public.get_my_challenge_link());
@@ -73,7 +71,6 @@ select is(public.resolve_challenge_link(pg_temp.code('maya-old')), '{"display_na
   'resolving a link returns only the display name, no account id');
 reset role;
 
--- Naren challenges Maya from her link.
 insert into r (label, id) values ('nm', pg_temp.from_link('c8000000-0000-4000-8000-000000000001',
   pg_temp.code('maya-old'), 'd1', 'c8400000-0000-4000-8000-000000000001'));
 select ok((select invited_profile_id = 'c8100000-0000-4000-8000-000000000002' and lifecycle = 'pending'
@@ -83,7 +80,6 @@ create temporary table pending_before as
   select c.*, i.token_digest, i.expires_at as invite_expires_at
   from public.competitions c join public.competition_invites i on i.competition_id = c.id;
 
--- Maya resets her link.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c8000000-0000-4000-8000-000000000002"}', true);
 insert into r (label, v) values ('maya-new', public.reset_my_challenge_link());
@@ -106,7 +102,6 @@ select is(public.get_my_challenge_link(), (select v from r where label = 'naren-
 reset role;
 select is((select count(*) from private.challenge_links where profile_id::text like 'c8100000-%'), 2::bigint, 'reset adds no rows');
 
--- Creating from a link after the reset.
 select throws_ok($$select pg_temp.from_link('c8000000-0000-4000-8000-000000000003',
   pg_temp.code('maya-old'), 'd2', 'c8400000-0000-4000-8000-000000000002')$$,
   'P0001', 'recipient_unavailable', 'a create with the old code fails');
@@ -127,7 +122,6 @@ select throws_ok($$select pg_temp.from_link('c8000000-0000-4000-8000-00000000000
   pg_temp.code('maya-new'), 'd4', 'c8400000-0000-4000-8000-000000000004')$$,
   '42501', 'active_profile_required', 'a deleting sender cannot create');
 
--- Retrying a create made before the reset returns it; a changed retry conflicts.
 select is(pg_temp.from_link('c8000000-0000-4000-8000-000000000001',
   pg_temp.code('maya-old'), 'd1', 'c8400000-0000-4000-8000-000000000001'),
   (select id from r where label = 'nm'), 'an exact retry of a challenge made before the reset returns it');
@@ -148,7 +142,6 @@ select results_eq(
   $$select * from pending_before$$,
   'a pending challenge made before the reset is untouched');
 
--- The id-based create keeps working: a 1.0.2 account code, and a rematch.
 insert into r (label, id) values ('an', pg_temp.by_id('c8000000-0000-4000-8000-000000000005',
   'c8100000-0000-4000-8000-000000000001', null, 'e1', 'c8400000-0000-4000-8000-000000000011'));
 select ok((select id from r where label = 'an') is not null, 'a 1.0.2 account-code challenge still works');
@@ -164,7 +157,6 @@ select ok(pg_temp.by_id('c8000000-0000-4000-8000-000000000005', 'c8100000-0000-4
   (select id from r where label = 'ta'), 'e3', 'c8400000-0000-4000-8000-000000000013') is not null,
   'a rematch by account id still works');
 
--- The link code is recorded on the invite, out of clients' reach.
 select is((select challenge_link_code from public.competition_invites
   where competition_id = (select id from r where label = 'nm')), pg_temp.code('maya-old'),
   'a challenge from a link records the code it used');
@@ -175,8 +167,6 @@ select ok(not has_table_privilege('authenticated', 'public.competition_invites',
   and not has_column_privilege('authenticated', 'public.competition_invites', 'challenge_link_code', 'select'),
   'clients cannot read the recorded link code');
 
--- F Finn and G Gus reach H Hana by her link; I Ivy is a 1.0.2 sender; J Jo's
--- link outlives her account.
 insert into auth.users (id) values
   ('c8000000-0000-4000-8000-000000000006'), ('c8000000-0000-4000-8000-000000000007'),
   ('c8000000-0000-4000-8000-000000000008'), ('c8000000-0000-4000-8000-000000000009'),
@@ -198,8 +188,6 @@ select pg_temp.as_user('c8000000-0000-4000-8000-00000000000a');
 insert into r (label, v) values ('jo', public.get_my_challenge_link());
 reset role;
 
--- Send from the link, withdraw at once, then the owner resets: the account
--- id the sender saw no longer works either.
 insert into r (label, id) values ('fh', pg_temp.from_link('c8000000-0000-4000-8000-000000000006',
   pg_temp.code('hana-1'), 'f1', 'c8400000-0000-4000-8000-000000000021'));
 set local role authenticated;
@@ -225,8 +213,6 @@ select throws_ok($$select pg_temp.from_link('c8000000-0000-4000-8000-00000000000
   pg_temp.code('hana-1'), 'f3', 'c8400000-0000-4000-8000-000000000023')$$,
   'P0001', 'recipient_unavailable', 'and so does the old link');
 
--- Send from the link, the owner accepts and plays, then resets: a real past
--- opponent keeps challenging by account id.
 insert into r (label, id) values ('gh', pg_temp.from_link('c8000000-0000-4000-8000-000000000007',
   pg_temp.code('hana-2'), 'a1', 'c8400000-0000-4000-8000-000000000031'));
 set local role authenticated;
@@ -240,13 +226,10 @@ select ok(pg_temp.by_id('c8000000-0000-4000-8000-000000000007', 'c8100000-0000-4
   null, 'a2', 'c8400000-0000-4000-8000-000000000032') is not null,
   'after a reset, a past opponent may still challenge by account id');
 
--- A 1.0.2 sender who never used a link is unaffected by Hana's resets.
 select ok(pg_temp.by_id('c8000000-0000-4000-8000-000000000009', 'c8100000-0000-4000-8000-000000000008',
   null, 'c1', 'c8400000-0000-4000-8000-000000000041') is not null,
   'a 1.0.2 account-code sender still challenges a person who reset her link');
 
--- The account lookup refuses the blocked sender the same way, so the name
--- never shows before a failed send; others still see it.
 set local role authenticated;
 select pg_temp.as_user('c8000000-0000-4000-8000-000000000006');
 select throws_ok($$select public.resolve_invitation_recipient('c8100000-0000-4000-8000-000000000008')$$,
@@ -257,8 +240,6 @@ select is(public.resolve_invitation_recipient('c8100000-0000-4000-8000-000000000
   'a 1.0.2 sender''s account lookup still works');
 reset role;
 
--- Contact the recipient started lifts the rule: her challenge surfaces as
--- incoming, and once it's withdrawn the sender may answer by account id.
 insert into r (label, id) values ('hf', pg_temp.by_id('c8000000-0000-4000-8000-000000000008',
   'c8100000-0000-4000-8000-000000000006', null, 'b1', 'c8400000-0000-4000-8000-000000000051'));
 select throws_ok($$select pg_temp.by_id('c8000000-0000-4000-8000-000000000006',
@@ -273,7 +254,6 @@ select ok(pg_temp.by_id('c8000000-0000-4000-8000-000000000006', 'c8100000-0000-4
   null, 'b3', 'c8400000-0000-4000-8000-000000000053') is not null,
   'after contact the recipient started, the sender may challenge by account id');
 
--- An accepted match that was later cancelled still counts as playing.
 insert into auth.users (id) values ('c8000000-0000-4000-8000-00000000000b');
 insert into public.profiles (id, auth_user_id, display_name, state) values
   ('c8100000-0000-4000-8000-00000000000b', 'c8000000-0000-4000-8000-00000000000b', 'Kai', 'active');
@@ -293,7 +273,6 @@ select ok(pg_temp.by_id('c8000000-0000-4000-8000-00000000000b', 'c8100000-0000-4
   null, 'b5', 'c8400000-0000-4000-8000-000000000062') is not null,
   'after a reset, someone whose accepted match was cancelled may still challenge by account id');
 
--- A current code whose owner is leaving is unavailable.
 update public.profiles set state = 'deleting' where id = 'c8100000-0000-4000-8000-00000000000a';
 select throws_ok($$select pg_temp.from_link('c8000000-0000-4000-8000-000000000009',
   pg_temp.code('jo'), 'c2', 'c8400000-0000-4000-8000-000000000042')$$,
@@ -304,7 +283,6 @@ select throws_ok($$select public.resolve_challenge_link(pg_temp.code('jo'))$$,
   'P0001', 'recipient_unavailable', 'and resolving it is unavailable too');
 reset role;
 
--- Denied callers.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c8000000-0000-4000-8000-000000000001"}', true);
 select throws_ok($$select public.create_competition_invite_from_link(decode(repeat('d9', 32), 'hex'),
@@ -326,7 +304,6 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select throws_ok($$select public.reset_my_challenge_link()$$, '42501', null, 'service_role cannot reset');
 reset role;
 
--- Reset with no link yet creates one.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c8000000-0000-4000-8000-000000000003"}', true);
 select is(public.reset_my_challenge_link(), public.get_my_challenge_link(),

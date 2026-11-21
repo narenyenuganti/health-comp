@@ -99,8 +99,6 @@ struct CompetitionNotificationPreferencesClient: Sendable {
         _ opponentIdentity: String,
         _ isMuted: Bool
     ) async throws -> Void
-    /// Families switched off on this iPhone (Account → Notifications). Empty by
-    /// default so tests and fixtures keep every family on.
     var switchedOff: @Sendable () -> Set<CompetitionNotificationChoice> = { [] }
 
     static func live(
@@ -178,8 +176,6 @@ enum RemoteCompetitionOpponentIdentity {
     }
 }
 
-/// What Account → Notifications can switch off. Results, challenges and
-/// challenge expiry have no case: they're always on. Stored per iPhone.
 enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
     case leadChange = "lead-change"
     case closeScore = "close-score"
@@ -187,10 +183,10 @@ enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
     case finalDay = "final-day"
     case groupBanter = "group-banter"
     case liveActivity = "live-activity"
-    case reaction // raw value = server work kind (20261102002700)
-    case nudge // raw value = server work kind (20261101002500)
-    case friendRequest = "friend_request" // server work kind (20261109003100)
-    case friendAccepted = "friend_accepted" // server work kind (20261109003100)
+    case reaction
+    case nudge
+    case friendRequest = "friend_request"
+    case friendAccepted = "friend_accepted"
 
     var title: String {
         switch self {
@@ -207,21 +203,16 @@ enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
         }
     }
 
-    /// Held back by the server, not the planner.
     var isServerSent: Bool { self == .reaction || self == .nudge || isFriends }
 
-    /// Its own section; servers before 20261109003100 reject these mutes.
     var isFriends: Bool { self == .friendRequest || self == .friendAccepted }
 
-    /// Persisted on devices: never rename a raw value.
     var storageKey: String { "healthcomp.notifications." + rawValue }
 
-    /// A missing value means on.
     static func switchedOff(in defaults: UserDefaults = .standard) -> Set<Self> {
         Set(allCases.filter { defaults.object(forKey: $0.storageKey) as? Bool == false })
     }
 
-    /// Sent with registration; sorted so equal sets encode equally.
     static func mutedPushKinds(in defaults: UserDefaults = .standard) -> [String] {
         switchedOff(in: defaults).filter(\.isServerSent).map(\.rawValue).sorted()
     }

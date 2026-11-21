@@ -11,8 +11,6 @@ export class AppleDeletionCallbackError extends Error {
 }
 
 export interface AppleDeletionCallbackStore {
-  // Atomically validate a live request state and escrow its code (or cancel it).
-  // Null means expired, unknown, or already consumed. Never return a profile ID.
   receive(
     callback: AppleDeletionCallback,
   ): Promise<{ requestID: string } | null>;
@@ -47,7 +45,6 @@ export async function appleDeletionCallbackHandler(
       headers: { ...headers, location: destination.href },
     });
   } catch {
-    // Storage diagnostics can contain private context; return no body or URL.
     return new Response(null, { status: 503, headers });
   }
 }
@@ -55,8 +52,6 @@ export async function appleDeletionCallbackHandler(
 export async function readAppleDeletionCallback(
   request: Request,
 ): Promise<AppleDeletionCallback> {
-  // Shape validation only. The store must separately verify live state,
-  // expiry and single-use ownership before accepting or retaining any code.
   const type = request.headers.get("content-type")?.trim() ?? "";
   if (
     request.method !== "POST" || !request.body ||

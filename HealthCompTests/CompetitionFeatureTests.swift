@@ -405,7 +405,6 @@ final class CompetitionFeatureTests: XCTestCase {
         )) {
             CompetitionFeature()
         }
-        // Read before the tap: Sam not muted yet, Jo muted elsewhere.
         await store.send(.mutePreferencesLoaded(["jo"])) {
             $0.mutedOpponentIdentities = ["jo", "sam"]
         }
@@ -975,11 +974,9 @@ final class CompetitionFeatureTests: XCTestCase {
             CompetitionFeature()
         }
 
-        // Closing the sheet drops even a creating slot, so the next open is free.
         await store.send(.challengeSheetDismissed) {
             $0.inviteCreations = [:]
         }
-        // No client call is made: nothing is created until Create is tapped.
         await store.send(.challengeAgainTapped(closedID)) {
             $0.inviteRecipient = .init(AuthenticatedProfile(id: profileID, displayName: "Sam"))
             $0.inviteRecipientCode = profileID.uuidString.lowercased()
@@ -1500,8 +1497,6 @@ private actor CompetitionAuthorizationRecorder {
     }
 }
 
-// MARK: - Practice match
-
 extension CompetitionFeatureTests {
     @MainActor
     func testPracticeStartTracksTheCommandUntilItsPublication() async {
@@ -1525,7 +1520,6 @@ extension CompetitionFeatureTests {
         await store.receive(.commandFinished(id, expectedRevision: 5)) {
             $0.commandExpectedPublicationRevisions[id] = 5
         }
-        // A second tap while it waits for its publication does nothing.
         await store.send(.practiceStartTapped(.bot(.relaxed)))
         await store.send(.publication(returned)) {
             $0.publication = returned

@@ -1,9 +1,5 @@
 import Foundation
 
-// Foundation only: the app and both watch targets compile this file. All the
-// watch's logic lives here so HealthCompTests covers it with no watch CI lane.
-
-/// What the iPhone sends. No `snapshot` means clear.
 struct CompetitionWatchPayload: Equatable, Sendable {
     private static let sentAtKey = "sentAt"
     private static let snapshotKey = "snapshot"
@@ -11,8 +7,6 @@ struct CompetitionWatchPayload: Equatable, Sendable {
     var sentAt: TimeInterval
     var snapshot: Data?
 
-    /// `personID` is the other person's account id. The watch never uses it,
-    /// so it doesn't leave the iPhone.
     init(snapshot: CompetitionWidgetSnapshot?, sentAt: TimeInterval) {
         self.sentAt = sentAt
         self.snapshot = snapshot.flatMap { snapshot in
@@ -26,7 +20,6 @@ struct CompetitionWatchPayload: Equatable, Sendable {
         }
     }
 
-    /// Nil with no `sentAt`: a fresh session's context is empty.
     init?(_ dictionary: [String: Any]) {
         guard let sentAt = dictionary[Self.sentAtKey] as? TimeInterval else { return nil }
         self.sentAt = sentAt
@@ -44,9 +37,6 @@ struct CompetitionWatchPayload: Equatable, Sendable {
         case store(CompetitionWidgetSnapshot)
     }
 
-    /// Context and user info can arrive out of order, so older data is
-    /// ignored. A clear isn't: a phone clock moved back mustn't drop a sign-out
-    /// wipe. A bad payload clears too, failing closed.
     func action(after seen: TimeInterval?) -> Action {
         guard let snapshot else { return sentAt == seen ? .ignore : .clear }
         if let seen, sentAt <= seen { return .ignore }
@@ -57,10 +47,8 @@ struct CompetitionWatchPayload: Equatable, Sendable {
     }
 }
 
-/// What this watch has already been told and shown, in one small file.
 struct CompetitionWatchSeen: Codable, Equatable, Sendable {
     var sentAt: TimeInterval?
-    /// Finals whose first reveal has played.
     var finals: Set<UUID> = []
 
     func isFirstSight(of match: CompetitionWidgetSnapshot.Match, at date: Date) -> Bool {
@@ -72,15 +60,11 @@ struct CompetitionWatchSeen: Codable, Equatable, Sendable {
     }
 }
 
-/// The largest scoreboard numerals that fit `width` side by side. 0.34 em per
-/// character is SF Compressed's calibration knob. Never truncates: `1,840.25`
-/// lands around 27 pt on 41 mm.
 func competitionWatchScoreSize(you: String, them: String, width: CGFloat) -> CGFloat {
     min(56, floor((width - 8) / (0.34 * CGFloat(you.count + them.count))))
 }
 
 extension CompetitionWidgetSnapshot {
-    /// One page per match, featured first, so page 1 is what the complication shows.
     func pages(at date: Date) -> [Match] {
         var rest = self
         var pages: [Match] = []
@@ -92,11 +76,7 @@ extension CompetitionWidgetSnapshot {
     }
 }
 
-/// An iPhone alert the watch mirrored. The keys are `CompetitionRoute`'s,
-/// which the watch doesn't compile; a test pins them to it.
 enum CompetitionWatchAlert {
-    /// The match an alert is about, nil for Friends or anything else. Extra
-    /// keys (`aps`, a reaction's recipient) are fine: the watch only navigates.
     static func competitionID(_ userInfo: [AnyHashable: Any]) -> UUID? {
         guard userInfo["healthcomp.route.v"] as? Int == 1,
               userInfo["healthcomp.route.kind"] as? String == "competition",
@@ -107,12 +87,10 @@ enum CompetitionWatchAlert {
 }
 
 extension CompetitionWidgetSnapshot.Match {
-    /// The Board's line goes after this long without an update from the phone.
     static let staleAfter: TimeInterval = 3_600
 
     enum Side: Equatable, Sendable { case you, square, them }
 
-    /// From the numbers as shown, so a final decided by decimals isn't square.
     var side: Side {
         let margin = competitionDisplayedMargin(
             userPoints: userPoints, opponentPoints: opponentPoints, fractionDigits: finalDigits
@@ -125,7 +103,6 @@ extension CompetitionWidgetSnapshot.Match {
         return date.timeIntervalSince(updatedAt) > Self.staleAfter
     }
 
-    /// "Day 5", "Last day", "Pending", "Final".
     func boardStatus(at date: Date, locale: Locale = .current) -> String {
         switch state(at: date) {
         case .finalPending: "Pending"
@@ -134,8 +111,6 @@ extension CompetitionWidgetSnapshot.Match {
         }
     }
 
-    /// "+54 · Day 5 · Sam": the number first, so a short slot cuts the name.
-    /// One string redacts whole, so wrist-down it's the status alone.
     func inlineText(at date: Date, redacted: Bool = false, locale: Locale = .current) -> String {
         if redacted { return boardStatus(at: date, locale: locale) }
         if let group {
@@ -147,15 +122,11 @@ extension CompetitionWidgetSnapshot.Match {
         return "\(circular(at: date, locale: locale).value) · \(boardStatus(at: date, locale: locale)) · \(name)"
     }
 
-    /// "DAY 5 · SAM", "FINAL · SAM", "DAY 1 · SAM". Wrist-down, no name.
     func cornerLabel(at date: Date, redacted: Bool = false, locale: Locale = .current) -> String {
         let status = state(at: date) == .scheduled ? "Day 1" : boardStatus(at: date, locale: locale)
         return (redacted ? status : "\(status) · \(group?.title ?? name)").uppercased()
     }
 
-    /// The chase bar while you trail on the day the phone worked it out for:
-    /// your points today against those plus what it takes ("55", "213 of 268
-    /// today"), or an empty bar and "Out of reach today".
     func chase(
         at date: Date,
         locale: Locale = .current
@@ -175,20 +146,17 @@ extension CompetitionWidgetSnapshot.Match {
         )
     }
 
-    /// "2 defenses", or nil before the first.
     var beltDefensesText: String? {
         guard let defenses = belt?.defenses, defenses > 0 else { return nil }
         return defenses == 1 ? "1 defense" : "\(defenses) defenses"
     }
 
-    /// VoiceOver's belt sentence for the Board.
     var beltAccessibilityText: String? {
         guard let belt else { return nil }
         let standing = belt.holder == .you ? "You hold the belt" : "\(name) holds the belt"
         return [standing, beltDefensesText].compactMap { $0 }.joined(separator: ", ") + "."
     }
 
-    /// The words on the belt card, nil when this result doesn't earn one.
     var beltCardText: (headline: String, line: String, detail: [String])? {
         func reign(_ owner: String, _ weeks: Int, _ defenses: Int) -> [String] {
             let count = defenses == 1 ? "1 defense" : "\(defenses) defenses"
@@ -209,10 +177,6 @@ extension CompetitionWidgetSnapshot.Match {
         }
     }
 
-    // MARK: The card and the week
-
-    /// One row of the match list. A final whose reveal hasn't played says only
-    /// "Final", so the list can't spoil the Board.
     func cardRow(
         at date: Date,
         firstSight: Bool,
@@ -249,7 +213,6 @@ extension CompetitionWidgetSnapshot.Match {
         }
     }
 
-    /// Day by day for a duel that has started; groups carry no days of their own.
     func hasWeek(at date: Date) -> Bool {
         guard group == nil else { return false }
         return switch state(at: date) {
@@ -258,8 +221,6 @@ extension CompetitionWidgetSnapshot.Match {
         }
     }
 
-    /// Seven rows: "W", your points, theirs, in the match's calendar. A day
-    /// with no points is nil.
     func weekRows(locale: Locale = .current) -> [(day: String, spoken: String, you: String?, them: String?)] {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)

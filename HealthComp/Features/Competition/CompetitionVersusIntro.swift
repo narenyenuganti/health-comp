@@ -1,36 +1,25 @@
 import CompetitionCore
 import SwiftUI
 
-/// The beat before a match: you and them collide on the slash, then the
-/// screen splits open onto the match, which is live underneath throughout.
-/// Automatically once per match per device; replayable from the match menu.
-
-/// What the intro says.
 struct CompetitionVersusIntroContent: Equatable {
     let id: CompetitionID
     let you: String
     let them: String
-    /// "1–4"; nil on a first fight.
     let yourTape: String?
     let theirTape: String?
     let holder: CompetitionBeltHolder?
-    /// "First fight", "Title on the line", or nil for a rematch with no belt.
     let headline: String?
     let dayLine: String
-    /// Their account, for their photo.
     var themPhoto: UUID? = nil
 
     var announcement: String { "You versus \(them). \(dayLine)." }
 }
 
-/// The photos the intro starts with. It decides once: a photo that lands
-/// mid-intro waits for the match screen.
 private struct VersusPhotos {
     var you: ProfilePhoto?
     var them: ProfilePhoto?
 }
 
-/// Autoplays only when scheduled or on Day 1. A replay can show a later day.
 func competitionVersusIntroContent(
     _ competition: LocalCompetitionPresentation,
     in publication: LocalCompetitionPublication,
@@ -57,7 +46,6 @@ func competitionVersusIntroContent(
     let competitions = publication.dashboard.competitions
     let record = competitionOpponentRecords(competitions)
         .first { $0.opponentIdentity == competition.opponentIdentity }
-    // Going in is only known once earlier matches with them have finished.
     let waits = competitionBeltWaitsOnAnEarlierMatch(competition, in: competitions)
     let holder = waits ? nil : record?.belt.holder
     let defenses = record.map { competitionVersusDefenses($0.belt) } ?? 0
@@ -83,20 +71,16 @@ func competitionVersusIntroContent(
     )
 }
 
-/// The holder's title defenses in the current reign.
 private func competitionVersusDefenses(_ belt: CompetitionBelt) -> Int {
     belt.holder == nil ? 0 : belt.current?.defenses ?? 0
 }
 
-/// Off in the Test Labs and UI tests unless `--versus-intro` turns it on, so
-/// their matches open as they always did.
 enum CompetitionVersusIntroGate {
     static let isEnabled: Bool = {
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--local-competition-test-lab")
             || arguments.contains("--multi-user-competition-test-lab") {
-            // Once per process: the marks persist otherwise.
             UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
             return arguments.contains("--versus-intro")
         }
@@ -105,15 +89,9 @@ enum CompetitionVersusIntroGate {
     }()
 
 #if DEBUG
-    /// VoiceOver doesn't run in a simulator: `--versus-voiceover` takes its
-    /// path and leaves the announcement here for the lab to show.
     static let assumesVoiceOver = ProcessInfo.processInfo.arguments.contains("--versus-voiceover")
     static let announcedKey = "healthcomp.versusAnnounced"
-    /// `--versus-hold` keeps the composed screen up until a tap: XCUITest
-    /// only looks once the app idles, and by then the intro is gone.
     static let holds = ProcessInfo.processInfo.arguments.contains("--versus-hold")
-    /// A launch argument can't switch Reduce Motion on in a simulator:
-    /// `--versus-reduce-motion` takes its path for the UI tests.
     static let assumesReduceMotion = ProcessInfo.processInfo.arguments.contains("--versus-reduce-motion")
 #else
     static let assumesVoiceOver = false
@@ -123,7 +101,6 @@ enum CompetitionVersusIntroGate {
 }
 
 extension View {
-    /// On the NavigationStack, not a destination: only this covers the bar.
     func competitionVersusIntro(
         matchID: CompetitionID?,
         publication: LocalCompetitionPublication?,
@@ -156,8 +133,6 @@ private struct CompetitionVersusIntroHost: ViewModifier {
     @State private var playingGroup: GroupMatchVersusContent?
     @State private var groupPhotos: [UUID: ProfilePhoto] = [:]
 
-    /// The open match, if its intro is due. One rule covers the accepter and
-    /// the sender, on arrival or in place when the other side accepts.
     private var due: CompetitionVersusIntroContent? {
         guard let matchID, !seen.hasSeen(.versus, matchID) else { return nil }
         return introContent()
@@ -168,7 +143,6 @@ private struct CompetitionVersusIntroHost: ViewModifier {
         return groupContent()
     }
 
-    /// A group match's lineup; nil for a duel.
     private func groupContent(isReplay: Bool = false) -> GroupMatchVersusContent? {
         guard CompetitionVersusIntroGate.isEnabled, playing == nil, playingGroup == nil, scenePhase == .active,
               let matchID, let publication,
@@ -193,7 +167,6 @@ private struct CompetitionVersusIntroHost: ViewModifier {
                         self.playing = nil
                         isPlaying = false
                     }
-                    // Past this the words crowd the slash. The label has them all.
                     .dynamicTypeSize(...DynamicTypeSize.accessibility2)
                 } else if let playingGroup {
                     GroupMatchVersusIntroView(content: playingGroup, photos: groupPhotos) {
@@ -250,7 +223,6 @@ private struct CompetitionVersusIntroHost: ViewModifier {
 #if DEBUG
         UserDefaults.standard.set(text, forKey: CompetitionVersusIntroGate.announcedKey)
 #endif
-        // After the push, or VoiceOver's own reading of the new screen cuts it off.
         Task {
             try? await Task.sleep(for: .seconds(0.75))
             AccessibilityNotification.Announcement(text).post()
@@ -258,9 +230,6 @@ private struct CompetitionVersusIntroHost: ViewModifier {
     }
 }
 
-/// Every number of the intro lives here and in `VersusStage`, ported from the
-/// approved preview (the group intro shares it): a sanctioned exception to Motion.swift, "nothing
-/// scale-pops", "one haptic" and "never hold".
 enum VersusClock {
     static let slam = 0.15
     static let contact = 0.45
@@ -269,9 +238,7 @@ enum VersusClock {
     static let tape = 1.0
     static let split = 3.68
     static let end = 4.0
-    /// Everything in place, for Reduce Motion.
     static let composed = 3.67
-    /// Reduce Motion's hold: a fade in, this, a fade out.
     static let reducedHold = 3.6
 
     static let slamCurve = UnitCurve.bezier(
@@ -283,12 +250,10 @@ enum VersusClock {
         endControlPoint: UnitPoint(x: 0.3, y: 1)
     )
 
-    /// 0 to 1 across one beat, held at either end.
     static func ramp(_ t: Double, _ start: Double, _ duration: Double) -> Double {
         min(max((t - start) / duration, 0), 1)
     }
 
-    /// Lit at contact and again at the split, dying fast each time.
     static func hotLine(_ t: Double) -> Double {
         switch t {
         case contact..<(contact + 0.24): 1 - ramp(t, contact, 0.24)
@@ -301,7 +266,6 @@ enum VersusClock {
         t < contact ? 0 : 0.4 * (1 - UnitCurve.easeOut.value(at: ramp(t, contact, 0.12)))
     }
 
-    /// The screen punch: 27 ms out, the rest of 180 ms back.
     static func punch(_ t: Double) -> Double {
         let up = UnitCurve.easeOut.value(at: ramp(t, contact, 0.027))
         let back = UnitCurve.easeOut.value(at: ramp(t, contact + 0.027, 0.153))
@@ -309,9 +273,6 @@ enum VersusClock {
     }
 }
 
-/// The preview's 393×880 layout on any screen. The slash runs through
-/// `center` at 12 degrees, and the name boxes stop short of it at their
-/// nearest corner, so no name can reach it.
 private struct VersusStage {
     static let slope = tan(12 * Double.pi / 180)
 
@@ -327,7 +288,6 @@ private struct VersusStage {
 
     func slashX(_ y: CGFloat) -> CGFloat { center.x + (center.y - y) * Self.slope }
 
-    /// `holdsBelt` makes room for the belt under the name.
     func yourBox(holdsBelt: Bool) -> CGRect {
         let top = insets.top + 8
         let bottom = top + (holdsBelt ? 200 : 150) * ky
@@ -341,11 +301,7 @@ private struct VersusStage {
         return CGRect(x: left, y: top, width: size.width - 20 - left, height: bottom - top)
     }
 
-    /// The giant initial's centre, kept clear of its own side's words: they
-    /// share its colour, so any overlap would hide them. A belt or a large
-    /// text size moves the initial, never the words.
     func initialY(isYours: Bool, holdsBelt: Bool) -> CGFloat {
-        // SF Pro's capitals are about 0.7 em tall; 12 covers the creep.
         let half = 0.35 * 660 * k
         return isYours
             ? max(456 * ky, yourBox(holdsBelt: holdsBelt).maxY + 12 + half)
@@ -353,7 +309,6 @@ private struct VersusStage {
     }
 }
 
-/// One side of the slash, `inset` away from it (negative overlaps it).
 private struct VersusSlashSide: Shape {
     let isYours: Bool
     let centerY: CGFloat
@@ -386,7 +341,6 @@ private struct CompetitionVersusIntroView: View {
     @ScaledMetric(relativeTo: .subheadline) private var labelLine: CGFloat = 20
     @State private var start = Date()
     @State private var isSkipped = false
-    /// Reduce Motion's fade.
     @State private var isShown = false
     @State private var hits = 0
     @State private var stamps = 0
@@ -414,7 +368,6 @@ private struct CompetitionVersusIntroView: View {
             .contentShape(Rectangle())
             .onTapGesture(perform: skip)
             .opacity(reduceMotion && !isShown ? 0 : 1)
-            // Always on black: dark's ink, panel and track in either mode.
             .environment(\.colorScheme, .dark)
             .position(
                 x: stage.size.width / 2 - insets.leading,
@@ -433,7 +386,6 @@ private struct CompetitionVersusIntroView: View {
 
     private var isHeld: Bool { CompetitionVersusIntroGate.holds && !isSkipped }
 
-    /// Off the same clock as the frames, so a haptic lands on its hit.
     private func sleep(until t: Double) async throws {
         try await Task.sleep(for: .seconds(max(t - Date().timeIntervalSince(start), 0)))
     }
@@ -466,12 +418,10 @@ private struct CompetitionVersusIntroView: View {
             }
             finished()
         } catch {
-            // A skip restarted the clock, or the screen went away.
             Sounds.stop()
         }
     }
 
-    /// To the split, or Reduce Motion's fade out.
     private func skip() {
         guard isHeld || !isSkipped && Date().timeIntervalSince(start) < VersusClock.split else {
             return
@@ -480,8 +430,6 @@ private struct CompetitionVersusIntroView: View {
         isSkipped = true
     }
 
-    /// Each half holds the same scene, cut on the slash. Until the split the
-    /// halves meet, so one whole scene draws the same picture at half the work.
     private func frame(_ stage: VersusStage, at t: Double) -> some View {
         let open = VersusClock.openCurve.value(
             at: VersusClock.ramp(t, VersusClock.split, VersusClock.end - VersusClock.split)
@@ -522,8 +470,6 @@ private struct CompetitionVersusIntroView: View {
         }
     }
 
-    /// A slanted panel with a giant cropped initial, or the photo in its
-    /// place as a duotone, that creeps through the hold.
     private func panel(_ stage: VersusStage, isYours: Bool, at t: Double) -> some View {
         let side: CGFloat = isYours ? -1 : 1
         let away = 1 - VersusClock.slamCurve.value(
@@ -539,7 +485,6 @@ private struct CompetitionVersusIntroView: View {
         return ZStack {
             isYours ? Theme.youFill : Theme.panel
             if let photo = isYours ? photos.you : photos.them {
-                // The initial's square, so the face stays clear of the name.
                 let image = Image(uiImage: photo.image)
                     .resizable()
                     .scaledToFill()
@@ -548,13 +493,11 @@ private struct CompetitionVersusIntroView: View {
                     .grayscale(1)
                 Group {
                     if isYours {
-                        // Multiplied into amber: amber still means you.
                         image.contrast(1.15).blendMode(.multiply)
                     } else {
                         image.opacity(0.55)
                     }
                 }
-                // Anchored like the letter: outward from the same edge.
                 .frame(width: 0, height: 0, alignment: isYours ? .trailing : .leading)
                 .offset(x: -side * (12 - 14 * creep), y: side * (6 - 7 * creep))
                 .position(center)
@@ -572,7 +515,6 @@ private struct CompetitionVersusIntroView: View {
         .offset(x: side * away * dx, y: side * away * dx * 0.2)
     }
 
-    /// The name, and under it the tape line and belt.
     private func who(_ stage: VersusStage, isYours: Bool, at t: Double) -> some View {
         let holdsBelt = content.holder == (isYours ? .you : .them)
         let box = isYours
@@ -582,7 +524,6 @@ private struct CompetitionVersusIntroView: View {
         let landing = Spring(duration: 0.32, bounce: 0)
             .value(target: 1.0, time: max(t - VersusClock.names, 0))
         let tape = isYours ? content.yourTape : content.theirTape
-        // A line per word and after each hyphen, so no word ever breaks.
         let name = (isYours ? content.you : content.them).uppercased()
             .replacingOccurrences(of: "-", with: "-\n")
             .replacingOccurrences(of: " ", with: "\n")
@@ -626,7 +567,6 @@ private struct CompetitionVersusIntroView: View {
         .position(x: box.midX, y: box.midY)
     }
 
-    /// The event, the slanted bar and the day. A beat, not a real wait.
     private func footer(_ stage: VersusStage, at t: Double) -> some View {
         let width = stage.size.width - 48
         let fill = VersusClock.ramp(t, VersusClock.tape, VersusClock.split - VersusClock.tape)
@@ -655,7 +595,6 @@ private struct CompetitionVersusIntroView: View {
         .offset(y: stage.footerTop)
     }
 
-    /// VS, the one scale-in the app allows.
     private func stamp(_ stage: VersusStage, at t: Double) -> some View {
         let landed = VersusClock.slamCurve.value(at: VersusClock.ramp(t, VersusClock.stamp, 0.12))
         let height = 100 * stage.k

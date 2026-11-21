@@ -54,8 +54,6 @@ struct CompetitionInviteClaimToken:
     }
 }
 
-/// A person's reusable challenge link code (`/c/<code>`). It only lets
-/// someone create a pending challenge to that person.
 struct CompetitionChallengeLinkCode:
     Equatable,
     Sendable,
@@ -140,7 +138,6 @@ enum CompetitionInviteHost {
 }
 
 enum CompetitionRoute: Equatable, Sendable {
-    // Co-installed Staging must not receive production invitation links.
     #if HEALTHCOMP_STAGING
     static let customURLScheme = "healthcomp-staging"
     #else
@@ -162,13 +159,9 @@ enum CompetitionRoute: Equatable, Sendable {
 
     case competition(CompetitionID)
     case claimInvite(CompetitionInviteClaimToken)
-    /// Someone's challenge link: offers to challenge them.
     case challengeLink(CompetitionChallengeLinkCode)
-    /// A Friends push (request or accept): opens Friends, which reloads.
     case friends
 
-    /// The custom-scheme link that opens a match, for widgets. Lowercased:
-    /// `init?(url:)` rejects an uppercase uuid.
     var url: URL? {
         guard case let .competition(id) = self else { return nil }
         return URL(string: "\(Self.customURLScheme)://competition/\(id.rawValue.uuidString.lowercased())")
@@ -280,7 +273,6 @@ enum CompetitionRoute: Equatable, Sendable {
         }
         let kind = userInfo[UserInfoKey.kind] as? String
         if kind == "friends" {
-            // No id: Friends fetches who is what.
             guard stringKeys == friendsKeys else { return nil }
             self = .friends
             return
@@ -308,8 +300,6 @@ enum CompetitionRoute: Equatable, Sendable {
         case .friends:
             return [UserInfoKey.version: 1, UserInfoKey.kind: "friends"]
         case .claimInvite, .challengeLink:
-            // Invite tokens and link codes are intentionally forbidden from
-            // notification payloads. An empty payload fails closed when decoded.
             return [:]
         }
     }
@@ -328,7 +318,6 @@ enum CompetitionRoute: Equatable, Sendable {
     }
 }
 
-/// Only the two single-match judges alerts can ask for a sender photo.
 struct CompetitionNotificationSender: Equatable, Sendable {
     let profileID: UUID
     let displayName: String
@@ -342,7 +331,6 @@ struct CompetitionNotificationSender: Equatable, Sendable {
         return Self(profileID: id, displayName: name)
     }
 
-    /// The caller supplies the current visibility decision and cached bytes only.
     func permitted(ownProfileID: UUID, cachedJPEG: Data?, isVisible: Bool) -> Self? {
         guard profileID != ownProfileID, isVisible, let cachedJPEG, !cachedJPEG.isEmpty else { return nil }
         var sender = self
@@ -351,24 +339,15 @@ struct CompetitionNotificationSender: Equatable, Sendable {
     }
 }
 
-/// A nil route (summaries, merged reminders) opens the app where it was.
 struct CompetitionImmediateNotificationRequest: Equatable, Sendable {
     let identifier: String
     let content: CompetitionNotificationContent
     let route: CompetitionRoute?
-    /// Lead changes and results: the alert carries the four reactions, aimed
-    /// at this target in the route's match.
     var reactionTarget: CompetitionReactionTarget? = nil
-    /// The auth user signed in when it posted. A reaction from the alert is
-    /// sent only as them; without one the alert has no actions.
     var recipientUserID: UUID? = nil
     var sender: CompetitionNotificationSender? = nil
 }
 
-/// The four reactions as actions on a local lead-change or result alert. The
-/// category names the target and the route names the match, so the payload
-/// stays exactly the route's. Sending one sets it (a second replaces the
-/// first, never removes it) without opening the app, and plays no rain.
 enum CompetitionReactionAlert {
     static func category(_ target: CompetitionReactionTarget) -> String {
         switch target {
@@ -381,21 +360,16 @@ enum CompetitionReactionAlert {
         "competition.react.\(kind.rawValue)"
     }
 
-    /// Matches have seven days.
     static let targets: [CompetitionReactionTarget] = [.result] + (1...7).map(CompetitionReactionTarget.day)
 
-    /// The alert's recipient, next to the route's keys.
     static let recipientKey = "recipientUserID"
 
-    /// The alert's route, read past the recipient it may carry.
     static func route(userInfo: [AnyHashable: Any]) -> CompetitionRoute? {
         var userInfo = userInfo
         userInfo[recipientKey] = nil
         return CompetitionRoute(userInfo: userInfo)
     }
 
-    /// What a reaction action sends, and who it was for; nil for a tap, a
-    /// dismiss, an alert without a recipient or anything else.
     static func request(
         actionIdentifier: String,
         categoryIdentifier: String,
@@ -411,14 +385,9 @@ enum CompetitionReactionAlert {
         return (recipient, CompetitionReactionRequest(competitionID: id.rawValue, target: target, kind: kind))
     }
 
-    /// Sends a reaction as the alert's recipient, or not at all. Set once by
-    /// the live composition before any delegate callback; nil in the Test
-    /// Labs, so their alerts send nothing.
     nonisolated(unsafe) static var send: (@Sendable (_ recipientUserID: UUID, CompetitionReactionRequest) async throws -> Void)?
 
     #if canImport(UserNotifications)
-    /// Unlock first: the session lives in the keychain, and it keeps a
-    /// pocket from reacting.
     static var categories: Set<UNNotificationCategory> {
         let actions = CompetitionReactionKind.allCases.map {
             UNNotificationAction(
@@ -446,8 +415,6 @@ struct CompetitionScheduledNotificationRequest: Equatable, Sendable {
     var sender: CompetitionNotificationSender? = nil
 }
 
-/// One Notification Center thread per match, matching the server's
-/// `thread-id`; summaries share their own thread.
 func competitionNotificationThreadIdentifier(_ route: CompetitionRoute?) -> String {
     if case let .competition(id)? = route {
         return "competition:" + id.rawValue.uuidString.lowercased()
@@ -587,10 +554,6 @@ extension CompetitionNotificationClient: DependencyKey {
         )
     }
 
-    /// Communication alerts donate opponents' names, photos and alert text
-    /// to the system; sign-out forgets them with everything else.
-    /// Not awaited: the system may never call back (it doesn't on CI's
-    /// simulator), and sign-out must not wait on it.
     static func deleteDonatedInteractions() async {
         INInteraction.deleteAll(completion: nil)
     }
@@ -624,7 +587,6 @@ extension CompetitionNotificationClient: DependencyKey {
             speakableGroupName: nil, conversationIdentifier: content.threadIdentifier,
             serviceName: nil, sender: person, attachments: nil
         )
-        // iOS replaces the title with the sender's name; retain the teaser in the body.
         guard let communicationContent = content.mutableCopy() as? UNMutableNotificationContent else { return content }
         communicationContent.body = "\(notification.title)\n\(notification.body)"
         let interaction = INInteraction(intent: intent, response: nil)
@@ -634,7 +596,6 @@ extension CompetitionNotificationClient: DependencyKey {
             try await interaction.donate()
             return try communicationContent.updating(from: intent)
         } catch {
-            // Decoration must never prevent the original alert from being queued.
             return content
         }
     }

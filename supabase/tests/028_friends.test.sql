@@ -112,7 +112,6 @@ select throws_ok($$select public.report_profile(pg_temp.pid(1))$$,'P0001','recip
 select throws_ok($$select public.report_profile(pg_temp.pid(999))$$,'P0001','recipient_unavailable','report unknown');
 select throws_ok($$select public.report_profile(pg_temp.pid(2))$$,'P0001','recipient_unavailable','report hidden stranger');
 reset role;
--- Publish people with intentional exact, prefix, word-prefix and wildcard cases.
 update public.profiles set username='person_'||n, display_name = case when n=3 then 'Alice Cooper'
   when n=4 then 'Other Alice' else 'Person '||n end
 from generate_series(3,35) n where id=pg_temp.pid(n);
@@ -120,7 +119,6 @@ update public.profiles set username='alice', display_name='Exact' where id=pg_te
 update public.profiles set username='alice_more' where id=pg_temp.pid(6);
 update public.profiles set username='literal_abc' where id=pg_temp.pid(7);
 update public.profiles set username='literalxabc' where id=pg_temp.pid(8);
--- Preserve a matching friendship so only the search state filter excludes it.
 insert into private.friendships values(least(pg_temp.pid(1),pg_temp.pid(9)),greatest(pg_temp.pid(1),pg_temp.pid(9)),now());
 alter table public.profiles disable trigger purge_friends_on_profile_deactivation;
 update public.profiles set state='deleting',username=null,display_name='Inactive Search Counterpart' where id=pg_temp.pid(9);
@@ -180,7 +178,6 @@ select pg_temp.as_user(4);
 select is(public.respond_to_friend_request(pg_temp.pid(1),false),'{"relationship":"none"}'::jsonb,'decline incoming');
 select is(public.respond_to_friend_request(pg_temp.pid(1),false),'{"relationship":"none"}'::jsonb,'decline retry after deletion');
 reset role;
--- Existing challenge grants reachability without exposing a hidden invitee's username/photo.
 insert into r values('hidden',pg_temp.challenge(2,1));
 update public.profiles set photo_version=md5('photo-two')::uuid where id=pg_temp.pid(2);
 set local role authenticated;
@@ -207,7 +204,6 @@ select is(public.report_profile_photo(pg_temp.pid(2)),jsonb_build_object('profil
 select is(public.list_profile_photos(array[pg_temp.pid(2)]),'{"photos":[]}'::jsonb,'photo report still hides friend photo');
 reset role;
 delete from private.profile_photo_reports where reporter_profile_id=pg_temp.pid(1) and reported_profile_id=pg_temp.pid(2);
--- Both request directions removed even in a legacy/inconsistent pair fixture.
 insert into private.friend_requests values(pg_temp.pid(1),pg_temp.pid(2),now()),(pg_temp.pid(2),pg_temp.pid(1),now());
 set local role authenticated;
 select pg_temp.as_user(1);
@@ -238,7 +234,6 @@ select lives_ok($$select public.block_profile(pg_temp.pid(41))$$,'block own pend
 reset role;
 select ok((select lifecycle='cancelled' and closed_by_profile_id=pg_temp.pid(1) and closed_at is not null
   from public.competitions where id=(select id from r where label='outgoing-cancel')),'block cancels caller pending challenge');
--- The incoming path must match block_challenger's decline and durable push.
 insert into public.device_installations(id,profile_id,installation_id,apns_token,environment,state,supports_challenges)
 values(gen_random_uuid(),pg_temp.pid(42),gen_random_uuid(),repeat('d2',32),'sandbox','active',true);
 insert into r values('incoming-decline',pg_temp.challenge(42,1));
@@ -263,7 +258,6 @@ reset role;
 select is((select count(*) from private.competition_notification_work
   where competition_id=(select id from r where label='incoming-decline') and kind='challenge_declined'),
   1::bigint,'re-block does not queue another decline push');
--- Rate validation precedes accounting; shared quota resets after a minute.
 delete from private.people_search_limits where profile_id=pg_temp.pid(1);
 set local role authenticated;
 select pg_temp.as_user(1);
@@ -283,7 +277,6 @@ set local role authenticated;
 select lives_ok($$select public.search_people('nothing')$$,'new window allowed');
 reset role;
 select is((select used from private.people_search_limits where profile_id=pg_temp.pid(1)),1,'window resets to one');
--- Sender lock makes the 100-request bound safe across different recipients.
 insert into private.friend_requests select pg_temp.pid(50),pg_temp.pid(n),now() from generate_series(51,125) n;
 insert into private.friend_requests select pg_temp.pid(50),pg_temp.pid(n),now() from generate_series(1,25) n;
 update public.profiles set username='limit_target' where id=pg_temp.pid(126);
@@ -292,7 +285,6 @@ select pg_temp.as_user(50);
 select throws_ok($$select public.send_friend_request(pg_temp.pid(126))$$,'P0001','friend_request_limit','one hundred outgoing limit');
 select is(public.send_friend_request(pg_temp.pid(51)),'{"relationship":"requested"}'::jsonb,'retry at limit succeeds');
 reset role;
--- Deactivation clears private state both ways and immediately frees username.
 insert into private.friendships values(least(pg_temp.pid(3),pg_temp.pid(4)),greatest(pg_temp.pid(3),pg_temp.pid(4)),now());
 insert into private.friend_requests values(pg_temp.pid(3),pg_temp.pid(5),now()),(pg_temp.pid(6),pg_temp.pid(3),now());
 insert into private.profile_reports values(pg_temp.pid(3),pg_temp.pid(5),now());
@@ -314,7 +306,6 @@ select throws_ok($$select public.get_friend_settings()$$,'42501','active_profile
 reset role;
 update public.profiles set state='anonymized',auth_user_id=null,display_name='Former competitor',anonymized_at=now() where id=pg_temp.pid(3);
 select throws_ok($$update public.profiles set username='revived' where id=pg_temp.pid(3)$$,'23514','anonymized profile state is terminal','anonymized username stays null');
--- Old endpoints retain closed key sets.
 set local role authenticated;
 select pg_temp.as_user(1);
 select is((select array_agg(k order by k) from jsonb_object_keys(public.bootstrap_current_profile('Person 1')) k),array['display_name','id'],'bootstrap old shape');

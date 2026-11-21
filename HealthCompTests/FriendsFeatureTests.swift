@@ -40,7 +40,6 @@ final class FriendsFeatureTests: XCTestCase {
         XCTAssertNil(Feature.searchableQuery("@ma"))
         XCTAssertEqual(Feature.searchableQuery(" mar "), "mar")
         XCTAssertEqual(Feature.searchableQuery("@mar"), "@mar")
-        // The server counts code points; this flag is two.
         XCTAssertEqual(Feature.searchableQuery("🇯🇵a"), "🇯🇵a")
     }
 
@@ -111,7 +110,6 @@ final class FriendsFeatureTests: XCTestCase {
             $0.searchGeneration = 2
         }
         await clock.advance(by: Feature.searchDebounce)
-        // The wait for "mar" ends after "mara" was typed, so it's never sent.
         await store.receive(.searchDebounced("mar", generation: 1))
         await store.receive(.searchDebounced("mara", generation: 2))
         await store.receive(.searchFinished("mara", generation: 2, .success([mara]))) {
@@ -121,7 +119,6 @@ final class FriendsFeatureTests: XCTestCase {
         }
         XCTAssertEqual(searched.value, ["mara"])
 
-        // An answer for what's no longer typed changes nothing.
         await store.send(.queryChanged("mat")) {
             $0.query = "mat"
             $0.searchGeneration = 3
@@ -137,7 +134,6 @@ final class FriendsFeatureTests: XCTestCase {
     }
 
     func testAStaleDebounceSearchesNothing() async {
-        // The test client fails the test if search is called.
         let store = makeStore(Feature.State(query: "mara", searchGeneration: 2, isSearching: true))
         await store.send(.searchDebounced("mar", generation: 1))
         await store.send(.queryChanged("ma")) {
@@ -148,8 +144,6 @@ final class FriendsFeatureTests: XCTestCase {
         await store.send(.searchDebounced("mar", generation: 1))
     }
 
-    /// mar → marc → mar inside one wait: only the last edit searches, once,
-    /// and an answer for the first visit to "mar" is never applied.
     func testReturningToEarlierTextSearchesOnceForTheLatestEdit() async {
         let clock = TestClock()
         let searched = LockIsolated<[String]>([])
@@ -180,9 +174,6 @@ final class FriendsFeatureTests: XCTestCase {
         await store.send(.searchFinished("mar", generation: 1, .failure(.searchRateLimited)))
     }
 
-    /// CI saw this: the field read "marc", the server only got "mar", and
-    /// the spinner never stopped. An older keystroke's effect started after
-    /// the newest one's, as a busy main thread allows, and cancelled it.
     func testAnOlderKeystrokeStartingLateStillSearchesWhatsTyped() async {
         let clock = TestClock()
         let searched = LockIsolated<[String]>([])
@@ -520,7 +511,6 @@ final class FriendsFeatureTests: XCTestCase {
         let dev = person(1, "Dev", .friend)
         let store = makeStore(.init(list: FriendsList(friends: [dev]))) { client in
             client.reportProfile = { _ in throw CompetitionRemoteFailure.retryableTransport }
-            // blockProfile stays unimplemented: a call would fail the test.
         }
         await store.send(.reportTapped(dev, andBlock: true)) {
             $0.inFlight = [dev.id]
@@ -533,8 +523,6 @@ final class FriendsFeatureTests: XCTestCase {
         }
     }
 
-    // The server applies each call a second before its answer arrives, so
-    // closing Friends in between is the case that loses a receipt.
     private func makeSlowSafetyStore(
         _ dev: FriendPerson,
         clock: TestClock<Duration>,
@@ -581,7 +569,6 @@ final class FriendsFeatureTests: XCTestCase {
             $0.inFlight = [dev.id]
             $0.safetyInFlight = [dev.id]
         }
-        // Closing keeps the report's in-flight mark and its effect.
         await store.send(.closed)
         await clock.advance(by: .seconds(1))
         await store.receive(.reportFinished(dev, andBlock: true, failure: nil)) {
@@ -659,7 +646,6 @@ final class FriendsFeatureTests: XCTestCase {
             $0.safetyInFlight = []
             $0.failure = Feature.PersonFailure(id: dev.id, failure: .connection)
         }
-        // Still a friend, still reported.
         await store.receive(.requested)
         await store.receive(.loaded(FriendsList(friends: [dev]))) {
             $0.people = [dev.id: dev]
@@ -710,7 +696,6 @@ final class FriendsFeatureTests: XCTestCase {
         initial.blockedPeople = []
         let store = TestStore(initialState: initial) { CompetitionFeature() } withDependencies: {
             $0.competitionClient = CompetitionClient.testValue
-            // The block landed; only its answer was lost.
             $0.competitionClient.blockProfile = { _ in throw CompetitionRemoteFailure.retryableTransport }
             $0.competitionClient.loadBlockedProfiles = { [profile] }
             $0.competitionClient.listFriends = { FriendsList() }
@@ -731,7 +716,6 @@ final class FriendsFeatureTests: XCTestCase {
         XCTAssertNil(Menu.requestItem(FriendRelationship.none, hasPlayed: false))
         XCTAssertNil(Menu.requestItem(.friend, hasPlayed: true))
         XCTAssertNil(Menu.requestItem(.incoming, hasPlayed: true))
-        // Before the list loads, neither.
         XCTAssertNil(Menu.requestItem(nil, hasPlayed: true))
     }
 
@@ -778,7 +762,6 @@ final class FriendsFeatureTests: XCTestCase {
         XCTAssertTrue(state.photoOwners.contains(requester.id), "On screen before the long list")
         XCTAssertTrue(state.photoOwners.contains(result.id))
 
-        // A claim's sender joins after everyone else is counted, still capped.
         let sender = UUID()
         let withSender = state.photoOwners(claimSender: sender)
         XCTAssertEqual(withSender.count, CompetitionFeature.maxPhotoOwners)
@@ -811,7 +794,6 @@ final class FriendsFeatureTests: XCTestCase {
             $0.competitionClient = CompetitionClient.testValue
             $0.competitionClient.listFriends = { list }
         }
-        // A wakeup in the foreground: no navigation, no scene change.
         let first = publication(1, .remoteParticipants)
         await store.send(.publication(first)) { $0.publication = first }
         await store.receive(.friends(.requested))
@@ -849,10 +831,8 @@ final class FriendsFeatureTests: XCTestCase {
             $0.isSearching = false
             $0.inFlight = []
         }
-        // The add may have landed before it was cancelled.
         await store.receive(.requested)
         await store.receive(.loaded(FriendsList())) { $0.list = FriendsList() }
-        // The search never answers a closed screen.
         await clock.run()
     }
 
@@ -878,8 +858,6 @@ final class FriendsFeatureTests: XCTestCase {
     }
 }
 
-/// Friends, with the effect of one action starting only after the clock
-/// moves `lag`.
 private struct StartsLate: Reducer {
     let late: FriendsFeature.Action
     let lag: Duration

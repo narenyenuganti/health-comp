@@ -258,8 +258,6 @@ set auth_user_id = null, display_name = 'Former competitor', state = 'anonymized
     anonymized_at = now(), updated_at = now()
 where id = '10000000-0000-0000-0000-000000000004';
 
--- Transaction-local grants let the policy behavior fail as TAP assertions on
--- the pre-migration schema instead of aborting on the foundation's revokes.
 grant select (id, display_name, state, anonymized_at, created_at, updated_at)
   on public.profiles to authenticated, anon;
 grant select on table

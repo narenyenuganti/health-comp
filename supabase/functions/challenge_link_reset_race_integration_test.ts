@@ -61,7 +61,6 @@ Deno.test({
         });
       };
 
-      // A create from the link holds it until commit: a reset waits.
       const firstCode = await asOwner("get");
       const holder = await sql.reserve();
       try {
@@ -98,8 +97,6 @@ Deno.test({
         true,
       );
 
-      // Creates racing one reset: each either used the code it was given
-      // before the reset, or is refused like an unknown code.
       const outcomes = await Promise.allSettled([
         ...senders.slice(1).map(({ user }) => create(user, secondCode)),
         asOwner("reset"),

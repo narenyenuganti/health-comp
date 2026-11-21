@@ -491,7 +491,6 @@ Deno.test("assertion policy-metadata format transitions fail before authorizatio
 });
 
 Deno.test("a changed bundle version after an app update asks the app to re-attest", async () => {
-  // Registered under build 0, asserting as build 1 (allowed by the policy).
   const response = await submitScoreRevisionHandler(
     request({
       version: 1,
@@ -623,8 +622,6 @@ Deno.test("submission is POST-only, bearer-authenticated, and configuration-fail
   });
   assertEquals(invalidSession.status, 401);
 
-  // auth-js returns outages as errors (status 0 for network, 5xx, 429): the
-  // app must retry, so never 401.
   for (const status of [0, 429, 500, 503, undefined]) {
     const authOutage = await submitScoreRevisionHandler(request(), {
       ...dependencies(),
@@ -1184,7 +1181,6 @@ Deno.test("every frozen privacy and digest-mutation vector remains executable", 
     assertEquals(response.status >= 400, true, vector.name);
   }
   assertEquals(containsFingerprint("benign-wire-digest-value"), false);
-  // Hostile nesting is rejected without overflowing the stack.
   assertEquals(
     containsFingerprint(JSON.parse("[".repeat(100_000) + "]".repeat(100_000))),
     true,

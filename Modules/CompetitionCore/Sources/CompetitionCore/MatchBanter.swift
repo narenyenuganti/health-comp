@@ -1,13 +1,6 @@
 import Foundation
 
-/// One banter line for a match day, or nothing.
-///
-/// The same scores and match day always produce the same line. Phones with
-/// different sync states can disagree. At most one line, in this order:
-/// team imbalance, then far off the lead, then a bot ahead of a person.
 public enum MatchBanter {
-    /// Hard carry and deadweight are one imbalance event. The match-day hash
-    /// picks the phrasing when both describe legal human subjects.
     public enum Phrasing: Equatable, Sendable {
         case hardCarry, deadweight
     }
@@ -15,14 +8,12 @@ public enum MatchBanter {
     public enum Kind: Equatable, Sendable {
         case teamImbalance(Phrasing)
         case farOffLead
-        /// `mode` is the caller's bot mode name: pacer, chill, erratic, or beast.
         case botAhead(String)
     }
 
     public struct Template: Equatable, Sendable {
         public let thirdPerson: String
         public let secondPerson: String
-        /// Hand-written line for the named partner or leader. Nil when the template names neither.
         public let namedViewer: String?
 
         init(thirdPerson: String, secondPerson: String, namedViewer: String? = nil) {
@@ -34,12 +25,9 @@ public enum MatchBanter {
 
     public struct Line: Equatable, Sendable {
         public let kind: Kind
-        /// Subject first. Imbalance then names the partner. Far off the lead then names the leader.
         public let subjectSeatIDs: [UUID]
         public let templateIndex: Int
-        /// Subject's whole-percent team share, truncating. Set for team imbalance.
         public let percent: Int?
-        /// Whole-point gap, truncating centipoints / 100. Set for far off the lead and a bot ahead.
         public let points: Int?
     }
 
@@ -60,10 +48,6 @@ public enum MatchBanter {
                         dayOrdinal: dayOrdinal, botModes: botModes, hash: hash)
     }
 
-    /// Second person when the viewer is the subject. The named partner or leader gets that
-    /// template's own wording, so a viewer never sees their own name. Everyone else,
-    /// including a bot seat, gets third person.
-    /// `formatPoints` lets the app group digits the way its other gaps read.
     public static func render(
         _ line: Line, names: [UUID: String], viewerSeatID: UUID,
         formatPoints: (Int) -> String = { String($0) }
@@ -101,9 +85,6 @@ public enum MatchBanter {
         }
     }
 
-    /// FNV-1a 64 over the UUID's RFC 4122 bytes (the hex pairs of `uuidString`, hyphens dropped)
-    /// followed by the day ordinal as one byte. Bit 0 picks a phrasing: even is hard carry.
-    /// Template index is `(hash >> 1) % count`. This is not `Swift.Hasher`.
     static func selectionHash(matchID: UUID, dayOrdinal: Int) -> UInt64 {
         var hash: UInt64 = 14_695_981_039_346_656_037
         let hex = matchID.uuidString.replacingOccurrences(of: "-", with: "")
@@ -119,9 +100,6 @@ public enum MatchBanter {
         return hash
     }
 
-    /// Lower team number wins when both doubles teams are imbalanced.
-    /// A bot is never the subject. Both humans on the team need an accepted score today,
-    /// because some lines in the chosen phrasing name the partner.
     private static func teamImbalance(configuration: MatchConfiguration, days: [MatchDayScore],
                                       dayOrdinal: Int, hash: UInt64) throws -> Line? {
         guard configuration.format == .doubles else { return nil }
@@ -169,8 +147,6 @@ public enum MatchBanter {
         return nil
     }
 
-    /// Free-for-all only. Last place must be a human more than 400 points (40,000 centipoints) behind first.
-    /// Equality does not fire. A bot may be the named leader. Tied seats break by ascending seat id.
     private static func farOffLead(configuration: MatchConfiguration, projection: MatchScoreProjection,
                                    days: [MatchDayScore], dayOrdinal: Int, hash: UInt64) -> Line? {
         guard configuration.format == .freeForAll,
@@ -196,8 +172,6 @@ public enum MatchBanter {
                     percent: nil, points: (lead - subject.1) / 100)
     }
 
-    /// At least one whole point (100 centipoints) ahead on week-to-date seat totals.
-    /// A smaller lead would render as zero. Tied pairs break by bot seat id, then the human's.
     private static func botAhead(configuration: MatchConfiguration, projection: MatchScoreProjection,
                                  days: [MatchDayScore], dayOrdinal: Int, botModes: [UUID: String], hash: UInt64) -> Line? {
         var pairs: [(bot: UUID, human: UUID, mode: String, points: Int)] = []
@@ -233,8 +207,6 @@ public enum MatchBanter {
         return isHuman(seat)
     }
 
-    /// An accepted available score is centipoints for that day, including zero. Missing, not synced,
-    /// unavailable, and after-leave do not qualify.
     private static func hasAcceptedScore(_ days: [MatchDayScore], seatID: UUID, ordinal: Int) -> Bool {
         for day in days where day.seatID == seatID && day.ordinal == ordinal {
             if case .centipoints = day.value { return true }
@@ -244,9 +216,6 @@ public enum MatchBanter {
     }
 }
 
-/// Line bank. Edit the copy here. Selection does not read the words.
-/// Placeholders: {subject} {partner} {leader} {percent} {points}.
-/// `namedViewer` is written out for the partner or leader, and does not use their placeholder.
 private enum MatchBanterCopy {
     static let hardCarry: [MatchBanter.Template] = [
         .init(thirdPerson: "{subject} has {percent}% of the team's points. A permit may be required.",

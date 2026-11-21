@@ -279,8 +279,6 @@ struct CompetitionTestLabCheckpoint: Equatable, Sendable {
 }
 
 extension OpponentPlanGenerationRequest {
-    /// A bot week on v3, at the practice fallback baseline; v1 only to replay
-    /// a fixture launched with an old pace.
     static func testLab(seed: UInt64, difficulty: OpponentDifficulty) -> Self {
         BotMode(rawValue: difficulty.rawValue) == nil
             ? Self(seed: seed, generatorVersion: .v1, difficulty: difficulty)
@@ -749,7 +747,6 @@ final class CompetitionTestLabSession: ObservableObject, Identifiable {
         } withDependencies: {
             $0.competitionClient = labClient
             $0.competitionRoutingClient = labRoutingClient
-            // Fixtures never touch real Health or notification permissions.
             $0.permissionOnboardingClient = .inert
         }
         self.checkpointIndex = persistedState?.checkpointIndex ?? 0
@@ -1071,8 +1068,6 @@ struct CompetitionTestLabView: View {
         Text("FIXTURE DATA")
             .font(.caption.weight(.bold))
             .foregroundStyle(.orange)
-            // A leaf marker keeps this stable root identifier from replacing
-            // the identifiers of every control in the containing lab view.
             .accessibilityIdentifier("testlab.root")
         Text(logicalTimeText)
             .font(.caption.monospacedDigit())
@@ -1154,7 +1149,6 @@ private struct CompetitionTestLabCheckpointButtonStyle: ButtonStyle {
 private struct CompetitionTestLabConfigurationView: View {
     @ObservedObject var controller: CompetitionTestLabController
 
-    /// An old pace is listed only while a fixture launched with it is loaded.
     private var difficultyChoices: [OpponentDifficulty] {
         let bots: [OpponentDifficulty] = [.pacer, .chill, .erratic, .beast]
         return bots.contains(controller.draftDifficulty)

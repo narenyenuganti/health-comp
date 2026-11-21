@@ -1,9 +1,5 @@
 import XCTest
 
-/// The belt and the page per person (spec §9.1), driven through the remote
-/// Test Lab's `belt` history: Sam (taken, retaken, kept 3 weeks), a
-/// 64-character name holding it, Riley waiting on a tallying week, Morgan's
-/// ties and a Former competitor.
 final class BeltUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -25,8 +21,6 @@ final class BeltUITests: XCTestCase {
         app = nil
     }
 
-    // MARK: Home
-
     func testHomeChipsSayWhoHoldsTheBeltGoingIn() {
         launchLab()
         XCTAssertTrue(
@@ -44,8 +38,6 @@ final class BeltUITests: XCTestCase {
         XCTAssertTrue(long.label.hasPrefix("\(Self.longName). Day 2 of 7"), long.label)
         XCTAssertTrue(long.label.hasSuffix(". \(Self.longName) holds the belt · 1 defense"), long.label)
 
-        // Riley's earlier week is still tallying: that card says who holds
-        // it, and the match after it waits.
         let tallying = card("tallying", 0x32)
         scrollToElement(tallying)
         XCTAssertTrue(tallying.label.hasSuffix(". You hold the belt"), tallying.label)
@@ -53,20 +45,17 @@ final class BeltUITests: XCTestCase {
         scrollToElement(rileyLive)
         XCTAssertFalse(rileyLive.label.contains("belt"), rileyLive.label)
 
-        // A deleted account's belt is retired: no chip.
         let former = card("active", 0x52)
         scrollToElement(former)
         XCTAssertTrue(former.label.hasPrefix("Former competitor. Day 2 of 7"), former.label)
         XCTAssertFalse(former.label.contains("belt"), former.label)
 
-        // The match screen has no belt.
         scrollToElement(sam)
         sam.tap()
         XCTAssertTrue(app.navigationBars["Sam"].waitForExistence(timeout: 3))
         XCTAssertEqual(labels(containing: "belt").count, 0)
         goBack(to: "Home")
 
-        // Sam's last week is still on Home: a title defense shows the banner.
         let result = card("completed", 0x16)
         scrollToElement(result)
         XCTAssertFalse(result.label.contains("belt"), result.label)
@@ -81,15 +70,11 @@ final class BeltUITests: XCTestCase {
         XCTAssertTrue(hero.waitForExistence(timeout: 3))
         XCTAssertTrue(hero.label.hasPrefix("Sam. Day 2 of 7"), hero.label)
         XCTAssertTrue(hero.label.hasSuffix(". You hold the belt · 1 defense"), hero.label)
-        // The hero says LIVE on the card; there is no "LIVE · n" section.
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "LIVE · ")).firstMatch.exists)
-        // Only the hero card speaks of the belt, through its button.
         let outside = labels(containing: "belt").allElementsBoundByIndex
             .filter { !hero.frame.contains($0.frame) }
         XCTAssertEqual(outside.map(\.label), [])
     }
-
-    // MARK: History
 
     func testHistoryRecordRowsCarryTheBeltAndOpenThePersonPage() {
         launchLab()
@@ -109,12 +94,10 @@ final class BeltUITests: XCTestCase {
         for (byte, label) in expected {
             let row = record(byte)
             scrollToElement(row)
-            // A button now, with the same id as before.
             XCTAssertEqual(row.elementType, .button)
             XCTAssertEqual(normalized(row.label), label)
         }
 
-        // The week rows below never carry the belt.
         let week = element(weekID("archived", 0x14))
         scrollToElement(week)
         XCTAssertFalse(week.label.contains("belt"), week.label)
@@ -128,21 +111,16 @@ final class BeltUITests: XCTestCase {
         XCTAssertTrue(record(0x16).exists)
     }
 
-    // MARK: Person page
-
     func testPersonPageWhereYouHoldTheBeltOpensEachWeeksResult() {
         launchLab()
         openPerson(0x16, title: "Sam")
         XCTAssertEqual(element("competition.person.record").label, "Sam, 3 wins, 2 losses, 1 tie. 6 weeks")
-        // Aug 8 – 14's Verdict is unseen, so the belt holds at the week
-        // before (design: fighter card).
         XCTAssertEqual(
             element("competition.person.belt").label,
             "You hold the belt, Since Jul 31 · 2 weeks, Title reigns: You 2, Sam 1, Title defenses: You 0, Sam 1, Longest reign: You 2 weeks, Sam 2 weeks, Biggest win: You +160, Sam +160"
         )
         XCTAssertTrue(app.staticTexts["WEEKS"].exists)
 
-        // Newest first; only the three takes carry the belt.
         let weeks: [(String, UInt8, String)] = [
             ("completed", 0x16, "You won · Aug 8 – 14. You 3,210 points. Sam 3,050 points"),
             ("archived", 0x15, "Tied · Aug 1 – 7. You 3,000 points. Sam 3,000 points"),
@@ -151,8 +129,6 @@ final class BeltUITests: XCTestCase {
             ("archived", 0x12, "Sam won · Jul 11 – 17. You 2,980 points. Sam 3,140 points. Sam took the belt"),
             ("archived", 0x11, "You won · Jul 4 – 10. You 3,210 points. Sam 3,050 points. You took the belt"),
         ]
-        // This week's match sits on top; below it the latest five weeks,
-        // then "All 6 weeks".
         func listed() -> [String] {
             var ids = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "competition.sharing."))
                 .allElementsBoundByIndex.map(\.identifier)
@@ -181,7 +157,6 @@ final class BeltUITests: XCTestCase {
             ("archived", 0x12, "Sam took the belt, You held it for 1 week."),
             ("archived", 0x13, "Sam’s 1st title defense, 2 weeks in a row."),
             ("archived", 0x14, "You took the belt, Sam held it for 2 weeks."),
-            // A tie keeps your reign at 2 weeks: nothing.
             ("archived", 0x15, nil),
             ("completed", 0x16, "1st title defense, 3 weeks in a row."),
         ]
@@ -196,7 +171,6 @@ final class BeltUITests: XCTestCase {
             goBack(to: "Sam")
             XCTAssertTrue(element("competition.person.belt").exists)
         }
-        // Seen, so the belt counts Aug 8 – 14: the defense and 3 weeks.
         XCTAssertEqual(
             element("competition.person.belt").label,
             "You hold the belt, Since Jul 31 · 3 weeks, 1 defense, Title reigns: You 2, Sam 1, Title defenses: You 1, Sam 1, Longest reign: You 3 weeks, Sam 2 weeks, Biggest win: You +160, Sam +160"
@@ -254,14 +228,12 @@ final class BeltUITests: XCTestCase {
             element("competition.person.record").label,
             "Former competitor, 1 win, 0 losses. 1 week"
         )
-        // A deleted account's ledger: a retired belt is the title only.
         XCTAssertEqual(element("competition.person.belt").label, "The belt is retired")
         let week = element(weekID("archived", 0x51))
         XCTAssertEqual(
             normalized(week.label),
             "You won · Aug 8 – 14. You 3,210 points. Former competitor 3,050 points. You took the belt"
         )
-        // A past result keeps what that week did.
         openWeek(weekID("archived", 0x51), title: "Former competitor")
         assertBanner("You took the belt")
     }
@@ -269,9 +241,7 @@ final class BeltUITests: XCTestCase {
     func testPersonPageWhileTheNextWeekIsTallying() {
         launchLab()
         openPerson(0x31, title: "Riley")
-        // One finished week: no tale of the tape until 3.
         XCTAssertEqual(element("competition.person.belt").label, "You hold the belt, Since Aug 7 · 1 week")
-        // The tallying week sits on top; only the finished week is listed.
         XCTAssertEqual(
             Set(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "competition.sharing."))
                 .allElementsBoundByIndex.map(\.identifier)),
@@ -280,8 +250,6 @@ final class BeltUITests: XCTestCase {
         openWeek(weekID("archived", 0x31), title: "Riley")
         assertBanner("You took the belt")
     }
-
-    // MARK: Accessibility 5
 
     func testHistoryRecordsPassTheAuditAtAccessibility5() throws {
         continueAfterFailure = true
@@ -294,7 +262,6 @@ final class BeltUITests: XCTestCase {
     }
 
     func testBeltScreensPassTheAuditAtAccessibility5() throws {
-        // Report every screen's issues, not only the first.
         continueAfterFailure = true
         launchLab(Self.darkAX5)
         for (state, byte) in [("active", UInt8(0x17)), ("active", 0x24), ("tallying", 0x32), ("active", 0x33)] {
@@ -303,10 +270,6 @@ final class BeltUITests: XCTestCase {
             XCTAssertTrue(card.isHittable)
         }
         showAtTop(card("active", 0x52))
-        // The scoreboard's "FORMER COMPETITOR" wraps to two lines whose
-        // second word sets the text's exact width; the audit re-measures it
-        // as clipped, yet it draws in full (home-former-*-ax5.png). The
-        // scoreboard predates the belt, and every other name passes.
         try audit(ignoringClipped: ["FORMER COMPETITOR"])
 
         openPerson(0x23, title: Self.longName)
@@ -326,8 +289,6 @@ final class BeltUITests: XCTestCase {
         try audit()
     }
 
-    // MARK: Helpers
-
     private func launchLab(_ arguments: [String] = [], scenario: String = "belt") {
         if app.state != .notRunning { app.terminate() }
         app = XCUIApplication()
@@ -346,7 +307,6 @@ final class BeltUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
-        // No .dynamicType audit: the reused rows swap layouts with ViewThatFits.
         var issues: [String] = []
         try app.performAccessibilityAudit(
             for: XCUIAccessibilityAuditType.textClipped
@@ -354,14 +314,11 @@ final class BeltUITests: XCTestCase {
                 .union(.sufficientElementDescription)
         ) { issue in
             let element = issue.element
-            // The system navigation bar truncates a long title at every
-            // size; VoiceOver reads it whole and the belt panel shows it.
             if issue.auditType == .textClipped, let element,
                self.app.navigationBars.firstMatch.frame.contains(element.frame)
                 || ignored.contains(element.label) {
                 return true
             }
-            // Name the element, so a failure says what clipped.
             issues.append("\(issue.compactDescription): \(element?.identifier ?? "") \"\(element?.label ?? "")\" \(element?.frame ?? .zero)")
             return true
         }
@@ -386,7 +343,6 @@ final class BeltUITests: XCTestCase {
         "competition.sharing.\(state).\(Self.uuid(byte))"
     }
 
-    /// History's record row, by the id of the person's latest week.
     private func record(_ latest: UInt8) -> XCUIElement {
         element("competition.record.\(Self.uuid(latest))")
     }
@@ -434,7 +390,6 @@ final class BeltUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
-    /// Date intervals use thin spaces around the dash.
     private func normalized(_ text: String) -> String {
         text.replacingOccurrences(of: "\u{2009}", with: " ")
             .replacingOccurrences(of: "\u{202F}", with: " ")
@@ -447,7 +402,6 @@ final class BeltUITests: XCTestCase {
         add(attachment)
     }
 
-    /// Scrolls until the element is on screen, then nudges it toward the top.
     private func showAtTop(_ element: XCUIElement) {
         scrollToElement(element)
         let scroll = app.scrollViews.firstMatch
@@ -462,8 +416,6 @@ final class BeltUITests: XCTestCase {
         for _ in 0..<30 {
             let scrollView = app.scrollViews.firstMatch
             let surface: XCUIElement = scrollView.exists ? scrollView : app
-            // A card taller than the screen (AX5) never fits: its top on
-            // screen is enough.
             if element.exists, element.isHittable,
                app.frame.contains(element.frame)
                 || (element.frame.height > surface.frame.height / 2

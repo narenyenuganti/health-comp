@@ -68,11 +68,8 @@ scan_pattern() {
   done < <(git ls-files -z)
 }
 
-# Match a complete PEM header line, including CRLF and indented block scalars,
-# rather than source code that merely contains a PEM-validation expression.
 scan_pattern private-key \
   '^[[:space:]]*-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----[[:space:]]*$'
-# A PEM key pasted into JSON or an env value keeps its newlines as "\n".
 scan_pattern private-key \
   '-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----\\n[A-Za-z0-9+/]'
 scan_pattern aws-access-key '(AKIA|ASIA)[0-9A-Z]{16}'

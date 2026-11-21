@@ -1,8 +1,5 @@
 import XCTest
 
-/// The Today page's what-it-takes panel (spec §9.3, PR 3): every state the
-/// local and remote Test Labs can reach, plus the light/dark × default/XS/AX5
-/// screenshot matrix.
 final class WhatItTakesUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -19,12 +16,9 @@ final class WhatItTakesUITests: XCTestCase {
         app = nil
     }
 
-    // MARK: Remote matches (200% per ring)
-
     func testWhatItTakesPanelForEveryRemoteState() {
         launchRemote(Self.lightDefault)
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
-        // One job per screen: never on Home.
         XCTAssertFalse(takes.exists)
 
         let shown: [(name: String, status: String, label: String)] = [
@@ -34,7 +28,6 @@ final class WhatItTakesUITests: XCTestCase {
              "50 points to take the lead. About 180 kilocalories of Move and 6 minutes of Exercise."),
             ("Morgan", "Day 4 of 7",
              "39 points to take the lead. About 12 minutes of Move Time or 12 minutes of Exercise."),
-            // Level by a fraction; Move is at 200%; they're at today's 600.
             ("Devon", "Day 6 of 7", "1 point to take the lead. About 1 minute of Exercise."),
             ("Priya", "Last day",
              "Out of reach today. Priya is 380 points ahead and you have 110 points left in Move and Exercise today."),
@@ -52,7 +45,6 @@ final class WhatItTakesUITests: XCTestCase {
             XCTAssertTrue(rings.exists, match.name)
             XCTAssertLessThan(takes.frame.maxY, rings.frame.minY, "\(match.name): above the rings")
             XCTAssertNotEqual(takes.elementType, .button, "not tappable")
-            // The Week page and the day drawer never show it.
             showWeek()
             XCTAssertFalse(takes.exists, match.name)
             app.buttons["Today"].tap()
@@ -98,10 +90,6 @@ final class WhatItTakesUITests: XCTestCase {
         XCTAssertEqual(allTakes.count, 1)
     }
 
-    // MARK: Local fixture (no per-ring cap)
-
-    /// You score 0 all week, so you're behind from Day 2: the panel must
-    /// always agree with the lead line, then go away once the week ends.
     func testLossFixtureFollowsTheScoreThroughTheWeekAndHidesOnceItEnds() {
         launchLocal(fixture: "loss", Self.lightDefault)
         startLocalMatch()
@@ -155,8 +143,6 @@ final class WhatItTakesUITests: XCTestCase {
         XCTAssertFalse(takes.exists)
     }
 
-    // MARK: Screenshot matrix
-
     func testWhatItTakesScreenshotMatrix() throws {
         for appearance in ["Light", "Dark"] {
             for (size, category) in [("default", "UICTContentSizeCategoryL"),
@@ -197,8 +183,6 @@ final class WhatItTakesUITests: XCTestCase {
         }
     }
 
-    /// Captures the panel with its top under the bar, plus a second capture of
-    /// its bottom when it's taller than the screen (AX5), then audits it.
     private func captureWholePanel(_ name: String) throws {
         XCTAssertTrue(bringIntoView(takes), "\(name): panel on screen under the bar")
         capture(name)
@@ -206,21 +190,16 @@ final class WhatItTakesUITests: XCTestCase {
             XCTAssertTrue(bringIntoView(takes, bottom: true), "\(name): panel bottom on screen")
             capture("\(name)-bottom")
         }
-        // Capture first: the audit scrolls the page while it inspects it.
         try app.performAccessibilityAudit(for: [.textClipped, .contrast]) { issue in
-            // Only this feature's panel; the rest of the screen has its own audits.
             issue.element?.identifier != "competition.takes"
         }
     }
-
-    // MARK: Helpers
 
     private var takes: XCUIElement { app.descendants(matching: .any)["competition.takes"] }
     private var allTakes: XCUIElementQuery {
         app.descendants(matching: .any).matching(identifier: "competition.takes")
     }
 
-    /// Local fixture: you have 0 today, no per-ring cap, goals of 100.
     private func expectedLocalLabel(gap: Int) -> String {
         let need = gap + 1
         guard need <= 600 else {
@@ -257,7 +236,6 @@ final class WhatItTakesUITests: XCTestCase {
         if app.state != .notRunning { app.terminate() }
         app = XCUIApplication()
         XCUIDevice.shared.appearance = appearanceArguments.contains("Dark") ? .dark : .light
-        // The one-time color hint would shift scoreboards by test order.
         app.launchArguments = arguments + ["-healthcomp.colorHintSeen", "YES"] + appearanceArguments
         app.launch()
     }
@@ -281,7 +259,6 @@ final class WhatItTakesUITests: XCTestCase {
         ).firstMatch
         scrollToElement(card)
         card.tap()
-        // A tap while the scroll is still settling only stops it: tap again.
         if !app.buttons["Week"].waitForExistence(timeout: 3), card.isHittable { card.tap() }
         XCTAssertTrue(app.buttons["Week"].waitForExistence(timeout: 3), name)
     }
@@ -314,22 +291,16 @@ final class WhatItTakesUITests: XCTestCase {
         app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
     }
 
-    /// Slow drags until the element's top sits under the navigation bar and,
-    /// when it fits, its bottom clears the home indicator. AX5 panels can be
-    /// taller than the space left, so then the top wins, unless `bottom`
-    /// asks for the bottom edge instead.
     @discardableResult
     private func bringIntoView(_ element: XCUIElement, bottom showsBottom: Bool = false) -> Bool {
         let window = app.windows.firstMatch
         let navigationBar = app.navigationBars.firstMatch
-        /// Points the content still has to move up (negative: down); 0 when placed.
         func offset() -> CGFloat {
             let top = navigationBar.frame.maxY + 8
             let bottom = window.frame.maxY - 40
             let frame = element.frame
             if showsBottom { return frame.maxY > bottom ? frame.maxY - bottom + 20 : 0 }
             if frame.minY < top { return frame.minY - top - 20 }
-            // Room to spare, or the two edges can trade places step after step.
             if frame.height <= bottom - top - 60 { return frame.maxY > bottom ? frame.maxY - bottom + 20 : 0 }
             return frame.minY > top + 80 ? frame.minY - top - 20 : 0
         }
@@ -337,7 +308,6 @@ final class WhatItTakesUITests: XCTestCase {
             let move = min(180, max(-180, offset()))
             if move == 0 { return true }
             let height = window.frame.height
-            // Low on the screen: at AX5 the local lab controls cover the top two thirds.
             let start: CGFloat = move > 0 ? 0.92 : 0.7
             window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: start))
                 .press(

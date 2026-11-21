@@ -537,8 +537,6 @@ actor CompetitionInstallationCoordinator {
         isDraining = true
         while let next = pendingToken {
             pendingToken = nil
-            // Compared here, not on arrival: while one is in flight,
-            // `registered` is still the one before it.
             if Registration(token: next, mutedPushKinds: mutedPushKinds()) != registered {
                 await register(next)
             }

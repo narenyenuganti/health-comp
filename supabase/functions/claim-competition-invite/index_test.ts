@@ -209,10 +209,6 @@ Deno.test("claim keeps unexpected database failures retryable", async () => {
   });
 });
 
-// This test is enabled in the verification command after the local functions are
-// served with their default platform JWT verification. It intentionally uses
-// real Auth-issued access tokens, races an exact create retry, and then races two
-// different authenticated claimants.
 Deno.test({
   name:
     "local JWT integration recovers concurrent create and permits exactly one concurrent claimant",
@@ -431,13 +427,11 @@ Deno.test({
           message: "A match with this account is in progress",
         },
       });
-      // Synthetic boundary: the accepted match's week has ended.
       await sql`update public.competitions set start_day = start_day - 8
         where id = ${invitation.competitionId}::uuid`;
       const expiryResponse = await createRequest(crypto.randomUUID());
       assertEquals(expiryResponse.status, 201);
       const expiryInvitation = await expiryResponse.json();
-      // Advance only this synthetic fixture's boundary; acceptance still uses the real HTTP operation.
       await sql`update public.competition_invites set expires_at = now()
         where competition_id = ${expiryInvitation.competitionId}::uuid`;
       await sql`update public.competitions set invitation_expires_at = now()
@@ -469,8 +463,6 @@ Deno.test({
       );
     } finally {
       await sql.end();
-      // The test targets only the explicit local disposable database. The
-      // verification workflow resets it before any subsequent SQL suite.
     }
   },
 });

@@ -1,7 +1,6 @@
 import CompetitionCore
 import SwiftUI
 
-/// Flat segments in the app's own surfaces, in place of the system's picker.
 struct CompetitionSegments<Selection: Hashable>: View {
     @Binding var selection: Selection
     let options: [(value: Selection, title: String)]
@@ -14,8 +13,6 @@ struct CompetitionSegments<Selection: Hashable>: View {
                 let isSelected = option.value == selection
                 Button { selection = option.value } label: {
                     Text(option.title)
-                        // Weight and an outlined thumb mark the choice, not tone alone:
-                        // ground on control is only 1.2:1 in either mode.
                         .font(.subheadline.weight(isSelected ? .heavy : .semibold).width(.condensed))
                         .foregroundStyle(isSelected ? Theme.ink : Theme.secondary)
                         .multilineTextAlignment(.center)
@@ -49,20 +46,12 @@ struct CompetitionDetailView: View {
     var muteButton: CompetitionMuteButton?
     var issue: CompetitionRowIssue? = nil
     var retry: (() async -> Void)? = nil
-    /// Pull to refresh on the match screen only; drawers don't inherit it.
     var refresh: (@Sendable () async -> Void)?
-    /// Real scheduled matches only: Cancel Match in the ••• menu.
     var cancelMatch: CompetitionCancelMatch? = nil
-    /// Real matches only: one nudge a day when the other person's score is stale.
     var nudge: CompetitionNudge? = nil
-    /// Real matches only: reactions on the other person's days.
     var reactions: CompetitionReactionControl? = nil
-    /// Practice only: End Practice in the ••• menu.
     var endPractice: (() -> Void)? = nil
-    /// Real matches only: Report Photo in the ••• menu, while their photo shows.
     var reportPhoto: CompetitionReportPhoto? = nil
-    /// The menu's first item, once a week with them has finished. This week
-    /// isn't in it until it has a final result.
     var recordLink: CompetitionRecordLink? = nil
     var replayIntro: (() -> Void)? = nil
 
@@ -78,15 +67,12 @@ struct CompetitionDetailView: View {
     private var reactionsSeen = CompetitionReactionsSeen()
     @AppStorage(CompetitionMotionSeen.storageKey)
     private var motionSeen = CompetitionMotionSeen()
-    /// Week has shown on this visit, so later flips and new days settle.
     @State private var weekShown = false
     @State private var showsEndPracticeConfirmation = false
     @State private var showsReportPhotoConfirmation = false
-    /// The day you last clapped from the Week list, for the line under it.
     @State private var clappedDay: Int?
     @Environment(\.profilePhotos) private var photos
 
-    /// Today's numbers or the whole week; the scoreboard stays above both.
     private enum Page: Hashable {
         case today
         case week
@@ -162,7 +148,6 @@ struct CompetitionDetailView: View {
             .padding(.bottom, 24)
         }
         .refreshable(refresh)
-        // Back or pop, not a drawer: the line stays while you're here.
         .onDisappear { reactionsSeen = reactionsSeen.marking(competition) }
         .competitionReactionRain(
             incoming: reactions == nil ? nil : competitionReactionRainBatch(
@@ -295,7 +280,6 @@ struct CompetitionDetailView: View {
         }
     }
 
-    /// Only while their photo shows; after a report, a dimmed Photo Reported.
     @ViewBuilder
     private var reportPhotoItem: some View {
         if let reportPhoto {
@@ -320,8 +304,6 @@ struct CompetitionDetailView: View {
         }
     }
 
-    /// What changes the page's height. Never `competition`: it differs on
-    /// every publication and would animate every time-derived string.
     private struct LayoutKey: Equatable {
         let hasIssue: Bool
         let muteFailure: CompetitionMuteFailure?
@@ -363,8 +345,6 @@ struct CompetitionDetailView: View {
                 userPoints: competition.userPoints,
                 opponentPoints: competition.opponentPoints
             )
-            // Same side, the margin rolls. A new side is a new id, and only a
-            // parent can animate that: the sentence follows the digits.
             ZStack(alignment: .leading) {
                 leadText
                     .scoreRoll(abs(margin), id: side)
@@ -404,7 +384,6 @@ struct CompetitionDetailView: View {
         ) + Text(scoresAreProvisional ? " Not final yet." : "")
     }
 
-    /// The newest day reaction you haven't seen; it opens that day.
     @ViewBuilder
     private var latestReaction: some View {
         if reactions != nil,
@@ -438,7 +417,6 @@ struct CompetitionDetailView: View {
         }
     }
 
-    // Who or what the result waits on, and whether you need to act.
     @ViewBuilder
     private var tallyPanel: some View {
         if let copy = tallyCopy {
@@ -477,7 +455,6 @@ struct CompetitionDetailView: View {
         }
     }
 
-    /// Under the freshness line while the match is live; the tally panel has its own.
     @ViewBuilder
     private var liveNudge: some View {
         switch competition.lifecycle {
@@ -506,9 +483,6 @@ struct CompetitionDetailView: View {
         }
     }
 
-    /// The Week: your bars grow only when the week has gained a day since they
-    /// last drew, and only on the first flip of a visit. Latched on that flip:
-    /// a day landing while Week is open settles, it never holds bars at zero.
     private var weekGrows: Bool {
         !weekShown && !reduceMotion && !voiceOver && motionSeen.weekGained(competition)
     }
@@ -545,7 +519,6 @@ struct CompetitionDetailView: View {
             )
         }
         .onAppear {
-            // Only a real draw closes the gate for the day.
             if weekGrows { motionSeen = motionSeen.drawingWeek(competition) }
             weekShown = true
         }
@@ -581,14 +554,12 @@ struct CompetitionDetailView: View {
         }
     }
 
-    /// The day's ring panel, or one line saying why there isn't one.
     @ViewBuilder
     private func dayPanel(
         _ day: LocalCompetitionDayPresentation,
         showsPullHint: Bool
     ) -> some View {
         if let panel = competitionRingPanel(day, locale: locale) {
-            // A new day is a new panel: 420 never rolls down to 0 at midnight.
             ActivityRingsView(
                 panel: panel,
                 openNight: competition.isSleepMatch ? { drawer = .night(day.ordinal) } : nil
@@ -654,7 +625,6 @@ struct CompetitionDetailView: View {
         }
     }
 
-    /// Claps from the Week list go with the day reactions.
     private var weekClap: CompetitionDayClap? {
         guard let reactions, allowsDayReactions else { return nil }
         return CompetitionDayClap(
@@ -676,7 +646,6 @@ struct CompetitionDetailView: View {
         }
     }
 
-    /// What your last clap from the list sent, or why it didn't.
     @ViewBuilder
     private var weekClapNote: some View {
         if let ordinal = clappedDay, let reactions, allowsDayReactions,
@@ -707,7 +676,6 @@ struct CompetitionDetailView: View {
         }
     }
 
-    /// Day reactions close when the result lands (the server agrees).
     private var allowsDayReactions: Bool {
         switch competition.lifecycle {
         case .active, .endsToday, .tallying: competitionCanReact(competition)
@@ -715,7 +683,6 @@ struct CompetitionDetailView: View {
         }
     }
 
-    /// The reaction you got on this day, and yours to send while you can.
     @ViewBuilder
     private func dayReactions(
         _ ordinal: Int,
@@ -774,7 +741,6 @@ struct CompetitionDetailView: View {
         }
     }
 
-    /// "Today" while a day is live, else the day it shows: "Day 7".
     private var todayTabTitle: String {
         todayDay.map {
             $0.ordinal == competition.currentDayOrdinal ? "Today" : "Day \($0.ordinal)"
@@ -822,8 +788,6 @@ enum CompetitionMuteFailure: Equatable, Sendable {
     case unmute
 }
 
-/// Mutes one person, so every match with them goes quiet, not just this one.
-/// It sits in a match's ••• menu.
 struct CompetitionMuteButton: View {
     let opponentName: String
     let isMuted: Bool
@@ -843,8 +807,6 @@ struct CompetitionMuteButton: View {
         .accessibilityIdentifier("competition.notifications.mute")
     }
 
-    /// The menu closes before the save finishes, so a failure shows at the
-    /// top of the page.
     @ViewBuilder
     var failureNote: some View {
         if let failure {
@@ -874,8 +836,6 @@ func competitionMuteFailureText(
     }
 }
 
-/// The ••• that holds a match's less frequent actions.
-/// Hides one person's photos for you, on every screen and device.
 struct CompetitionReportPhoto {
     let isReported: Bool
     let isInFlight: Bool
@@ -893,8 +853,6 @@ struct CompetitionMoreLabel: View {
     }
 }
 
-/// A bottom drawer on the ground surface: a title, a close button and
-/// content that scrolls once it outgrows the half-height detent.
 struct CompetitionDrawer<Content: View>: View {
     let title: String
     var subtitle: String?
@@ -942,7 +900,6 @@ struct CompetitionDrawerBackButton: View {
         Button(action: action) {
             Image(systemName: "chevron.left")
                 .font(.footnote.weight(.bold))
-                // Past xxxLarge the glyph outgrows its 30 pt circle.
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .foregroundStyle(Theme.secondary)
                 .frame(width: 30, height: 30)
@@ -962,7 +919,6 @@ struct CompetitionDrawerCloseButton: View {
         Button(action: action) {
             Image(systemName: "xmark")
                 .font(.footnote.weight(.bold))
-                // Past xxxLarge the glyph outgrows its 30 pt circle.
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .foregroundStyle(Theme.secondary)
                 .frame(width: 30, height: 30)
@@ -1016,8 +972,6 @@ struct CompetitionDrawerHeader<Trailing: View>: View {
     }
 }
 
-/// The person a match's mute button silences. Nil hides the button while
-/// notifications are off or an invitation is still waiting for someone.
 func competitionMuteIdentity(
     _ competition: LocalCompetitionPresentation,
     authorization: CompetitionNotificationAuthorizationState?
@@ -1031,7 +985,6 @@ func competitionMuteIdentity(
     return competition.opponentIdentity
 }
 
-/// Explains amber once, the first time a scoreboard shows scores.
 struct CompetitionColorHint: View {
     static let storageKey = "healthcomp.colorHintSeen"
 
@@ -1046,8 +999,6 @@ struct CompetitionColorHint: View {
                     .foregroundStyle(Theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            // Color carries no meaning in VoiceOver; the sides already say
-            // "YOU".
             .accessibilityHidden(true)
             .onDisappear { isSeen = true }
         }
@@ -1075,7 +1026,6 @@ private struct CompetitionScoreboardPanel: View {
                         scoreboard
                         ZStack {
                             if isProvisional {
-                                // The score headers already say "provisional total".
                                 CompetitionProvisionalTag()
                                     .frame(maxWidth: .infinity)
                                     .accessibilityHidden(true)
@@ -1105,8 +1055,6 @@ private struct CompetitionScoreboardPanel: View {
         .themePanel()
     }
 
-    // AnyLayout, not ViewThatFits: the XCTest Dynamic Type audit flags
-    // text that ViewThatFits swaps out while it cycles sizes.
     private var statusRow: some View {
         let status = competitionStatusText(
             competition, style: .card, locale: locale, timeZone: timeZone
@@ -1136,8 +1084,6 @@ private struct CompetitionScoreboardPanel: View {
         }
         .themeLabel()
         .textCase(.uppercase)
-        // One static element: the hit-region audit treats a traitless
-        // element as a control, and this row is read, never tapped.
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isStaticText)
         .accessibilityLabel(status.line + (isMuted ? ". Muted" : ""))
@@ -1206,7 +1152,6 @@ private struct CompetitionScoreboardPanel: View {
         profile: CompetitionHomeRoute?,
         profileName: String
     ) -> some View {
-        // Names may wrap at large sizes; scores never do.
         VStack(alignment: alignment, spacing: 4) {
             HStack(spacing: 8) {
                 avatar
@@ -1229,7 +1174,6 @@ private struct CompetitionScoreboardPanel: View {
         .modifier(CompetitionProfileAction(route: profile, name: profileName))
     }
 
-    // Visual only: each score block's label already speaks the period points.
     private var periodRow: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -1266,7 +1210,6 @@ private struct CompetitionScoreboardPanel: View {
             .scoreRoll(todayDay?.opponentRevealedPoints, id: periodID)
     }
 
-    /// Per day, so midnight replaces the number instead of rolling it down.
     private var periodID: String {
         "\(competition.id.rawValue)-\(todayDay?.ordinal ?? 0)"
     }
@@ -1290,7 +1233,6 @@ private struct CompetitionScoreboardPanel: View {
     }
 }
 
-/// A scheduled match: who plays, when Day 1 is, and the week ahead.
 struct CompetitionScheduledSummary: View {
     let competition: LocalCompetitionPresentation
 
@@ -1321,8 +1263,6 @@ struct CompetitionScheduledSummary: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // The same words for both people in any zone: each scores their own
-    // Activity for that calendar date.
     private var dayOneText: String {
         guard let first = competition.days.first?.day
             ?? competition.acceptedConfiguration?.schedule.startDay
@@ -1361,8 +1301,6 @@ private func competitionDayScoresAccessibilityText(
     return "You, \(competitionOwnerAccessibilityText(day, locale: locale)). \(opponentName), \(opponent)."
 }
 
-/// The inclusive week, "Oct 28 – Nov 3". Nil when the stored schedule
-/// can't produce its seven days.
 func competitionScheduleDateRangeText(
     _ schedule: CompetitionSchedule,
     now: Date = Date(),
@@ -1436,7 +1374,6 @@ func competitionOwnerAvailabilityText(
     }
 }
 
-/// The tag a tallying score wears, here and on the person page.
 struct CompetitionProvisionalTag: View {
     var body: some View {
         Text("PROVISIONAL")
@@ -1454,7 +1391,6 @@ struct CompetitionTallyCopy: Equatable {
     let body: String
 }
 
-/// What a tallying match waits on and whether you need to do anything.
 func competitionTallyCopy(
     _ tally: LocalCompetitionTallyPresentation,
     opponentDisplayName name: String,
@@ -1559,8 +1495,6 @@ func competitionRefreshTimelineText(
     return lines
 }
 
-/// "You: updated 9:41 AM · Hermes: updated 11:40 PM", or just the side that
-/// has a time. Nil when neither does.
 func competitionFreshnessText(
     _ competition: LocalCompetitionPresentation,
     locale: Locale = .current,
@@ -1633,7 +1567,6 @@ private func availabilitySymbol(
     }
 }
 
-// Neutral by design: color is reserved for you and your rings.
 private func availabilityTint(
     _ availability: LocalCompetitionOwnerAvailability
 ) -> Color {
@@ -1654,12 +1587,8 @@ struct CompetitionNudge {
     let send: () -> Void
 }
 
-// MARK: Nudge
-
-/// The server uses the same value.
 let competitionNudgeStaleInterval: TimeInterval = 12 * 60 * 60
 
-/// Lifecycle and time only; the real-match gate is the caller's.
 func competitionCanNudge(_ competition: LocalCompetitionPresentation) -> Bool {
     let now = competition.evaluatedAt
     switch competition.lifecycle {
@@ -1687,8 +1616,6 @@ enum CompetitionNudgeDisplay: Equatable {
     case notNeeded(String)
 }
 
-/// Nil when there's nothing to show. A sent or refused nudge holds until the
-/// match day (in the match's time zone) ends.
 func competitionNudgeDisplay(
     _ status: CompetitionFeature.NudgeStatus?,
     competition: LocalCompetitionPresentation,
@@ -1698,8 +1625,6 @@ func competitionNudgeDisplay(
     guard competitionCanNudge(competition) else { return nil }
     var matchCalendar = Calendar(identifier: .gregorian)
     matchCalendar.timeZone = TimeZone(identifier: competition.timeZoneIdentifier) ?? timeZone
-    // A server time after this projection (clock skew, or a projection from
-    // before midnight) is the newest news there is: it still counts as today.
     func isToday(_ date: Date) -> Bool {
         date > competition.evaluatedAt
             || matchCalendar.isDate(date, inSameDayAs: competition.evaluatedAt)
@@ -1738,7 +1663,6 @@ private struct CompetitionNudgeControl: View {
             case let .sent(text):
                 Sounds.play(.sent)
                 AccessibilityNotification.Announcement(text).post()
-            // The button stays put, so a failure or refusal is otherwise silent.
             case let .button(.some(text), _), let .notNeeded(text):
                 AccessibilityNotification.Announcement(text).post()
             case .button(.none, _):
@@ -1791,13 +1715,10 @@ private struct CompetitionNudgeControl: View {
     }
 }
 
-/// The compact ink pill of the shipped "Review" mark, with a 44 pt target.
 private struct CompetitionNudgeButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        // A capsule while it fits one line; a long name wraps inside
-        // rounded corners instead of past a capsule's ends.
         ViewThatFits(in: .horizontal) {
             pill(configuration.label.lineLimit(1), in: Capsule())
             pill(configuration.label, in: RoundedRectangle(cornerRadius: 16, style: .continuous))

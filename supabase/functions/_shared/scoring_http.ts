@@ -80,9 +80,6 @@ export async function authenticatedContext(
   const userId = await verifiedUserId(client);
   return userId ? { client, userId } : null;
 }
-// null only when Auth answered and rejected the token (4xx other than 408 and
-// 429). auth-js returns outages (network, 408, 429, 5xx) as errors instead of
-// throwing; those throw here so every caller answers 503 and the app retries.
 export async function verifiedUserId(
   client: Pick<ScoringRpcClient, "auth">,
 ): Promise<string | null> {
@@ -97,8 +94,6 @@ export async function verifiedUserId(
   }
   return data.user?.id ?? null;
 }
-// Streams at most maximumBytes, so a chunked body without Content-Length
-// cannot make the worker buffer it all. null for any invalid body.
 export async function readBoundedJson(
   request: Request,
   maximumBytes: number,
@@ -164,8 +159,6 @@ const forbiddenPrefixes = [
   "accepted-activity-score:",
   "live-day-score:",
 ];
-// Real payloads nest at most a few levels; anything deeper is rejected as if it
-// carried a fingerprint, so hostile nesting cannot overflow the stack.
 export function containsFingerprint(value: unknown, depth = 0): boolean {
   if (depth > 16) return true;
   if (typeof value === "string") {
@@ -174,9 +167,10 @@ export function containsFingerprint(value: unknown, depth = 0): boolean {
       const normalized = value.replaceAll("-", "+").replaceAll("_", "/") +
         "=".repeat((4 - value.length % 4) % 4);
       const decoded = atob(normalized);
-      if (forbiddenPrefixes.some((p) => decoded.startsWith(p))) return true;
-    } catch { /* not base64 */ }
-    return false;
+      return forbiddenPrefixes.some((p) => decoded.startsWith(p));
+    } catch {
+      return false;
+    }
   }
   if (Array.isArray(value)) {
     return value.some((v) => containsFingerprint(v, depth + 1));

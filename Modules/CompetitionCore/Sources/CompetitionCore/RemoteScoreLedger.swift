@@ -1,7 +1,5 @@
 import Foundation
 
-/// A single score accepted by the server for a remote participant. It carries
-/// the accepted result, never local Health data or source fingerprints.
 public struct RemoteAcceptedScoreRow: Codable, Equatable, Sendable {
     public enum ValidationError: Error, Equatable, Sendable {
         case invalidOrdinal, invalidAcceptedScore, invalidAvailability, invalidDigest, invalidRevision, invalidServerSequence, invalidPolicy
@@ -14,8 +12,6 @@ public struct RemoteAcceptedScoreRow: Codable, Equatable, Sendable {
     public let scoringPolicyIdentity: String
     public let clientRevision: Int64
     public let serverSequence: Int64
-    /// Move, Exercise and Stand in basis points, adding up to the accepted
-    /// score. Display only, and nil on rows stored before it was kept.
     public let ringBasisPoints: [Int]?
 
     public init(
@@ -53,8 +49,6 @@ public struct RemoteAcceptedScoreRow: Codable, Equatable, Sendable {
         self.ringBasisPoints = ringBasisPoints
     }
 
-    /// The digest already binds the ring values, so a row stored before they
-    /// were kept is the same row as its replay that carries them.
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.ordinal == rhs.ordinal && lhs.acceptedCentiPoints == rhs.acceptedCentiPoints
             && lhs.availabilityReason == rhs.availabilityReason && lhs.wireContentSHA256 == rhs.wireContentSHA256
@@ -81,9 +75,6 @@ public struct RemoteAcceptedScoreRow: Codable, Equatable, Sendable {
     }
 }
 
-/// The authoritative, privacy-minimal remote score state for one participant.
-/// Rows may arrive out of order by server sequence and by client revision;
-/// client revisions are participant-global, and each day shows its highest.
 public struct RemoteScoreLedger: Codable, Equatable, Sendable {
     public enum ValidationError: Error, Equatable, Sendable {
         case invalidCompetitionID, invalidAcceptedSchedule, staleRevision, revisionCollision, serverSequenceCollision, divergentDuplicate, incompleteWindow, invalidTotal
@@ -93,8 +84,6 @@ public struct RemoteScoreLedger: Codable, Equatable, Sendable {
     public let participant: RemoteParticipant
     public let acceptedSchedule: CompetitionSchedule
     public let scoringPolicyIdentity: String
-    /// Persisted so old exact replays remain idempotent and server cursor
-    /// collisions remain detectable after a later revision supersedes a day.
     private var acceptedHistory: [RemoteAcceptedScoreRow]
 
     public init(
@@ -121,13 +110,10 @@ public struct RemoteScoreLedger: Codable, Equatable, Sendable {
         }
     }
 
-    /// Adds a server-accepted row. `false` means that the exact row was already
-    /// known; divergent duplicates and reused revisions are rejected.
     @discardableResult
     public mutating func accept(_ row: RemoteAcceptedScoreRow) throws -> Bool {
         guard row.scoringPolicyIdentity == scoringPolicyIdentity else { throw RemoteAcceptedScoreRow.ValidationError.invalidPolicy }
         if let index = acceptedHistory.firstIndex(of: row) {
-            // A replay carrying rings fills in a row stored before they were kept.
             if acceptedHistory[index].ringBasisPoints == nil, row.ringBasisPoints != nil { acceptedHistory[index] = row }
             return false
         }
@@ -138,15 +124,11 @@ public struct RemoteScoreLedger: Codable, Equatable, Sendable {
             if sameRevision.ordinal == row.ordinal { throw ValidationError.divergentDuplicate }
             throw ValidationError.revisionCollision
         }
-        // Revisions are participant-global across days, so a lower revision
-        // whose response was lost can arrive after a later one. It is kept as
-        // history; visibleEntry still shows the highest revision per day.
         acceptedHistory.append(row)
         guard totalAcceptedCentiPoints <= 420_000 else { throw ValidationError.invalidTotal }
         return true
     }
 
-    /// Pure lookup only. Calendar/lifecycle visibility gates are applied later.
     public func visibleEntry(forActiveDayOrdinal ordinal: Int) throws -> RemoteAcceptedScoreRow? {
         guard (1...7).contains(ordinal) else { throw RemoteAcceptedScoreRow.ValidationError.invalidOrdinal }
         return acceptedHistory

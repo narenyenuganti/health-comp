@@ -1,8 +1,5 @@
 import XCTest
 
-/// Sleep beta, through Home's own reducer: the `sleep` Test Lab scenario has
-/// Jordan's live match (Day 3) and Riley's finished one as Rings + Sleep.
-/// Now is Sun Aug 16, 1:00 AM in Los Angeles.
 final class SleepBetaUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -20,7 +17,7 @@ final class SleepBetaUITests: XCTestCase {
         launch()
         let jordan = card("active", "Jordan")
         scrollToElement(jordan)
-        sleep(3) // reactions rain settles
+        sleep(3)
         shot("sleep-home")
         jordan.tap()
         XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
@@ -66,7 +63,7 @@ final class SleepBetaUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 10))
         let open = app.buttons["competition.create.open"]
         XCTAssertTrue(open.waitForExistence(timeout: 5))
-        sleep(2) // friends load
+        sleep(2)
         open.tap()
         let players = app.buttons["competition.group.choose-players"]
         XCTAssertTrue(players.waitForExistence(timeout: 3))
@@ -99,7 +96,6 @@ final class SleepBetaUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Sleep Beta"].waitForExistence(timeout: 3))
         let toggle = app.switches["account.sleep.enabled"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 3))
-        // An earlier run may have left it on.
         if toggle.value as? String == "1" { toggle.switches.firstMatch.tap() }
         shot("sleep-settings-off")
         toggle.switches.firstMatch.tap()

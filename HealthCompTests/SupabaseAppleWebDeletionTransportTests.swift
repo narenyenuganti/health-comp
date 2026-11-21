@@ -38,7 +38,6 @@ final class SupabaseAppleWebDeletionTransportTests: XCTestCase {
                 XCTAssertTrue(try provider.client() === owner.client)
             }
             try await logout()
-            // Confirmation does not prematurely remove the local session.
             XCTAssertNotNil(try memory.retrieve(key: key))
             if failure == .storage {
                 memory.setSessionRemovalFailure(true)
@@ -331,8 +330,6 @@ final class SupabaseAppleWebDeletionTransportTests: XCTestCase {
                 XCTAssertEqual(error as? AuthenticationClientFailure, outcome == 1 ? .cancelled : .operationFailed)
             }
             XCTAssertEqual(fixture.constructions, 1)
-            // This adapter returns a server receipt. Post-runtime retirement
-            // belongs to AppFeature and must not happen inside this operation.
             XCTAssertEqual(fixture.preparationCount, 0)
             XCTAssertEqual(fixture.verificationCount, 0)
             XCTAssertNotNil(try provider.client().auth.currentSession)

@@ -42,7 +42,6 @@ export interface DeleteAccountDependencies {
   loadAppleToken(profileID: string): Promise<string>;
   revokeAppleToken(token: string, appleClientID: string): Promise<void>;
   markAppleRevoked(profileID: string): Promise<DeletionProgress>;
-  /** Deletes every stored profile photo object; idempotent. */
   removeProfilePhotos(profileID: string): Promise<void>;
   anonymize(profileID: string): Promise<DeletionProgress>;
   deleteAuthUser(authUserID: string): Promise<void>;
@@ -73,7 +72,6 @@ function containsControlOrWhitespace(value: string): boolean {
 }
 
 async function parseBody(request: Request): Promise<DeleteAccountBody> {
-  // Streamed with a hard cap: this runs before authentication.
   const value = await readBoundedJson(request, 8_192);
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new AccountDeletionHTTPError(400, "invalid_request");
@@ -214,8 +212,6 @@ export async function deleteAccountHandler(
   });
 }
 
-// Internal workflow: caller must supply the identity verified by authenticate.
-// Authorization is requested only before durable token storage, never on resume.
 export async function continueAccountDeletion(
   authUserID: string,
   dependencies: DeleteAccountDependencies,
@@ -262,7 +258,6 @@ export async function continueAccountDeletion(
     }
 
     if (progress.phase === "apple_revoked") {
-      // Before anonymizing, so a failure stays in this resumable phase.
       await dependencies.removeProfilePhotos(progress.profileId);
       progress = requirePhase(
         await dependencies.anonymize(progress.profileId),
@@ -293,8 +288,6 @@ export async function continueAccountDeletion(
           "completed",
         );
       } catch (error) {
-        // The auth user is gone, so the row is already completed through the
-        // auth.users foreign key; a retry would only be rejected as signed out.
         if (!deletionError) return jsonResponse(200, { status: "deleted" });
         throw error;
       }
@@ -400,8 +393,6 @@ export async function createAppleClientSecret(
 
 interface AppleTokenClientConfiguration {
   clientID: string;
-  // Server-owned return URI from the original web authorization request.
-  // Native authorization omits this; never populate it from callback input.
   redirectURI?: string;
   clientSecret(): Promise<string>;
   fetch: typeof fetch;
@@ -453,7 +444,7 @@ export function createAppleTokenClient(
           const value = JSON.parse(text) as Record<string, unknown>;
           if (typeof value.error === "string") errorCode = value.error;
         } catch {
-          // A non-JSON Apple response has no structured error code.
+          errorCode = "";
         }
         if (response.status === 400 && errorCode === "invalid_grant") {
           throw new AccountDeletionHTTPError(
@@ -640,8 +631,6 @@ export function createLiveDependencies(
       return value;
     },
     revokeAppleToken: (token, boundClientID) => {
-      // Browser clients will require a separately configured allowlist entry.
-      // Never sign for an arbitrary client read from durable progress.
       if (
         boundClientID !== configuration.environment("APPLE_SIGN_IN_CLIENT_ID")
       ) {
@@ -660,8 +649,6 @@ export function createLiveDependencies(
         ),
       ),
     removeProfilePhotos: async (targetProfileID) => {
-      // Three objects per folder at most (storage insert policy, 2900), but
-      // keep going until the listing is empty rather than trust one page.
       const bucket = admin.storage.from("profile-photos");
       for (let page = 0; page < 20; page++) {
         const { data, error } = await bucket.list(targetProfileID);

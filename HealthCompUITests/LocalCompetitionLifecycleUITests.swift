@@ -27,7 +27,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["FIXTURE DATA"].exists)
         XCTAssertTrue(app.staticTexts["Alex"].exists)
-        // The row adds the challenge's expiry after its status.
         XCTAssertTrue(staticText(beginningWith: "Challenge sent").exists)
         XCTAssertTrue(
             app.staticTexts["Alex is simulated on this iPhone."].exists
@@ -78,7 +77,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
 
         for _ in 0..<6 { nextCheckpoint() }
         XCTAssertTrue(waitForStatus("Last day"))
-        // Late sync: Day 7 has no Health summary yet.
         app.buttons["Today"].tap()
         XCTAssertTrue(
             app.descendants(matching: .any)["competition.notSynced"]
@@ -140,8 +138,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["competition.result"].label.contains("Alex"))
         capture("light-small-result")
 
-        // A single tap: the double-submit guard has its own test, and a
-        // second tap here could open the new row.
         app.buttons["competition.rematch.create"].tap()
         let rematchReady = app.descendants(matching: .any)["competition.rematch.sent"]
         XCTAssertTrue(rematchReady.waitForExistence(timeout: 3))
@@ -151,7 +147,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         scrollToElement(pendingSharingCard)
         XCTAssertEqual(sharingCards(state: "pending").count, 1)
         XCTAssertEqual(sharingCards(state: "completed").count, 1)
-        // The rematch waits in Up next; the result sits in Recent results.
         XCTAssertTrue(app.descendants(matching: .any)["competition.home.upNext"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["competition.home.results"].exists)
 
@@ -171,7 +166,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         )
         XCTAssertEqual(sharingCards(state: "completed").count, 1)
         XCTAssertFalse(app.buttons["Awards"].exists)
-        // The record opens the person's page.
         records.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Alex"].waitForExistence(timeout: 3))
         let personBelt = app.descendants(matching: .any)["competition.person.belt"]
@@ -184,7 +178,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
 
-        // Swiping a result left reveals Archive; it moves to History.
         let completed = sharingCards(state: "completed").firstMatch
         scrollToElement(completed)
         completed.swipeLeft()
@@ -232,7 +225,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         ]
         XCTAssertTrue(deleteConfirmation.waitForExistence(timeout: 3))
         deleteConfirmation.buttons["Delete Local Data"].tap()
-        // Deleting returns to History, where the competition was opened.
         XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
         XCTAssertEqual(sharingCards(state: "archived").count, 0)
         app.navigationBars.buttons.firstMatch.tap()
@@ -257,11 +249,9 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
         XCTAssertTrue(app.navigationBars["Alex"].exists)
         XCTAssertTrue(confirmation.buttons["Keep Challenge"].exists)
-        // The fixture has no server, so it offers no block.
         XCTAssertFalse(confirmation.buttons["Decline and Block Alex"].exists)
         XCTAssertFalse(app.buttons["competition.more"].exists)
         confirmation.buttons["Decline Challenge"].tap()
-        // The screen stays and says what happened.
         let closed = app.descendants(matching: .any)["competition.closed"]
         XCTAssertTrue(closed.waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Challenge declined"].exists)
@@ -432,7 +422,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         scrollToElement(pendingSharingCard)
         pendingSharingCard.tap()
         tapAfterScrolling(app.buttons["Start with Alex"])
-        // The first checkpoint is the Day 1 boundary: 0–0, goals of 100.
         nextCheckpoint()
         XCTAssertTrue(waitForStatus("Day 1 of 7"))
 
@@ -445,21 +434,17 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         let rings = app.otherElements["competition.ownerRings"]
         XCTAssertTrue(rings.exists)
         XCTAssertLessThan(takes.frame.minY, rings.frame.minY)
-        // The capture only sees the screen, so bring the panel into view (AX5 pushes it below).
         XCTAssertTrue(bringTopIntoView(takes), "panel under the bar")
-        // Capture first: the audit scrolls the page while it inspects it.
         capture("\(prefix)-takes")
         try app.performAccessibilityAudit(for: .textClipped)
 
         for _ in 0..<6 { nextCheckpoint() }
         XCTAssertTrue(waitForStatus("Last day"))
         tapAfterScrolling(app.buttons["Today"])
-        // Alex has six days and you have none: more than one day can cover.
         XCTAssertTrue(takes.waitForExistence(timeout: 3))
         XCTAssertTrue(takes.label.hasPrefix("Out of reach today"), takes.label)
         XCTAssertFalse(takes.label.contains("of Move"), takes.label)
         XCTAssertTrue(bringTopIntoView(takes), "panel under the bar")
-        // Capture first: the audit scrolls the page while it inspects it.
         capture("\(prefix)-takes-out-of-reach")
         try app.performAccessibilityAudit(for: .textClipped)
     }
@@ -562,8 +547,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         nextCheckpoint()
         XCTAssertTrue(waitForStatus("Day 1 of 7"))
 
-        // XCTest changes the content-size category during this audit, so it
-        // must run without a fixed preferred-category launch override.
         try app.performAccessibilityAudit(for: .dynamicType)
     }
 
@@ -613,14 +596,12 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         button.tap()
     }
 
-    // A match opens on Today; the day rows live on Week.
     private func showWeek() {
         let week = app.buttons["Week"]
         XCTAssertTrue(week.waitForExistence(timeout: 3))
         week.tap()
     }
 
-    // iOS 18 exposes Menu's identified wrapper, not its nested button, as hittable.
     private var moreMenu: XCUIElement {
         app.descendants(matching: .any)
             .matching(identifier: "competition.more")
@@ -683,7 +664,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
             "--local-competition-seed", "424242",
             "--local-competition-difficulty", "balanced",
             "--local-competition-run-id", currentRunID,
-            // The one-time color hint would shift scoreboards by test order.
             "-healthcomp.colorHintSeen", "YES",
         ] + appearanceArguments
         app.launch()
@@ -695,20 +675,15 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         element.tap()
     }
 
-    /// Slow drags until the element's top sits under the navigation bar and,
-    /// when it fits, its bottom clears the home indicator. AX5 panels can be
-    /// taller than the space left, so then the top wins.
     @discardableResult
     private func bringTopIntoView(_ element: XCUIElement) -> Bool {
         let window = app.windows.firstMatch
         let navigationBar = app.navigationBars.firstMatch
-        /// Points the content still has to move up (negative: down); 0 when placed.
         func offset() -> CGFloat {
             let top = navigationBar.frame.maxY + 8
             let bottom = window.frame.maxY - 40
             let frame = element.frame
             if frame.minY < top { return frame.minY - top - 20 }
-            // Room to spare, or the two edges can trade places step after step.
             if frame.height <= bottom - top - 60 { return frame.maxY > bottom ? frame.maxY - bottom + 20 : 0 }
             return frame.minY > top + 80 ? frame.minY - top - 20 : 0
         }
@@ -716,7 +691,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
             let move = min(180, max(-180, offset()))
             if move == 0 { return true }
             let height = window.frame.height
-            // Low on the screen: at AX5 the local lab controls cover the top two thirds.
             let start: CGFloat = move > 0 ? 0.92 : 0.7
             window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: start))
                 .press(

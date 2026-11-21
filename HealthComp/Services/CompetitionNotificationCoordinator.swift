@@ -1,10 +1,6 @@
 import CompetitionCore
 import Foundation
 
-/// Source-neutral boundary for atomically recording notification decisions.
-///
-/// A successful `.appended` result means the semantic decision is durable. It
-/// never means that iOS, APNs, or a user actually received a notification.
 struct CompetitionNotificationDecisionCommitter: Sendable {
     typealias Replan = @Sendable (
         CompetitionNotificationCompetitionSnapshot
@@ -67,8 +63,6 @@ struct CompetitionNotificationCoordinatorClient: Sendable {
     ) async -> Void
     var reconcileLatest: @Sendable () async -> Void
     var cancelAll: @Sendable (CompetitionID) async -> Void
-    /// Every pending and delivered competition notification, group matches
-    /// included: for sign-out.
     var removeAll: @Sendable () async -> Void = {}
 
     static let noop = Self(
@@ -139,13 +133,9 @@ actor CompetitionNotificationCoordinator {
     private var knownPendingRequests: [
         String: CompetitionScheduledNotificationRequest
     ] = [:]
-    /// Records this coordinator committed that a later snapshot's journals
-    /// may not show yet, so cross-match calls ("600 today" once) see them.
     private var committedRecords: [
         CompetitionID: [NotificationEmissionRecorded]
     ] = [:]
-    /// Last mute list read successfully. Publishes reuse it instead of a
-    /// remote read each; `reconcileLatest` (foreground, mute change) re-reads.
     private var cachedMuted: Set<String>?
     private var mutedNeedsRead = true
 
@@ -256,7 +246,6 @@ actor CompetitionNotificationCoordinator {
                 mutedNeedsRead = true
                 guard !isSuperseded(snapshot) else { return }
                 reportError("notification-preferences-read-failed")
-                // Offline: plan with the last good list. Never read: clear.
                 guard let cachedMuted else {
                     await removePendingForSnapshot(snapshot)
                     return
@@ -347,9 +336,6 @@ actor CompetitionNotificationCoordinator {
                 let result = try await commitDecisions(
                     competition,
                     { [planner] freshCompetition in
-                        // Siblings stay as this evaluation saw them, so the
-                        // replan makes the same cross-match calls ("600
-                        // today" once) as the plan above.
                         let freshSnapshot = CompetitionNotificationPlanningSnapshot(
                             publicationRevision: snapshot.publicationRevision,
                             evaluatedAt: snapshot.evaluatedAt,
@@ -412,7 +398,6 @@ actor CompetitionNotificationCoordinator {
                 reportError("notification-decision-append-failed")
             }
         }
-        // Committed decisions always post, even when a newer snapshot arrived.
         for request in planner.immediateRequests(for: accepted, in: snapshot) {
             do {
                 try await notifications.postNow(request)
@@ -436,8 +421,6 @@ actor CompetitionNotificationCoordinator {
         }
     }
 
-    /// Adds committed records the snapshot's journals don't show yet, and
-    /// forgets those they already do (or whose match left the snapshot).
     private func foldingCommittedRecords(
         into snapshot: CompetitionNotificationPlanningSnapshot
     ) -> CompetitionNotificationPlanningSnapshot {

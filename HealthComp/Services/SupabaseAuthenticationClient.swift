@@ -130,8 +130,6 @@ enum SupabaseAuthenticationClient {
                         do {
                             try await operations.clearLocalSession()
                         } catch {
-                            // Do not present ordinary session expiry when local
-                            // retirement could not be confirmed. Keep retry available.
                             throw AuthenticationClientFailure.operationFailed
                         }
                     }
@@ -210,8 +208,6 @@ enum SupabaseAuthenticationClient {
                 guard receipt.status == .deleted else {
                     throw AuthenticationClientFailure.operationFailed
                 }
-                // Preserve the server receipt for the app's post-runtime,
-                // retryable retirement stage when that boundary is configured.
                 if finishRetirement == nil {
                     try await operations.clearLocalSession()
                 }
@@ -269,8 +265,6 @@ enum SupabaseAuthenticationClient {
                 try await gate.run { try await finishRetirement() }
             }
         }
-        // Restoration can refresh or retire a session, so it participates in
-        // the same explicit-operation ownership as sign-in and sign-out.
         let restoreSession = client.restoreSession
         client.restoreSession = {
             try await gate.run { try await restoreSession() }
@@ -332,7 +326,6 @@ enum SupabaseAuthenticationClient {
         )
         let ownedAppleAuthorization = AppleAuthorizationClient(
             authorize: { challenge in
-                // Reject unfinished retirement before asking for credentials.
                 _ = try await clientBox.beginAuthentication()
                 return try await appleAuthorization.authorize(challenge)
             },
@@ -368,8 +361,6 @@ enum SupabaseAuthenticationClient {
                     clientID: configuration.clientID,
                     browser: browser,
                     secrets: {
-                        // Independent secure random draws; only their SHA-256
-                        // hex challenges leave this in-memory operation.
                         try AppleWebDeletionBeginRequest(
                             claimVerifier: AppleSignInNonce.generate().challenge,
                             nonce: AppleSignInNonce.generate().challenge
@@ -393,8 +384,6 @@ enum SupabaseAuthenticationClient {
             signOutCurrentSession: {
                 let owner = try provider.authenticationLifetime()
                 let accessToken = try await owner.confirmableAccessToken()
-                // Preserve retryable storage until the server confirms this
-                // session only. App teardown separately records and retires it.
                 try await owner.confirmLocalSignOut(accessToken)
             }
         )
@@ -544,9 +533,6 @@ private extension SupabaseAuthenticationOperations {
                 let owner = try provider.authenticationLifetime()
                 let accessToken = try await owner.confirmableAccessToken()
                 try await owner.confirmGlobalSignOut(accessToken)
-                // App teardown records this confirmation before the separate,
-                // retryable storage retirement stage. Do not perform a second
-                // SDK logout or lose this receipt to a local cleanup failure.
             },
             classifyRefreshFailure: { error in
                 classifyRefreshFailure(error)
@@ -594,8 +580,6 @@ private extension SupabaseAuthenticationOperations {
     }
 }
 
-// Owns explicit app operations only. It does not claim to drain SDK refresh
-// work or queued Auth/Functions/Realtime events; those need separate evidence.
 private actor ExplicitAuthenticationOperationGate {
     private var active = false
 
@@ -649,7 +633,6 @@ actor SupabaseAuthenticationClientBox {
     func currentSession() throws -> SupabaseAuthenticationSession? {
         switch phase {
         case .retired:
-            // Reopening the signed-out app is a read, not fresh admission.
             return nil
         case .active:
             return try provider.client().auth.currentSession.map(SupabaseAuthenticationSession.init)
@@ -661,9 +644,6 @@ actor SupabaseAuthenticationClientBox {
 
     func acceptExchangedSession(_ session: Session) async throws -> SupabaseAuthenticationSession {
         if Task.isCancelled {
-            // Both native and browser exchanges may persist after cancellation.
-            // Await uncancelled cleanup while the explicit operation gate stays
-            // held. No fire-and-forget work or second account can pass this gate.
             try await Task {
                 try await self.cancelPersistedAuthentication(accessToken: session.accessToken)
             }.value
@@ -676,8 +656,6 @@ actor SupabaseAuthenticationClientBox {
         guard case .active = phase else {
             throw AuthenticationClientFailure.retirementRequired
         }
-        // Captured directly from this exchange, never reacquired from storage
-        // after the pending-removal marker hides the cancelled session.
         cancelledAuthenticationPending = true
         cancelledAccessToken = accessToken
         do { try await finishRetirement() }
@@ -688,7 +666,6 @@ actor SupabaseAuthenticationClientBox {
         guard let accessToken = cancelledAccessToken else { return }
         try owner.prepareAuthSessionRemovalVerification()
         try await owner.confirmLocalSignOut(accessToken)
-        // A later storage failure must not repeat confirmed server logout.
         cancelledAccessToken = nil
     }
 
@@ -705,8 +682,6 @@ actor SupabaseAuthenticationClientBox {
         case .retired:
             return
         }
-        // Keep the original owner across suspension and failure. Ordinary
-        // provider access intentionally remains unavailable during recovery.
         phase = .retiring
         do {
             try await provider.retireAuthenticationLifetime(owner) {
@@ -874,9 +849,6 @@ private final class AppleAuthorizationBridge:
 }
 
 fileprivate extension SupabaseAuthenticationLifetime {
-    /// /logout answers an expired token with 401, which reads as a confirmed
-    /// sign-out while the server session lives on. Refresh first; only a
-    /// session the server no longer has counts as already gone.
     func confirmableAccessToken() async throws -> String {
         guard client.auth.currentSession != nil else {
             throw AuthenticationClientFailure.terminalSession

@@ -1,10 +1,6 @@
 import CompetitionCore
 import SwiftUI
 
-/// The group lineup before a match: one slanted panel per player (per team
-/// in doubles) slams in, then they part onto the match. The duel intro's
-/// host plays it, on the duel's clock: once per match per device, and again
-/// from the match's ••• menu.
 struct GroupMatchVersusContent: Equatable {
     struct Person: Equatable, Identifiable {
         let id: UUID
@@ -15,11 +11,8 @@ struct GroupMatchVersusContent: Equatable {
     }
 
     let id: CompetitionID
-    /// "Four-Way", "Doubles".
     let title: String
-    /// One panel per player, or per team in doubles; yours first.
     let panels: [[Person]]
-    /// "Day 1 is Monday. Most points after seven days wins."
     let footer: String
 
     var announcement: String {
@@ -31,7 +24,6 @@ struct GroupMatchVersusContent: Equatable {
     }
 }
 
-/// Autoplays only when scheduled or on Day 1. A replay can show a later day.
 func groupMatchVersusIntroContent(
     _ match: GroupMatchPresentation,
     source: CompetitionPublicationSource,
@@ -68,8 +60,6 @@ func groupMatchVersusIntroContent(
     return GroupMatchVersusContent(id: match.id, title: match.format.title, panels: panels, footer: "\(dayLine). \(rule)")
 }
 
-/// The mockup's 390×844 layout scaled to any screen: panels 520 wide from
-/// -65, skewed 11 degrees, under the header and over the footer.
 private struct GroupVersusStage {
     static let skew = tan(11 * Double.pi / 180)
 
@@ -85,7 +75,6 @@ private struct GroupVersusStage {
     var top: CGFloat { headerTop + labelLine + 8 + titleSize + 20 }
     var footerTop: CGFloat { size.height - (42 + 2 * labelLine + max(insets.bottom, 8) + 12) }
     var height: CGFloat { footerTop - top }
-    /// How far the skew moves an edge at the top or bottom.
     var lean: CGFloat { height / 2 * Self.skew }
     var panelWidth: CGFloat { (520 * kx - 4 * CGFloat(count - 1)) / CGFloat(count) }
 
@@ -94,7 +83,6 @@ private struct GroupVersusStage {
     }
 }
 
-/// A panel's parallelogram in a rect `2 * lean` wider than the panel.
 private struct SkewedPanel: Shape {
     let lean: CGFloat
 
@@ -113,7 +101,6 @@ private struct SkewedPanel: Shape {
 
 struct GroupMatchVersusIntroView: View {
     let content: GroupMatchVersusContent
-    /// By seat id, decided once when the intro starts.
     let photos: [UUID: ProfilePhoto]
     let finished: () -> Void
 
@@ -122,7 +109,6 @@ struct GroupMatchVersusIntroView: View {
     @ScaledMetric(relativeTo: .subheadline) private var labelLine: CGFloat = 20
     @State private var start = Date()
     @State private var isSkipped = false
-    /// Reduce Motion's fade.
     @State private var isShown = false
     @State private var hits = 0
     @State private var stamps = 0
@@ -151,7 +137,6 @@ struct GroupMatchVersusIntroView: View {
             .contentShape(Rectangle())
             .onTapGesture(perform: skip)
             .opacity(reduceMotion && !isShown ? 0 : 1)
-            // Always on black, as the duel's: dark's ink and panel either way.
             .environment(\.colorScheme, .dark)
             .position(
                 x: stage.size.width / 2 - insets.leading,
@@ -168,8 +153,6 @@ struct GroupMatchVersusIntroView: View {
         .accessibilityAction { skip() }
         .accessibilityIdentifier("competition.group.versus")
     }
-
-    // MARK: Clock, as the duel's
 
     private var isHeld: Bool { CompetitionVersusIntroGate.holds && !isSkipped }
 
@@ -205,7 +188,6 @@ struct GroupMatchVersusIntroView: View {
             }
             finished()
         } catch {
-            // A skip restarted the clock, or the screen went away.
             Sounds.stop()
         }
     }
@@ -217,8 +199,6 @@ struct GroupMatchVersusIntroView: View {
         start = Date().addingTimeInterval(-VersusClock.split)
         isSkipped = true
     }
-
-    // MARK: Frames
 
     private func frame(_ stage: GroupVersusStage, at t: Double) -> some View {
         let words = VersusClock.ramp(t, VersusClock.tape, 0.2)
@@ -235,7 +215,6 @@ struct GroupMatchVersusIntroView: View {
         .scaleEffect(VersusClock.punch(t))
     }
 
-    /// "EVERYONE'S IN" over the format, landing with the stamp.
     private func header(_ stage: GroupVersusStage, at t: Double) -> some View {
         let landed = VersusClock.slamCurve.value(at: VersusClock.ramp(t, VersusClock.stamp, 0.12))
         let leaving = VersusClock.ramp(t, VersusClock.split, VersusClock.end - VersusClock.split)
@@ -259,7 +238,6 @@ struct GroupMatchVersusIntroView: View {
         .offset(y: stage.headerTop)
     }
 
-    /// The bar fills through the hold, then the day and the rule.
     private func footer(_ stage: GroupVersusStage, at t: Double) -> some View {
         let width = stage.size.width - 48
         let fill = VersusClock.ramp(t, VersusClock.tape, VersusClock.split - VersusClock.tape)
@@ -283,8 +261,6 @@ struct GroupMatchVersusIntroView: View {
         .offset(y: stage.footerTop)
     }
 
-    /// One slanted panel. They slam up in turn and all land on contact, and
-    /// part up and down alternately at the split.
     private func panel(_ stage: GroupVersusStage, index: Int, people: [GroupMatchVersusContent.Person], at t: Double) -> some View {
         let stagger = 0.05 * Double(index)
         let away = 1 - VersusClock.slamCurve.value(
@@ -319,8 +295,6 @@ struct GroupMatchVersusIntroView: View {
         )
     }
 
-    /// The part of a panel that is on screen at `y`, in its own frame, 12
-    /// points in from either edge.
     private func visible(_ stage: GroupVersusStage, panel: Int, width: CGFloat, y: CGFloat) -> ClosedRange<CGFloat> {
         let left = stage.midX(panel) - width / 2
         let lean = 2 * stage.lean * (1 - y / stage.height)
@@ -329,13 +303,10 @@ struct GroupMatchVersusIntroView: View {
         return low...max(low, high)
     }
 
-    /// Where the panel's centre line is at `y`, in its own frame.
     private func centre(_ stage: GroupVersusStage, width: CGFloat, y: CGFloat) -> CGFloat {
         width / 2 + (stage.height / 2 - y) * GroupVersusStage.skew
     }
 
-    /// The giant initial (or a bot's ink square) and the name, stepped down
-    /// panel by panel as in the mockup.
     private func letterSlot(
         _ stage: GroupVersusStage, person: GroupMatchVersusContent.Person,
         panel: Int, slot: Int, width: CGFloat, at t: Double
@@ -355,15 +326,12 @@ struct GroupMatchVersusIntroView: View {
         .position(x: centre(stage, width: width, y: middle), y: middle)
     }
 
-    /// A photo filling its share of the panel, or the initial in its place.
     private func photoSlot(
         _ stage: GroupVersusStage, person: GroupMatchVersusContent.Person,
         panel: Int, slot: Int, of count: Int, width: CGFloat, at t: Double
     ) -> some View {
         let nameHeight = labelLine + 2 * (count == 2 ? 14 : 13)
         let box = stage.height / CGFloat(count) - nameHeight
-        // The first free-for-all panel leans off the screen at the bottom
-        // (and the last at the top), so its name goes over the photo.
         let nameFirst = count == 1 && panel == 0
         let slotTop = CGFloat(slot) * (box + nameHeight)
         let boxMiddle = slotTop + (nameFirst ? nameHeight : 0) + box / 2
@@ -380,7 +348,6 @@ struct GroupMatchVersusIntroView: View {
                     .grayscale(1)
                 Group {
                     if person.isYou {
-                        // Multiplied into amber: amber still means you.
                         image.contrast(1.15).blendMode(.multiply)
                     } else {
                         image.opacity(0.55)
@@ -390,8 +357,6 @@ struct GroupMatchVersusIntroView: View {
                 .clipped()
                 .position(x: centre(stage, width: width, y: boxMiddle), y: boxMiddle)
             } else {
-                // Sized to the part of the panel on screen, so nothing is cut
-                // to a stray block at the edge. 0.6 em covers a wide capital.
                 let room = max(markSpan.upperBound - markSpan.lowerBound, 0)
                 mark(
                     person, size: min(box * 0.6, room * 0.8),
@@ -405,7 +370,6 @@ struct GroupMatchVersusIntroView: View {
         }
     }
 
-    /// The giant initial, or for a bot an ink square: a bot never wears amber.
     @ViewBuilder
     private func mark(_ person: GroupMatchVersusContent.Person, size: CGFloat, letterSize: CGFloat) -> some View {
         let initial = String(person.name.prefix(1)).uppercased()
@@ -441,7 +405,6 @@ private struct GroupMatchReplayIntroKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    /// Replay Intro in a group match's ••• menu; nil hides it.
     var groupMatchReplayIntro: (() -> Void)? {
         get { self[GroupMatchReplayIntroKey.self] }
         set { self[GroupMatchReplayIntroKey.self] = newValue }

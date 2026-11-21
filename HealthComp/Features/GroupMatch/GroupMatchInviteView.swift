@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
 
-/// A group match you were named in: the full lineup before you answer.
 struct GroupMatchInviteView: View {
     let match: GroupMatchPresentation
     let store: StoreOf<GroupMatchFeature>
@@ -93,7 +92,6 @@ struct GroupMatchInviteView: View {
             : "Seven days, every player for themselves."
         let start = "Day 1 is the day after everyone accepts."
         guard case let .pending(_, createdAt, expiresAt?) = match.lifecycle else { return "\(format) \(start)" }
-        // An invite lasts days, so its creation is close enough to now for the format.
         let moment = competitionMomentText(expiresAt, now: createdAt, locale: locale, timeZone: timeZone)
         return "\(format) \(start) Answer by \(moment)."
     }

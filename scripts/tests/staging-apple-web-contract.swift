@@ -17,7 +17,6 @@ enum StagingAppleWebContractTests {
         func expect(_ condition: @autoclosure () -> Bool, _ label: String) throws {
             checks += 1
             guard condition() else {
-                // Labels are static. Never print configuration or callback values.
                 throw Failure(label: label)
             }
         }

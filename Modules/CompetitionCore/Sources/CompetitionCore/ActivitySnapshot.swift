@@ -79,8 +79,6 @@ public struct ActivitySnapshot: Codable, Equatable, Sendable {
     public let standOrRoll: ActivityRingReading
     public let pauseState: ActivityPauseState
 
-    /// Compatibility view for callers that can already handle the unknown
-    /// state. New source adapters should use `pauseState` directly.
     public var isPaused: Bool? {
         switch pauseState {
         case .running: false
@@ -126,8 +124,6 @@ public struct ActivitySnapshot: Codable, Equatable, Sendable {
         self.pauseState = pauseState
     }
 
-    /// Preserves the payload-v1 construction surface while mapping it into the
-    /// explicit pause-state model used by payload version 2.
     public init(
         moveMode: ActivityMoveMode,
         standMode: ActivityStandMode,

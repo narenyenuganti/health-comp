@@ -2,7 +2,6 @@ import SwiftUI
 
 @main
 struct HealthCompWatchApp: App {
-    /// A background wake may never build the scene, so the session starts here.
     init() {
         _ = WatchSnapshotModel.shared
     }
@@ -11,7 +10,6 @@ struct HealthCompWatchApp: App {
         WindowGroup {
             WatchRootView(model: .shared)
 #if DEBUG
-                // What wrist-down redaction leaves, for captures.
                 .redacted(reason: ProcessInfo.processInfo.arguments.contains("--watch-redacted") ? .privacy : [])
 #endif
         }

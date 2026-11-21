@@ -251,7 +251,6 @@ final class RemoteCompetitionReplayTests: XCTestCase {
                 recordedAt: recordedAt
             )
         }
-        // The remote's later client revision carries an earlier read time.
         _ = try journal.append([
             .remoteScoreRevisionRecorded(score(fixtureOwner, revision: 1, sequence: 1, at: t1)),
             .remoteScoreRevisionRecorded(score(fixtureRemote, revision: 1, sequence: 2, at: t3)),

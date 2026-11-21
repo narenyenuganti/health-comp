@@ -19,12 +19,8 @@ struct AuthenticatedProfileStoragePaths: Equatable, Sendable {
     let installationsDirectory: URL
     let appAttestDirectory: URL
     let observerDeliveryDirectory: URL
-    /// The practice match's journal: exact Health values, never sent.
     let practiceEventsDirectory: URL
-    /// Downloaded profile photos (`ProfilePhotoCache`).
     let profilePhotosDirectory: URL
-    /// This mount created the profile root, so a failed mount may remove it
-    /// without losing anything saved earlier.
     var isNewlyCreated = false
 
     var fixedDirectories: [URL] {
@@ -216,8 +212,6 @@ private actor AuthenticatedProfileStorageCoordinator {
             for directory in paths.fixedDirectories {
                 try ensurePrivateDirectory(directory)
             }
-            // Exact Health values stay on this phone, out of iCloud and
-            // computer backups.
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
             var practice = paths.practiceEventsDirectory
@@ -236,7 +230,6 @@ private actor AuthenticatedProfileStorageCoordinator {
                 .profileTransitionRequiresCleanup
         }
         activeProfileID = profileID
-        // Device-local reaction seen marks belong to this profile's matches.
         UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
         UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
         UserDefaults.standard.removeObject(forKey: CompetitionDismissedChallenges.storageKey)

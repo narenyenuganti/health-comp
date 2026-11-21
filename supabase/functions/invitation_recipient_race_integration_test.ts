@@ -8,7 +8,6 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
-    // Repeat without resetting: retained synthetic history must not collide.
     for (let attempt = 0; attempt < 2; attempt++) {
       const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL") ?? "";
       if (
@@ -122,7 +121,6 @@ Deno.test({
           ),
           true,
         );
-        // The accepted match now blocks a new challenge between the pair.
         const overlap = await Promise.allSettled([
           create(crypto.randomUUID(), randomBytes(32).toString("hex")),
         ]);
@@ -133,7 +131,6 @@ Deno.test({
           true,
         );
 
-        // Claim by token and accept in the app race to exactly one acceptance.
         const acceptances = await Promise.allSettled(
           Array.from(
             { length: 100 },
@@ -156,10 +153,6 @@ Deno.test({
           1,
         );
 
-        // Accept and cancel of one challenge never deadlock: the creator's
-        // cancel writes closed_by (a key-share check on profiles) while the
-        // recipient's accept holds both profile rows. Recipients rotate so
-        // the 10-a-day cap per pair (invite_rate_limited) is never reached.
         for (let round = 0; round < 20; round++) {
           const recipient = users[4 + round % 4];
           const challenge = await create(
@@ -186,7 +179,6 @@ Deno.test({
           );
         }
 
-        // Reciprocal creates between a free pair serialize: exactly one wins.
         const reciprocal = await Promise.allSettled(
           Array.from(
             { length: 40 },

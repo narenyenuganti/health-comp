@@ -26,7 +26,6 @@ final class SoundsTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
 
-        // On and at full volume until Settings says otherwise.
         XCTAssertEqual(try XCTUnwrap(Sounds.level(.versus, defaults: defaults)), 0.8, accuracy: 0.0001)
         defaults.set(0.5, forKey: Sounds.volumeKey)
         XCTAssertEqual(try XCTUnwrap(Sounds.level(.versus, defaults: defaults)), 0.2, accuracy: 0.0001)

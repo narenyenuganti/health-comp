@@ -1,7 +1,5 @@
 import XCTest
 
-/// Test Lab's `rivalry`: ten finished weeks with Sam. They earn Comeback
-/// twice, Defender, Full week and Rival; six weeks won, three lost, one tied.
 final class RecordsAndBadgesUITests: XCTestCase {
     private var app = XCUIApplication()
 
@@ -64,7 +62,6 @@ final class RecordsAndBadgesUITests: XCTestCase {
         sam.tap()
         XCTAssertTrue(app.navigationBars["Sam"].waitForExistence(timeout: 5))
         let daysWon = element("competition.person.rings.unit").buttons["Days won"]
-        // Clear of the Challenge button pinned to the foot of the page.
         scrollTo(daysWon, within: 0.6)
         let move = element("competition.person.rings.move")
         XCTAssertTrue(move.label.hasPrefix("Move: you won 0 weeks, Sam 10."), move.label)
@@ -85,7 +82,6 @@ final class RecordsAndBadgesUITests: XCTestCase {
         XCTAssertEqual(element("competition.history.shown").label, "3 OF 10")
         filter.buttons["Won"].tap()
         XCTAssertEqual(element("competition.history.shown").label, "6 OF 10")
-        // Oct 12 – 18: won from behind, four of the seven days.
         let comeback = element("competition.sharing.archived.a5000000-0000-4000-8000-000000000009")
         scrollTo(comeback)
         XCTAssertTrue(comeback.label.hasSuffix(". You won 4 of 7 days. Comeback badge"), comeback.label)
@@ -113,7 +109,6 @@ final class RecordsAndBadgesUITests: XCTestCase {
         XCTAssertTrue(element(identifier).waitForExistence(timeout: 3))
     }
 
-    /// Date intervals use thin spaces around the dash.
     private func normalized(_ text: String) -> String {
         text.replacingOccurrences(of: "\u{2009}", with: " ")
             .replacingOccurrences(of: "\u{202F}", with: " ")
@@ -126,8 +121,6 @@ final class RecordsAndBadgesUITests: XCTestCase {
         add(attachment)
     }
 
-    /// Short drags, so nothing flies past; `fraction` keeps the element
-    /// that far up the screen.
     private func scrollTo(_ element: XCUIElement, within fraction: CGFloat = 1) {
         let scroll = app.scrollViews.firstMatch
         var lastMinY: CGFloat?

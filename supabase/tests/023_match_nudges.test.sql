@@ -17,8 +17,6 @@ select ok(coalesce((
     and p.proargtypes = '2950'::oidvector
 ), false), 'nudge RPC is a narrow authenticated definer function');
 
--- Ana nudges. Ben has two installations, Cal none, Dee one (muted Ana before),
--- Eve one (mutes Ana after a nudge is queued).
 insert into auth.users (id) values
   ('e7000000-0000-4000-8000-000000000001'), ('e7000000-0000-4000-8000-000000000002'),
   ('e7000000-0000-4000-8000-000000000003'), ('e7000000-0000-4000-8000-000000000004'),
@@ -44,12 +42,6 @@ select vault.create_secret(
   'healthcomp_notification_worker_url');
 select vault.create_secret(repeat('w', 43), 'healthcomp_notification_worker_token');
 
--- Matches (all 'scheduled' on the server, phase by date in UTC):
---   …01 live, Ben uploaded 2 h ago       …02 live, Ben uploaded 13 h ago
---   …03 live, Ben never uploaded         …04 starts tomorrow
---   …05 tallying, deadline tomorrow      …06 tallying, deadline passed
---   …07 live, result stored              …08 live vs Cal (no device)
---   …09 live vs Dee (muted)              …0a live vs Eve
 create function pg_temp.match(suffix text, opponent uuid, first_day date, deadline timestamptz)
 returns uuid language plpgsql as $$
 declare
@@ -133,7 +125,6 @@ create function pg_temp.nudges(suffix text) returns bigint language sql as $$
 $$;
 grant execute on function pg_temp.as_profile(integer) to authenticated;
 
--- Access and eligibility
 set local role authenticated;
 select pg_temp.as_profile(3);
 select throws_ok($$select public.nudge_competition_participant('e7200000-0000-4000-8000-000000000002')$$,
@@ -144,7 +135,6 @@ select throws_ok($$select public.nudge_competition_participant('e7200000-0000-40
 select throws_ok($$select public.nudge_competition_participant('e7200000-0000-4000-8000-000000000001')$$,
   'P0001', 'nudge_not_allowed', 'a live match with a 2-hour-old upload refuses with nudge_not_allowed');
 
--- Queuing
 insert into r values ('first', public.nudge_competition_participant('e7200000-0000-4000-8000-000000000002'));
 reset role;
 select ok((select (v->>'nudged_at')::timestamptz between now() and clock_timestamp() and v ?& array['nudged_at']
@@ -167,7 +157,6 @@ select lives_ok($$select public.nudge_competition_participant('e7200000-0000-400
 reset role;
 select is(pg_temp.nudges('03'), 2::bigint, 'the never-uploaded nudge queues a row per installation');
 
--- Repeats and spacing
 set local role authenticated;
 select pg_temp.as_profile(1);
 insert into r values ('repeat', public.nudge_competition_participant('e7200000-0000-4000-8000-000000000002'));
@@ -200,7 +189,6 @@ select ok(pg_temp.nudges('02') = 4 and (
     where competition_id = 'e7200000-0000-4000-8000-000000000002' and kind = 'nudge'),
   'a nudge on the next match day over 12 hours later queues new rows with the same server_seq');
 
--- Same match day, over 12 hours later, after the sender's upload moved server_seq.
 update private.competition_notification_work
 set created_at = now() - interval '13 hours', available_at = now() - interval '13 hours'
 where competition_id = 'e7200000-0000-4000-8000-000000000003' and kind = 'nudge';
@@ -213,7 +201,6 @@ reset role;
 select ok((select v ? 'nudged_at' from r where label = 'same-day') and pg_temp.nudges('03') = 2,
   'a second nudge the same match day over 12 hours later returns nudged_at and queues nothing');
 
--- Privacy
 set local role authenticated;
 select pg_temp.as_profile(1);
 insert into r values ('muted', public.nudge_competition_participant('e7200000-0000-4000-8000-000000000009'));
@@ -238,7 +225,6 @@ select throws_ok($$select public.nudge_competition_participant('e7200000-0000-40
   'P0001', 'nudge_not_allowed',
   'after the recipient updates, a repeat refuses the same way with or without stored rows');
 
--- Tallying
 select lives_ok($$select public.nudge_competition_participant('e7200000-0000-4000-8000-000000000005')$$,
   'tallying without the recipient''s stable attestation allows a nudge');
 reset role;
@@ -256,7 +242,6 @@ select throws_ok($$select public.nudge_competition_participant('e7200000-0000-40
 select throws_ok($$select public.nudge_competition_participant('e7200000-0000-4000-8000-000000000007')$$,
   'P0001', 'nudge_not_allowed', 'a finished match (competition_results row) refuses');
 
--- Lease
 select lives_ok($$select public.nudge_competition_participant('e7200000-0000-4000-8000-00000000000a')$$,
   'a nudge to Eve is queued');
 reset role;
@@ -284,7 +269,6 @@ select is((select array_agg(distinct state) from private.competition_notificatio
     where competition_id = 'e7200000-0000-4000-8000-00000000000a' and kind = 'nudge'),
   array['suppressed'], 'the lease suppresses nudge work for a pair muted after queuing');
 
--- Constraints
 create function pg_temp.insert_work(semantic text, work_kind text, day date)
 returns void language sql as $$
   insert into private.competition_notification_work (

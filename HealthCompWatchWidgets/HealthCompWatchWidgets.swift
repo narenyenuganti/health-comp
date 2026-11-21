@@ -30,9 +30,6 @@ struct WatchMatchProvider: TimelineProvider {
         completion(WatchMatchEntry(date: Date(), snapshot: context.isPreview ? sample : stored))
     }
 
-    /// Now, plus each day start, end and result leaving, so the face moves on
-    /// without the phone, and the moment each score goes stale, so the face
-    /// says how old it is. `.atEnd` on just `[now]` would reload in a loop.
     func getTimeline(in context: Context, completion: @escaping (Timeline<WatchMatchEntry>) -> Void) {
         let now = Date()
         let snapshot = stored
@@ -57,8 +54,6 @@ struct WatchMatchComplication: Widget {
     }
 }
 
-/// All four shapes. Amber only when the margin is yours; the sign and caption
-/// carry the meaning on tinted faces. Nothing animates here.
 struct WatchMatchComplicationView: View {
     let entry: WatchMatchEntry
 
@@ -70,7 +65,6 @@ struct WatchMatchComplicationView: View {
     var body: some View {
         switch CompetitionWidgetSnapshot.content(entry.snapshot, personID: nil, at: entry.date) {
         case let .match(match):
-            // The circle's short label leaves out the Updated time the others read.
             let updated = family == .accessoryCircular && match.isStale(at: entry.date)
                 ? match.updatedLine(at: entry.date).map { " \($0)." } : nil
             matchView(match)
@@ -88,7 +82,6 @@ struct WatchMatchComplicationView: View {
     @ViewBuilder
     private func matchView(_ match: CompetitionWidgetSnapshot.Match) -> some View {
         let circular = match.circular(at: entry.date)
-        // Without the phone for an hour: the time it was last right, not "LEAD".
         let staleTime = match.isStale(at: entry.date)
             ? match.updatedAt.map { competitionUpdatedText($0, now: entry.date) } : nil
         switch family {
@@ -117,7 +110,6 @@ struct WatchMatchComplicationView: View {
         }
     }
 
-    /// Grey and never accented once stale, so an old lead doesn't read as live.
     private func margin(_ text: String, _ match: CompetitionWidgetSnapshot.Match, size: CGFloat) -> some View {
         let stale = match.isStale(at: entry.date)
         return Text(text)
@@ -160,8 +152,6 @@ struct WatchMatchComplicationView: View {
     }
 }
 
-/// Also the Smart Stack card, which is taller than a face's slot: the numerals
-/// take whatever height the header and strip leave.
 private struct WatchRectangularView: View {
     let match: CompetitionWidgetSnapshot.Match
     let date: Date
@@ -200,14 +190,12 @@ private struct WatchRectangularView: View {
         }
     }
 
-    /// Stale, the status gives way to "Updated 9:30 AM".
     private var status: String {
         (match.isStale(at: date) ? match.updatedLine(at: date) : nil) ?? match.boardStatus(at: date)
     }
 
     private var header: some View {
         HStack(spacing: 0) {
-            // A group match by its format; the place and gap are in the label.
             label(match.group?.title ?? match.name)
                 .privacySensitive(match.group == nil)
             label(" · \(status)")

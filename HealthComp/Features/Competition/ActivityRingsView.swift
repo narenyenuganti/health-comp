@@ -2,27 +2,19 @@ import CompetitionCore
 import SwiftUI
 
 struct CompetitionRingRow: Equatable, Sendable {
-    /// "Move" | "Move Time" | "Exercise" | "Stand" | "Roll" | "Stand or Roll"
     let title: String
-    /// "420/500 kcal" | "No data"
     let detail: String
-    /// "420 of 500 kilocalories" | "no data"
     let spokenDetail: String
-    /// Whole points; nil when the reading has no score.
     let points: Double?
 }
 
 struct CompetitionRingPanel: Equatable, Sendable {
-    /// Move, Exercise, Stand, and Sleep in a Rings + Sleep match.
     let rows: [CompetitionRingRow]
     let isPaused: Bool
     let note: String?
     let accessibilityLabel: String
 }
 
-/// One snapshot as three ring rows whose points add up to the day's points:
-/// the accepted snapshot when there is one, otherwise the latest. Nil when the
-/// day has neither snapshot.
 func competitionRingPanel(
     _ day: LocalCompetitionDayPresentation,
     locale: Locale = .current
@@ -31,7 +23,6 @@ func competitionRingPanel(
         return nil
     }
     let isAccepted = day.ownerAcceptedSnapshot != nil
-    // The rings' share only: a night's points get their own row.
     let total = isAccepted
         ? day.ownerAcceptedPoints.map { max(0, $0 - (day.ownerSleepPoints ?? 0)) }
         : ActivityScoreCalculator.score(snapshot, policy: day.scoringPolicy).availableScore?.points
@@ -94,11 +85,8 @@ func competitionRingPanel(
     )
 }
 
-/// Your rings for one day: three rows that add up to the day's points, then
-/// the scoring rule. Ring colors appear only here, on your own rows.
 struct ActivityRingsView: View {
     let panel: CompetitionRingPanel
-    /// Sleep beta: the Sleep row opens last night's sheet.
     var openNight: (() -> Void)? = nil
 
     @Environment(\.locale) private var locale
@@ -166,24 +154,14 @@ struct ActivityRingsView: View {
     }
 }
 
-// MARK: What it takes
-
-/// "39 to take the lead" on a live day when you're behind or level; nil otherwise.
 struct CompetitionWhatItTakes: Equatable, Sendable {
-    /// The day these numbers describe (the presentation's currentDayOrdinal).
     let dayOrdinal: Int
-    /// Whole points that take the lead; nil when out of reach today.
     let points: Double?
-    /// "39 to take the lead" | "Out of reach today"
     let headline: String
-    /// "About 240 kcal of Move or 12 min of Exercise." | the out-of-reach sentence
     let suggestion: String
     let accessibilityLabel: String
 }
 
-/// The points that take the lead, as one or two of your own rings (Move and
-/// Exercise only; Stand is never suggested). Needs today's accepted snapshot
-/// to match the latest, so it never asks for activity you've already done.
 func competitionWhatItTakes(
     _ competition: LocalCompetitionPresentation,
     locale: Locale = .current
@@ -203,7 +181,6 @@ func competitionWhatItTakes(
     )
     guard margin <= 0 else { return nil }
     let need = 1 - margin
-    // Only rings can still move today; last night's points are banked.
     let left = max(0, ActivityScore.maximumDailyPoints - (today - (day.ownerSleepPoints ?? 0)))
     let cap = day.scoringPolicy.perRingCap
     let shares = competitionRingShares(snapshot, perRingCap: cap)
@@ -218,7 +195,6 @@ func competitionWhatItTakes(
     }
     func ring(_ index: Int, _ reading: ActivityRingReading, _ title: String, minutes: Bool) -> Ring {
         let goal = reading.goal ?? 0
-        // ActivityRingReading already rejects negative and non-finite numbers.
         let usable = reading.value != nil && goal > 0
         let room = !usable ? 0 : cap.map { min(left, max(0, $0 - shares[index] * 100)) } ?? left
         return Ring(
@@ -263,7 +239,6 @@ func competitionWhatItTakes(
         )
     }
 
-    // Rounded up, so following the suggestion always takes the lead.
     func amount(_ ring: Ring, _ points: Double) -> Double {
         max(ring.step, ((points / 100 * ring.goal) / ring.step - 1e-9).rounded(.up) * ring.step)
     }
@@ -275,7 +250,6 @@ func competitionWhatItTakes(
             "\(number(value)) \(spokenUnit) of \(ring.title)"
         )
     }
-    // More room first; Move first on ties.
     let rings = (exercise.room > move.room ? [exercise, move] : [move, exercise]).filter { $0.room > 0 }
     let singles = rings.filter { $0.room >= need }
     let parts = singles.isEmpty
@@ -293,14 +267,11 @@ func competitionWhatItTakes(
     )
 }
 
-/// The Today page's line above your rings: amber when the lead is reachable.
 struct CompetitionWhatItTakesPanel: View {
     let takes: CompetitionWhatItTakes
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Within reach the number rolls. Out of reach or a new day is a
-            // new id, so the words and the colour crossfade.
             ZStack(alignment: .leading) {
                 Text(takes.headline)
                     .font(.title3.weight(.heavy).width(.condensed))
@@ -327,19 +298,12 @@ struct CompetitionWhatItTakesPanel: View {
     }
 }
 
-// MARK: Today, from the Home logo
-
-/// Today's rings for the sheet the Home logo opens.
 struct CompetitionTodayRings: Equatable, Sendable {
     let panel: CompetitionRingPanel
-    /// Today's points so far; nil when the reading has no score.
     let points: Double?
-    /// "Updated 9:41 AM"; nil before the first full read.
     let updated: String?
 }
 
-/// The first match that is scoring today and has a reading for it. Every live
-/// match reads the same rings, so the first one speaks for the day.
 func competitionTodayRings(
     _ competitions: [LocalCompetitionPresentation],
     locale: Locale = .current,
@@ -366,7 +330,6 @@ func competitionTodayRings(
     return nil
 }
 
-/// Your three rings today as bars, with the points each has earned.
 struct CompetitionTodayRingsSheet: View {
     let competitions: [LocalCompetitionPresentation]
 
@@ -409,7 +372,6 @@ struct CompetitionTodayRingsSheet: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .background(Theme.ground)
-        // As tall as its content; a taller one scrolls.
         .presentationDetents([.height(height)])
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.ground)
@@ -430,7 +392,6 @@ struct CompetitionTodayRingsSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 14) {
                 ForEach(Array(today.panel.rows.enumerated()), id: \.offset) { index, row in
-                    // 1 point per 1% of the ring: 100 closes it.
                     let closes = isShown ? (row.points ?? 0) / 100 : 0
                     GridRow {
                         Text(row.title)
@@ -483,7 +444,6 @@ struct CompetitionTodayRingsSheet: View {
     private static let dailyMaximum = Int(ActivityScore.maximumDailyPoints)
 }
 
-/// One slanted bar out of the 200 points a ring can earn.
 private struct TodayRingBar: View {
     let closes: Double
     let color: Color
@@ -495,9 +455,7 @@ private struct TodayRingBar: View {
     }
 }
 
-/// The filled share of the bar; animatable so it grows in.
 private struct TodayRingSegments: Shape {
-    /// 0...2: rings closed, out of the two a ring can earn.
     var closes: Double
 
     var animatableData: Double {

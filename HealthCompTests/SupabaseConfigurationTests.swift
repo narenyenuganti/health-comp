@@ -98,7 +98,6 @@ final class SupabaseConfigurationTests: XCTestCase {
             XCTFail("New authentication must not reuse an authenticated lifetime.")
         } catch { XCTAssertEqual(error as? AuthenticationClientFailure, .operationFailed) }
         XCTAssertTrue(try provider.client() === original)
-        // Compare session semantics; SDK loading may normalize JSON encoding.
         XCTAssertEqual(original.auth.currentSession, initialSession)
         let restored = try await coordinator.currentSession()
         XCTAssertNotNil(restored)
@@ -318,7 +317,6 @@ final class SupabaseConfigurationTests: XCTestCase {
             XCTFail("Failed retirement must not admit authentication.")
         } catch {}
 
-        // The retry must retain this owner; ordinary provider access is closed.
         underlying.setRemovalFailure(false)
         do {
             try await coordinator.finishRetirement()
@@ -482,8 +480,6 @@ final class SupabaseConfigurationTests: XCTestCase {
 
     func testActualKeychainMissingReadAndRemovalAreAbsence() throws {
         let service = "healthcomp.unit.auth-storage.\(UUID().uuidString)"
-        // Diagnose the test host's Keychain availability using only an OSStatus,
-        // never the value or attributes of any existing Keychain item.
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -573,7 +569,6 @@ final class SupabaseConfigurationTests: XCTestCase {
             )
             XCTFail("The stubbed HTTP 400 response must fail refresh.")
         } catch {
-            // The request receipt below is the behavior under test.
         }
 
         XCTAssertEqual(
@@ -1132,9 +1127,6 @@ final class SupabaseConfigurationTests: XCTestCase {
     }
 #endif
 
-    /// SupabaseClient's request adapter uses `try? await auth.session`, so an
-    /// expired JWT whose refresh hits a wake-up network blip would otherwise go
-    /// out without a user Bearer token and come back 401 `.unauthenticated`.
     func testExpiredSessionRefreshBlipInRemoteAPIRetriesInsteadOfSendingAnonymousRequest()
         async throws
     {
@@ -1174,8 +1166,6 @@ final class SupabaseConfigurationTests: XCTestCase {
             authStorage: backing
         )
         _ = try provider.client()
-        // Wait for SupabaseClient's initial listenForAuthEvents refresh attempt to settle,
-        // then arm a single refresh failure for the explicit listCompetitions() call.
         try await Task.sleep(for: .milliseconds(100))
         SupabaseExpiredRefreshBlipURLProtocol.armSingleTokenFailure()
         let api = SupabaseCompetitionRemoteAPI.live(provider: provider)

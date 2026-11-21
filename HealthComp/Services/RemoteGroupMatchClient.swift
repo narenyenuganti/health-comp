@@ -2,20 +2,15 @@ import CompetitionCore
 import CryptoKit
 import Foundation
 
-/// One group match as `list_group_matches` returns it, validated. The server
-/// owns the match; the phone keeps this read model and its own uploads.
 struct GroupMatchReadModel: Codable, Equatable, Sendable {
-    /// A person's accepted head for one day.
     struct Day: Codable, Equatable, Sendable {
         let ordinal: Int
         let clientRevision: Int64
         let serverSequence: Int64
-        /// Nil when the day is unavailable (`availabilityReason` says why).
         let centipoints: Int?
         let availabilityReason: String
         let wireContentSHA256: String
         let ringBasisPoints: [Int]?
-        /// When the server got it. Nil in caches from before it was kept.
         var receivedAt: Date? = nil
     }
 
@@ -23,19 +18,15 @@ struct GroupMatchReadModel: Codable, Equatable, Sendable {
         let id: UUID
         let index: Int
         let team: Int?
-        /// Nil for a bot.
         let profileID: UUID?
         let displayName: String?
-        /// pending, accepted, declined or anonymized; nil for a bot.
         let state: String?
         let leftAt: Date?
         let frozenThroughDay: Int?
         let botMode: BotMode?
         let botSeed: UInt64?
-        /// Whole points, fixed when the last person accepts.
         let botDailyTotals: [Int]?
         let days: [Day]
-        /// Their finalization check after Day 7; nil before it, for a bot, or in older caches.
         var attestationBasis: CompetitionAttestationBasis? = nil
     }
 
@@ -48,17 +39,14 @@ struct GroupMatchReadModel: Codable, Equatable, Sendable {
     }
 
     struct Standing: Codable, Equatable, Sendable {
-        /// A seat id, or a team number in doubles.
         let subject: String
         let place: Int
         let centipoints: Int
     }
 
-    /// One seat's frozen week in the result: points, or why a day has none.
     struct FrozenSeat: Codable, Equatable, Sendable {
         struct Day: Codable, Equatable, Sendable {
             let ordinal: Int
-            /// available, unavailable or afterLeave.
             let status: String
             let centipoints: Int?
             let reason: String?
@@ -73,13 +61,11 @@ struct GroupMatchReadModel: Codable, Equatable, Sendable {
         let basis: CompetitionAttestationBasis
         let completedAt: Date
         let standings: [Standing]
-        /// Nil until the server sends `result.seats` (version 1).
         var seats: [FrozenSeat]? = nil
     }
 
     let id: UUID
     let format: GroupMatchFormat
-    /// Rejects a refresh older than what is cached.
     let serverVersion: UInt64
     let creatorProfileID: UUID
     let lifecycle: String
@@ -88,16 +74,13 @@ struct GroupMatchReadModel: Codable, Equatable, Sendable {
     let invitationExpiresAt: Date?
     let bestAvailableDeadline: Date?
     let closedAt: Date?
-    /// Who declined, withdrew or cancelled. Nil in caches from before it was kept.
     var closedByProfileID: UUID? = nil
     let seats: [Seat]
     let ownerRevisionHighWater: Int64
     let ownerAttestation: Attestation?
     let result: Result?
-    /// Everyone's day reactions in this match. Nil in caches from before it was kept.
     var reactions: [Reaction]? = nil
 
-    /// One person's reaction to another's day.
     struct Reaction: Codable, Equatable, Sendable {
         let authorProfileID: UUID
         let targetProfileID: UUID
@@ -108,8 +91,6 @@ struct GroupMatchReadModel: Codable, Equatable, Sendable {
 
 extension GroupMatchFormat: Codable {}
 extension CompetitionReactionKind: Codable {}
-
-// MARK: - Wire
 
 enum GroupMatchWire {
     private static let matchKeys: Set<String> = [
@@ -122,7 +103,6 @@ enum GroupMatchWire {
         "left_at", "frozen_through_day", "frozen_revisions", "attestation_basis", "bot_mode", "bot_seed",
         "bot_baseline", "bot_generator_version", "bot_daily_totals", "days",
     ]
-    /// `daily_score_revisions` columns, as `002_privacy_columns` pins them.
     private static let dayKeys: Set<String> = [
         "id", "competition_id", "participant_profile_id", "day_ordinal", "semantic_event_id", "client_revision",
         "move_mode", "stand_mode", "move_basis_points", "exercise_basis_points", "stand_basis_points",
@@ -144,8 +124,6 @@ enum GroupMatchWire {
         "declined", "expired", "cancelled",
     ]
 
-    /// Exactly `{version: 1, matches}`. Any unreadable part rejects the whole
-    /// response, so a partial read never replaces the cache.
     static func decodeList(_ data: Data, viewer: UUID) throws -> [GroupMatchReadModel] {
         do {
             let top = try WireObject(try JSONSerialization.jsonObject(with: data), keys: ["version", "matches"])
@@ -195,7 +173,6 @@ enum GroupMatchWire {
             let ordinal = try row.optional("day_ordinal") { try row.int($0) }
             _ = try row.date("created_at")
             _ = try row.date("updated_at")
-            // Group matches react to days only; a row without a day isn't shown.
             if let target, let ordinal {
                 reactions.append(.init(authorProfileID: author, targetProfileID: target, ordinal: ordinal, kind: kind))
             }
@@ -307,8 +284,6 @@ enum GroupMatchWire {
         let revision = try object.int64("client_revision")
         let sequence = try object.int64("server_seq")
         guard revision > 0, sequence > 0, let profileID else { throw CompetitionRemoteFailure.serverContractMismatch }
-        // The row's own fields must hash to its digest: this closes modes,
-        // reasons and basis points with the wire's validators.
         let wire = try RemoteScoreRevisionWireV1(
             competitionID: matchID, participantID: profileID, dayOrdinal: ordinal,
             moveMode: try object.string("move_mode"), standMode: try object.string("stand_mode"),
@@ -353,7 +328,6 @@ enum GroupMatchWire {
     }
 
     private static func result(_ value: Any?, matchID: UUID, format: GroupMatchFormat) throws -> GroupMatchReadModel.Result {
-        // `version` and `seats` arrive together, or not at all on older servers.
         let hasSeats = (value as? [String: Any])?["seats"] != nil
         let object = try WireObject(value, keys: hasSeats ? resultKeys.union(["version", "seats"]) : resultKeys)
         guard try object.uuid("competition_id") == matchID,
@@ -428,8 +402,6 @@ enum GroupMatchWire {
         }
     }
 
-    /// `leave_group_match`'s answer exactly: the frozen vector and the bank
-    /// `private.participant_projection_v2` builds from it.
     static func validateLeave(_ data: Data) throws {
         do {
             let top = try WireObject(
@@ -474,7 +446,6 @@ enum GroupMatchWire {
     }
 }
 
-/// A JSON object with exactly these keys and typed, throwing reads.
 private struct WireObject {
     let values: [String: Any]
 
@@ -513,7 +484,6 @@ private struct WireObject {
 
     func intArray(_ key: String) throws -> [Int] { try array(key).map { try Self.int($0) } }
 
-    /// 64-bit values are decimal strings on the wire, never JSON numbers.
     func int64(_ key: String) throws -> Int64 { try Self.int64(values[key]) }
 
     func int64Array(_ key: String) throws -> [Int64] { try array(key).map { try Self.int64($0) } }
@@ -554,19 +524,12 @@ private struct WireObject {
     }
 }
 
-// MARK: - Storage
-
-/// Profile-scoped group files: the last good read model (offline display)
-/// and one owner-upload document per match. Exact pending requests and
-/// attestation receipts live only in the outbox.
 actor GroupMatchStore {
     struct OwnerDocument: Codable, Equatable, Sendable {
         var version = 1
         let profileID: UUID
         let competitionID: UUID
-        /// The highest revision ever handed out, including spent ones.
         var allocatedRevision: Int64
-        /// The newest accepted row per day.
         var accepted: [RemoteAcceptedScoreRow]
     }
 
@@ -614,13 +577,10 @@ actor GroupMatchStore {
         try? FileManager.default.removeItem(at: ownerURL(competitionID))
     }
 
-    /// A known group match: it has an owner document or is in the cache.
     func isGroupMatch(_ competitionID: UUID) -> Bool {
         owner(competitionID) != nil || readModel().contains { $0.id == competitionID }
     }
 
-    /// An outbox entry the group path queued: a score under the group
-    /// semantic-id domain, or anything for a known group match.
     func owns(_ entry: CompetitionOutboxEntry) -> Bool {
         if case let .scoreRevision(request) = entry.payload,
            request.semanticEventID == RemoteGroupMatchSync.semanticEventID(wireContentSHA256: request.wireContentSHA256) {
@@ -629,8 +589,6 @@ actor GroupMatchStore {
         return isGroupMatch(entry.payload.competitionID)
     }
 
-    /// Takes the server's heads after a reinstall or another device's upload.
-    /// Never moves a day back to an older revision.
     func rehydrate(_ competitionID: UUID, highWater: Int64, rows: [RemoteAcceptedScoreRow]) throws -> OwnerDocument {
         var document = owner(competitionID) ?? OwnerDocument(
             profileID: profileID, competitionID: competitionID, allocatedRevision: 0, accepted: []
@@ -642,8 +600,6 @@ actor GroupMatchStore {
         return document
     }
 
-    /// Persists the next revision before anything is queued under it, so a
-    /// crash leaves a gap and never a reused revision.
     func allocateRevision(_ competitionID: UUID, atLeast floor: Int64) throws -> Int64 {
         var document = owner(competitionID) ?? OwnerDocument(
             profileID: profileID, competitionID: competitionID, allocatedRevision: 0, accepted: []
@@ -655,8 +611,6 @@ actor GroupMatchStore {
         return current + 1
     }
 
-    /// The accepted-score path for group matches, validated as the duel
-    /// journal path validates it. Idempotent, so a replay after a crash is safe.
     func recordAccepted(
         _ request: CompetitionScoreRevisionRequest,
         _ response: CompetitionScoreRevisionResponse
@@ -704,8 +658,6 @@ actor GroupMatchStore {
         directory.appendingPathComponent("owner-\(competitionID.uuidString.lowercased()).json")
     }
 
-    // ponytail: atomic replace without the duel stores' fsync dance; a lost
-    // write after a power cut is rebuilt from the server's heads on refresh.
     private func write<Value: Encodable>(_ value: Value, to url: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
@@ -717,16 +669,12 @@ actor GroupMatchStore {
 }
 
 extension CompetitionAcceptedScorePersistence {
-    /// Group scores go to their owner document, never the duel journal: a
-    /// group request carries the group semantic id, and a known group match
-    /// counts too. Everything else is a duel, as before.
     static func routing(groups: GroupMatchStore, duels store: any CompetitionEventStore) -> Self {
         let duels = eventStore(store)
         return Self { profileID, request, response, receivedAt in
             let isKnownGroup = await groups.isGroupMatch(request.competitionID)
             if isKnownGroup
                 || request.semanticEventID == RemoteGroupMatchSync.semanticEventID(wireContentSHA256: request.wireContentSHA256) {
-                // A missing document is recreated, never sent to the duel journal.
                 try await groups.recordAccepted(request, response)
             } else {
                 try await duels.persist(profileID, request, response, receivedAt)
@@ -735,9 +683,6 @@ extension CompetitionAcceptedScorePersistence {
     }
 }
 
-/// One family's view of the shared outbox, so group and duel uploads drain
-/// on their own coordinators: a stalled request or failed write in one
-/// never holds up the other. Writes go to the shared store unchanged.
 struct GroupOutboxPartition: CompetitionOutboxStore {
     let base: any CompetitionOutboxStore
     let groups: GroupMatchStore
@@ -766,11 +711,6 @@ struct GroupOutboxPartition: CompetitionOutboxStore {
     }
 }
 
-// MARK: - Sync
-
-/// One pass over the signed-in person's group matches: refresh the read
-/// model, upload their own days, and attest the final window. Never throws;
-/// a failure keeps the cache and leaves duels alone.
 struct RemoteGroupMatchSync: Sendable {
     let profileID: UUID
     let store: GroupMatchStore
@@ -784,14 +724,11 @@ struct RemoteGroupMatchSync: Sendable {
         await syncCoordinator?.wake()
         let listed = await refresh()
         var matches = listed.matches
-        // Uploads need the server's current high-water: a cached one can
-        // trail a revision accepted just before a power cut.
         guard listed.isFresh else {
             try? await removeMaterializedAcknowledgments(matches)
             return matches
         }
         var finalWindows: [(id: UUID, readSucceeded: Bool)] = []
-        // The zone Health reads days in: the device's own.
         var deviceZone = TimeZone.current
         if let environment, let zone = TimeZone(identifier: await environment.context().timeZoneIdentifier) {
             deviceZone = zone
@@ -800,19 +737,15 @@ struct RemoteGroupMatchSync: Sendable {
             guard let window = uploadWindow(match),
                   let weekEnd = try? window.calendar.startOfDay(window.calendar.day(after: window.days[6]))
             else { continue }
-            // Health reads day 7 by this device's own date, so a player west
-            // of the match calendar seals at their own midnight (by the deadline).
             let localEnd = (try? match.schedule().localWindowEnd(in: deviceZone)) ?? weekEnd
             let end = max(weekEnd, min(localEnd, match.bestAvailableDeadline ?? .distantFuture))
             var readAt = try? await upload(match, window: window)
             if now() >= end {
-                // Only a read that started after the week ended can seal it.
                 if let started = readAt, started < end { readAt = try? await upload(match, window: window) }
                 finalWindows.append((match.id, readAt.map { $0 >= end } ?? false))
             }
         }
         if !finalWindows.isEmpty, let syncCoordinator {
-            // Drain, then refresh the owner heads the attestation is built on.
             await syncCoordinator.waitUntilIdle()
             let refreshed = await refresh()
             matches = refreshed.matches
@@ -825,8 +758,6 @@ struct RemoteGroupMatchSync: Sendable {
         return matches
     }
 
-    /// The server's list, merged over the cache: a match whose version is
-    /// older than the cached one keeps the cached copy.
     func refresh() async -> (matches: [GroupMatchReadModel], isFresh: Bool) {
         let cached = await store.readModel()
         guard let fresh = try? await list() else { return (cached, false) }
@@ -839,7 +770,6 @@ struct RemoteGroupMatchSync: Sendable {
         }
         try? await store.saveReadModel(merged)
         await removeOrphanedOwners(keeping: Set(merged.map(\.id)))
-        // A list older than the cache can't vouch for current heads.
         return (merged, !keptCached)
     }
 
@@ -847,8 +777,6 @@ struct RemoteGroupMatchSync: Sendable {
         try GroupMatchWire.decodeList(try await remoteAPI.listGroupMatches(), viewer: profileID)
     }
 
-    /// A match gone from the list keeps its owner document until the outbox
-    /// holds nothing for it.
     private func removeOrphanedOwners(keeping ids: Set<UUID>) async {
         guard let entries = try? await outboxStore?.entries() ?? [] else { return }
         let queued = Set(entries.map(\.payload.competitionID))
@@ -857,7 +785,6 @@ struct RemoteGroupMatchSync: Sendable {
         }
     }
 
-    /// The seven-day window while your seat may still upload.
     func uploadWindow(_ match: GroupMatchReadModel) -> CompetitionActivityWindow? {
         guard ["scheduled", "active", "ends_today", "tallying"].contains(match.lifecycle),
               match.result == nil,
@@ -872,8 +799,6 @@ struct RemoteGroupMatchSync: Sendable {
         return window
     }
 
-    /// Reads Health once and queues each started day whose reading changed.
-    /// Returns when the read started, or nil when it failed.
     private func upload(_ match: GroupMatchReadModel, window: CompetitionActivityWindow) async throws -> Date? {
         let readStartedAt = now()
         guard let environment, let outboxStore, let syncCoordinator,
@@ -881,8 +806,6 @@ struct RemoteGroupMatchSync: Sendable {
               let read = try? await environment.read(window)
         else { return nil }
         let evaluatedAt = now()
-        // Outbox first, then the document: an upload accepted in between
-        // writes its row before leaving the outbox, so it shows in one of them.
         var live: [CompetitionScoreRevisionRequest] = []
         var terminal: [CompetitionOutboxEntry] = []
         for entry in try await outboxStore.entries() {
@@ -914,15 +837,11 @@ struct RemoteGroupMatchSync: Sendable {
                     evidence: evidence, clientRevision: revision
                 ).wireContentSHA256
             }
-            // A rejected request is never retried, so it can't stand in for
-            // this reading; only a live one can.
             let queued = live.filter { $0.dayOrdinal == ordinal }.max { $0.clientRevision < $1.clientRevision }
             if let queued, try digest(at: queued.clientRevision) == queued.wireContentSHA256 {
                 continue
             }
             let accepted = document.accepted.first { $0.ordinal == ordinal }
-            // A newer different value still in flight would land over the
-            // accepted one, so the accepted match only counts without it.
             if let accepted, queued.map({ $0.clientRevision < accepted.clientRevision }) ?? true,
                try digest(at: accepted.clientRevision) == accepted.wireContentSHA256 {
                 try await removeSettledFailures(terminal, ordinal: ordinal, through: .max, outboxStore)
@@ -961,7 +880,6 @@ struct RemoteGroupMatchSync: Sendable {
         return readStartedAt
     }
 
-    /// Drops a day's rejected uploads at or below `revision`.
     private func removeSettledFailures(
         _ terminal: [CompetitionOutboxEntry], ordinal: Int, through revision: Int64,
         _ outboxStore: any CompetitionOutboxStore
@@ -974,9 +892,6 @@ struct RemoteGroupMatchSync: Sendable {
         }
     }
 
-    /// The final window over the server's own heads. Stable needs a fresh
-    /// read, an empty upload queue and refreshed heads; otherwise only
-    /// best-available, and only after its deadline.
     private func attest(_ match: GroupMatchReadModel, headsAreFresh: Bool) async throws {
         guard let outboxStore, let syncCoordinator, uploadWindow(match) != nil,
               let seat = match.seats.first(where: { $0.profileID == profileID })
@@ -988,10 +903,8 @@ struct RemoteGroupMatchSync: Sendable {
         for entry in entries {
             guard case let .scoreRevision(request) = entry.payload else { continue }
             guard case .permanentFailure = entry.state else { return }
-            // A newer accepted row for that day replaced the rejected one.
             if revisions[request.dayOrdinal - 1] < request.clientRevision { hasFailedUpload = true }
         }
-        // Heads older than a row this device saw accepted are a stale list.
         if let document = await store.owner(match.id),
            document.accepted.contains(where: { $0.clientRevision > revisions[$0.ordinal - 1] }) {
             return
@@ -1026,8 +939,6 @@ struct RemoteGroupMatchSync: Sendable {
             competitionID: match.id, participantID: profileID, days: days
         )
         var queued: [CompetitionAttestationRequest] = []
-        // Only a rejection a retry can't help (the window already closed)
-        // stands in for this attestation; other rejections are sent again.
         var standing: [CompetitionAttestationRequest] = []
         var rejected: [CompetitionOutboxEntry] = []
         for entry in entries {
@@ -1062,21 +973,15 @@ struct RemoteGroupMatchSync: Sendable {
             )),
             enqueuedAt: now()
         )
-        // The new attestation replaces the rejections it retries, so they
-        // don't pile up. Cleanup only: a failure here costs nothing.
         for entry in rejected {
             try? await outboxStore.remove(entry.semanticEventID, expectedGeneration: entry.generation)
         }
         await syncCoordinator.waitUntilIdle()
     }
 
-    /// An acknowledged attestation leaves the outbox once the read model
-    /// shows it, and a rejected upload once a newer row for its day is in.
     private func removeMaterializedAcknowledgments(_ matches: [GroupMatchReadModel]) async throws {
         guard let outboxStore else { return }
         for entry in try await outboxStore.entries() {
-            // A finished match takes no more uploads or attestations, and
-            // nothing else ever settles a rejected one.
             if case .permanentFailure = entry.state,
                matches.first(where: { $0.id == entry.payload.competitionID })?.result != nil {
                 try await outboxStore.remove(entry.semanticEventID, expectedGeneration: entry.generation)
@@ -1104,8 +1009,6 @@ struct RemoteGroupMatchSync: Sendable {
         }
     }
 
-    /// Group uploads get their own semantic-id domain, which tags them in the
-    /// shared outbox.
     static func semanticEventID(wireContentSHA256: String) -> UUID {
         var data = Data("healthcomp.remote-group-score-semantic-id.v1".utf8)
         data.append(Data(wireContentSHA256.utf8))
@@ -1118,8 +1021,6 @@ struct RemoteGroupMatchSync: Sendable {
         ))
     }
 }
-
-// MARK: - Presentation
 
 extension GroupMatchReadModel {
     func schedule() throws -> CompetitionSchedule {
@@ -1134,14 +1035,10 @@ extension GroupMatchReadModel {
         )
     }
 
-    /// What the screens show at `now`: live standings projected locally with
-    /// the core functions, a finished match as the server froze it. Nil when
-    /// the match can't be shown (the core rejects its lineup).
     func presentation(viewer: UUID, now: Date) -> GroupMatchPresentation? {
         guard let viewerSeat = seats.first(where: { $0.profileID == viewer }) else { return nil }
         let schedule = try? schedule()
         let direction: InvitationDirection = creatorProfileID == viewer ? .outgoing : .incoming
-        // The day the match is on: 1...7, 8 once the week has ended, 0 before.
         var dayOrdinal = 0
         var dayProgress = 0
         if let schedule, let today = try? schedule.calendar.day(containing: now),
@@ -1160,8 +1057,6 @@ extension GroupMatchReadModel {
         let lifecycle: LocalCompetitionLifecyclePresentation
         switch self.lifecycle {
         case "pending":
-            // The read model has no creation time and the screens don't show
-            // one; they format "Answer by" against it, so it is the evaluation time.
             lifecycle = .pending(direction: direction, createdAt: now, expiresAt: invitationExpiresAt)
         case "declined": lifecycle = .declined(at: closedAt ?? .distantPast, direction: direction)
         case "expired": lifecycle = .expired(at: invitationExpiresAt ?? .distantPast, direction: direction)
@@ -1223,8 +1118,6 @@ extension GroupMatchReadModel {
                 number: seat.index,
                 name: seat.botMode?.name ?? seat.displayName ?? "Former competitor",
                 occupant: seat.profileID.map { profileID in
-                    // The server keeps the closer's own state: an accepted
-                    // closer of a declined match withdrew, a pending one declined.
                     let closedIt = self.lifecycle == "declined" && profileID == closedByProfileID
                     let invite: GroupMatchInviteState = switch seat.state {
                     case "pending": closedIt ? .declined : .invited
@@ -1244,8 +1137,6 @@ extension GroupMatchReadModel {
                 return subject.map { GroupMatchStandingRow(subject: $0, place: standing.place, centipoints: standing.centipoints) }
             }
         }
-        // The server's frozen seat days, when it sends them. Core can't hold a
-        // day-0 cutoff, so that leaver's days count as resolved zeros.
         let frozenSeats = result?.seats?.compactMap { frozen in
             seats.first { $0.index == frozen.seatIndex }.map { (seat: $0, frozen: frozen) }
         }
@@ -1258,7 +1149,6 @@ extension GroupMatchReadModel {
                     let value: MatchDayValue = switch day.status {
                     case "available": .centipoints(day.centipoints ?? 0)
                     case "afterLeave": leaveCutoffs[seat.id] == nil ? .centipoints(0) : .afterLeave
-                    // The result is final: a missing or unavailable day scored zero.
                     default: .centipoints(0)
                     }
                     return try? MatchDayScore(seatID: seat.id, ordinal: day.ordinal, value: value)
@@ -1290,9 +1180,6 @@ extension GroupMatchReadModel {
 }
 
 extension GroupMatchReadModel {
-    /// The server's nudge rule (`nudge_group_partner`) at `now`: while live,
-    /// your partner's newest upload (or Day 1's start) is over 12 hours old;
-    /// after Day 7, until the deadline, while their stable check is missing.
     func canNudgePartner(
         viewerSeat: Seat, lifecycle: LocalCompetitionLifecyclePresentation, schedule: CompetitionSchedule?, now: Date
     ) -> Bool {
@@ -1315,19 +1202,12 @@ extension GroupMatchReadModel {
     }
 }
 
-// MARK: - Commands
-
-/// A group match RPC as the server takes it.
 enum GroupMatchRemoteCommand: Equatable, Sendable {
-    /// Seat 1 is the creator; `draft` holds everyone else in seat order.
     case create(creator: UUID, GroupMatchDraft, timeZoneIdentifier: String, idempotencyKey: UUID)
-    /// Decline before accepting, or withdraw after (both before the start).
     case accept(UUID), decline(UUID), cancel(UUID), leave(UUID)
     case nudge(UUID, recipient: UUID)
-    /// Nil removes your reaction to that person's day.
     case react(UUID, target: UUID, ordinal: Int, CompetitionReactionKind?)
 
-    /// The RPC name and its JSON parameters.
     func rpc() throws -> (name: String, parameters: [String: Any]) {
         func id(_ value: UUID) -> String { value.uuidString.lowercased() }
         switch self {

@@ -1,10 +1,5 @@
 import XCTest
 
-/// Reactions, end to end through Home's own reducer and match screens. The
-/// `reactions` Test Lab scenario scripts the server: Jordan's saves take 3 s,
-/// Sam's first save fails, Quinn's first save is refused, and a pull to
-/// refresh on Home brings a new reaction from Jordan on Day 3.
-/// Now is Sun Aug 16, 1:00 AM in Los Angeles.
 final class ReactionsUITests: XCTestCase {
     private var app: XCUIApplication!
     private let kinds = ["clap", "fire", "huffing", "salute"]
@@ -37,7 +32,6 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(latest.frame.height, 44)
         latest.tap()
 
-        // Day 2: what Jordan sent, then yours to send.
         XCTAssertTrue(app.staticTexts["Day 2"].waitForExistence(timeout: 3))
         let received = element("competition.reaction.received")
         XCTAssertTrue(received.waitForExistence(timeout: 3))
@@ -54,7 +48,6 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertGreaterThan(chip("clap").frame.minY, heading.frame.maxY - 1)
         XCTAssertFalse(element("competition.react.error").exists)
 
-        // Saving: the chip shows at once, and no chip takes a tap until it lands.
         chip("fire").tap()
         XCTAssertTrue(chip("fire").isSelected)
         for kind in kinds { XCTAssertFalse(chip(kind).isEnabled, "\(kind) while saving") }
@@ -62,14 +55,12 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertTrue(waitFor(chip("fire"), "isEnabled == true", timeout: 6))
         assertChips(selected: "fire")
 
-        // The same preset again removes it.
         chip("fire").tap()
         XCTAssertFalse(chip("fire").isSelected)
         XCTAssertFalse(chip("fire").isEnabled)
         XCTAssertTrue(waitFor(chip("fire"), "isEnabled == true", timeout: 6))
         assertChips(selected: nil)
 
-        // Another preset replaces yours.
         chip("clap").tap()
         XCTAssertTrue(waitFor(chip("clap"), "isEnabled == true", timeout: 6))
         chip("salute").tap()
@@ -77,10 +68,8 @@ final class ReactionsUITests: XCTestCase {
         assertChips(selected: "salute")
         closeDrawer()
 
-        // The line stays while you're on the match.
         XCTAssertTrue(latest.exists)
 
-        // Day 3 is its own target: nothing sent or received there yet.
         openDay(3)
         XCTAssertFalse(element("competition.reaction.received").exists)
         assertChips(selected: nil)
@@ -89,7 +78,6 @@ final class ReactionsUITests: XCTestCase {
         assertChips(selected: "salute")
         closeDrawer()
 
-        // Leaving marks it seen: gone from the match and from Home.
         goBack()
         let seen = card("active", "Jordan")
         scrollToElement(seen)
@@ -99,7 +87,6 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertFalse(latest.waitForExistence(timeout: 1))
         goBack()
 
-        // A newer one comes back, and opens its own day.
         pullToRefresh()
         let again = card("active", "Jordan")
         XCTAssertTrue(
@@ -139,7 +126,6 @@ final class ReactionsUITests: XCTestCase {
         assertChips(selected: "clap")
         closeDrawer()
 
-        // The result: the server refuses once, then takes it.
         goBack()
         open("completed", "Quinn")
         let panel = element("competition.result.react")
@@ -178,19 +164,16 @@ final class ReactionsUITests: XCTestCase {
         assertChips(selected: nil)
         XCTAssertLessThan(heading.frame.maxY, chip("clap").frame.minY + 1)
         XCTAssertLessThan(chip("clap").frame.maxY, received.frame.minY + 1)
-        // Below the score, above Share Result.
         let share = app.buttons["competition.result.share"]
         scrollToElement(share)
         XCTAssertLessThanOrEqual(panel.frame.maxY, share.frame.minY)
         XCTAssertTrue(app.buttons["competition.rematch.create"].exists)
-        // No day reactions on a finished match.
         XCTAssertFalse(app.staticTexts["REACT TO RILEY’S DAY"].exists)
 
         scrollToElement(chip("clap"))
         chip("clap").tap()
         XCTAssertTrue(waitFor(chip("clap"), "isSelected == true", timeout: 3))
 
-        // The result first, then by day; yours first within each.
         openResultWeek()
         XCTAssertEqual(reactionsList(), [
             "Clap. You reacted to the result",
@@ -200,7 +183,6 @@ final class ReactionsUITests: XCTestCase {
         ])
         closeDrawer()
 
-        // Tapping it again takes yours off the list.
         scrollToElement(chip("clap"))
         chip("clap").tap()
         XCTAssertTrue(waitFor(chip("clap"), "isSelected == false", timeout: 3))
@@ -231,7 +213,6 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Morgan"].waitForExistence(timeout: 3))
         let latest = app.buttons["competition.reaction.latest"]
         XCTAssertTrue(latest.waitForExistence(timeout: 3))
-        // Above the tally panel.
         let tally = element("competition.tally")
         XCTAssertTrue(tally.exists)
         XCTAssertLessThan(latest.frame.maxY, tally.frame.minY + 1)
@@ -301,7 +282,6 @@ final class ReactionsUITests: XCTestCase {
 
     func testLongNameWrapsAndNoMatchWithoutReactionsShowsALine() throws {
         launch()
-        // Nothing on Sam, Casey or Quinn.
         for (state, name) in [("active", "Sam"), ("ends-today", "Casey"), ("completed", "Quinn")] {
             let match = card(state, name)
             scrollToElement(match)
@@ -323,16 +303,6 @@ final class ReactionsUITests: XCTestCase {
         try audit("long-name-drawer")
     }
 
-    /// Scrolling the drawer with a finger that lands on a chip scrolls; it
-    /// never sends a reaction.
-    /// Scrolling or resizing the drawer with a finger that lands on a chip
-    /// never sends a reaction. Each drag here used to send one: the sheet's
-    /// own drag didn't cancel the chip's touch. Sam's first save fails, so
-    /// one stray send shows the error and a second selects a chip.
-    // MARK: The Home logo
-
-    /// The logo updates the scores, then opens today's rings. In this lab an
-    /// update is what brings Jordan's Day 3 reaction.
     func testLogoUpdatesThenShowsTodaysRings() {
         launch()
         let logo = app.buttons["home.logo"]
@@ -358,7 +328,6 @@ final class ReactionsUITests: XCTestCase {
             jordan.label
         )
 
-        // And again, with nothing new to bring.
         logo.tap()
         XCTAssertTrue(rings.waitForExistence(timeout: 5))
     }
@@ -379,10 +348,8 @@ final class ReactionsUITests: XCTestCase {
                 if !chip(kind).exists { openDay(1) }
             }
         }
-        // Long enough for a save a drag might have started.
         XCTAssertFalse(element("competition.react.error").waitForExistence(timeout: 2))
         assertChips(selected: nil)
-        // A tap still sends one.
         chip("fire").tap()
         XCTAssertTrue(element("competition.react.error").waitForExistence(timeout: 5))
     }
@@ -406,8 +373,6 @@ final class ReactionsUITests: XCTestCase {
         assertNoPicker()
     }
 
-    // Light and dark at the default size and at AX5. Screenshots are
-    // attached as reactions-<screen>-<light|dark>-<default|ax5>.
     func testReactionScreensLightDefault() throws {
         try captureScreens(dark: false, largest: false)
     }
@@ -436,14 +401,10 @@ final class ReactionsUITests: XCTestCase {
         }
         launch(arguments: arguments)
 
-        // Home: the first live card, then a Recent results row.
         let jordan = card("active", "Jordan")
         scrollToElement(jordan)
         revealBottom(of: jordan)
         shot("home-live-\(suffix)")
-        // Home's card headers predate reactions: the scoreboard's uppercased
-        // names clip for long names (and at AX5), and Home's contrast is
-        // covered by the type-size matrix.
         try audit(
             "home-live-\(suffix)",
             contrast: false,
@@ -456,7 +417,6 @@ final class ReactionsUITests: XCTestCase {
         revealBottom(of: riley)
         shot("home-result-\(suffix)")
 
-        // Match screen line, then the day drawer it opens.
         scrollToElement(jordan)
         jordan.tap()
         let latest = app.buttons["competition.reaction.latest"]
@@ -533,8 +493,6 @@ final class ReactionsUITests: XCTestCase {
         shot("result-former-\(suffix)")
         try audit("result-former-\(suffix)")
     }
-
-    // MARK: Helpers
 
     private enum Scenario: String {
         case remote = "reactions"
@@ -620,11 +578,8 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["REACTIONS"].exists)
     }
 
-    /// The REACTIONS list's lines, top to bottom.
     private func reactionsList() -> [String] {
         element("competition.reactions")
-            // Each line's own element, not the text XCUITest also lists
-            // inside it (VoiceOver reads only the line).
             .descendants(matching: .other)
             .matching(NSPredicate(format: "label CONTAINS ' reacted to '"))
             .allElementsBoundByIndex
@@ -679,7 +634,6 @@ final class ReactionsUITests: XCTestCase {
         let jordan = card("active", "Jordan")
         scrollToElement(jordan)
         let surface: XCUIElement = app.scrollViews.firstMatch.exists ? app.scrollViews.firstMatch : app
-        // Back to the top first, so the next drag pulls to refresh.
         surface.swipeDown()
         surface.swipeDown()
         surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).press(
@@ -688,8 +642,6 @@ final class ReactionsUITests: XCTestCase {
         )
     }
 
-    /// Drawers are sheets: drag the title to the top for `.large`, then
-    /// scroll the drawer's own scroll view (not the page behind it).
     private func revealInDrawer(_ target: XCUIElement, title: String) {
         XCTAssertTrue(target.waitForExistence(timeout: 3))
         let drawer = app.scrollViews
@@ -697,8 +649,6 @@ final class ReactionsUITests: XCTestCase {
         func revealed() -> Bool {
             guard target.isHittable else { return false }
             let bottom = min(drawer.frame.maxY, app.frame.maxY - 34)
-            // Taller than the drawer: its top in the upper half (wider than one
-            // drag, so it can't be stepped over), or its end shown.
             if target.frame.height > drawer.frame.height * 0.8 {
                 return (target.frame.minY >= drawer.frame.minY
                     && target.frame.minY < drawer.frame.midY)
@@ -707,7 +657,6 @@ final class ReactionsUITests: XCTestCase {
             return target.frame.minY >= drawer.frame.minY && target.frame.maxY <= bottom
         }
         if revealed() { return }
-        // Expand to .large by the title (the existing AX5 test's way).
         let heading = app.staticTexts[title].firstMatch
         for _ in 0..<2 where heading.exists && drawer.frame.minY > app.frame.height * 0.3 {
             heading.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
@@ -715,7 +664,6 @@ final class ReactionsUITests: XCTestCase {
                 thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
             )
         }
-        // Short drags down the right edge; The Week runs 3,000 pt at AX5.
         for _ in 0..<30 where !revealed() {
             let up = target.frame.minY >= drawer.frame.minY
             drawer.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: up ? 0.7 : 0.4)).press(
@@ -736,9 +684,6 @@ final class ReactionsUITests: XCTestCase {
         add(attachment)
     }
 
-    /// Audits scroll the screen, so they run after the screenshot. Layout
-    /// audits for the whole screen; contrast for the reaction controls only,
-    /// since the rest of the screen predates them.
     private func audit(
         _ name: String,
         contrast: Bool = true,
@@ -746,14 +691,11 @@ final class ReactionsUITests: XCTestCase {
     ) throws {
         let bar = app.navigationBars.firstMatch.frame
         func ignored(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
-            // Contrast issues inside a combined element come without one.
             guard let element = issue.element else { return issue.auditType == .contrast }
             switch issue.auditType {
             case .contrast:
-                // Only the picker's own chips: the rest predates reactions.
                 return !element.identifier.hasPrefix("competition.react.")
             case .textClipped:
-                // iOS truncates a long name in the navigation bar title.
                 return bar.contains(element.frame)
                     || preexistingClippedLabels.contains(element.label)
             default:
@@ -768,8 +710,6 @@ final class ReactionsUITests: XCTestCase {
             do {
                 try app.performAccessibilityAudit(for: types, ignored)
             } catch let error as NSError where error.code == -56 {
-                // "Audit failed to complete in time": a loaded Mac, not a
-                // finding. One retry.
                 try app.performAccessibilityAudit(for: types, ignored)
             }
         }
@@ -777,7 +717,6 @@ final class ReactionsUITests: XCTestCase {
 
     private func scrollToElement(_ element: XCUIElement) {
         for _ in 0..<24 {
-            // Clear of the home indicator and the pinned Rematch.
             if element.exists, element.isHittable,
                app.frame.insetBy(dx: 0, dy: 40).contains(element.frame),
                !coveredByRematch(element) { return }
@@ -800,8 +739,6 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertTrue(element.isHittable)
     }
 
-    /// At AX5 a card is taller than the screen; bring its bottom (where the
-    /// reaction line is) into view.
     private func revealBottom(of element: XCUIElement) {
         let surface: XCUIElement = app.scrollViews.firstMatch.exists ? app.scrollViews.firstMatch : app
         for _ in 0..<16 where element.frame.maxY > app.frame.maxY - 60 {

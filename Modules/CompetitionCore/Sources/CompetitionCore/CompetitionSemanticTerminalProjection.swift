@@ -1,8 +1,5 @@
 import Foundation
 
-/// A non-persisted, transport-independent terminal projection for comparing
-/// executions of the same competition. It deliberately excludes monotonic
-/// timing metadata and OS notification delivery state.
 public struct CompetitionSemanticTerminalProjection: Codable, Equatable, Sendable {
     public struct Day: Codable, Equatable, Sendable {
         public let ordinal: Int
@@ -10,9 +7,6 @@ public struct CompetitionSemanticTerminalProjection: Codable, Equatable, Sendabl
         public let acceptedActivityContentFingerprint: String
     }
 
-    /// A privacy-safe representation of a server-confirmed day.  In
-    /// particular, it intentionally excludes wire content hashes and local
-    /// HealthKit fingerprints.
     public struct RemoteDay: Codable, Equatable, Sendable {
         public let profileID: String
         public let ordinal: Int
@@ -21,8 +15,6 @@ public struct CompetitionSemanticTerminalProjection: Codable, Equatable, Sendabl
         public let centiPoints: Int?
         public let reason: String?
 
-        /// Kept as a non-encoded compatibility affordance: callers can make
-        /// the privacy boundary explicit without exposing the hash.
         public let wireContentSHA256: String? = nil
 
         private enum CodingKeys: String, CodingKey {
@@ -41,9 +33,6 @@ public struct CompetitionSemanticTerminalProjection: Codable, Equatable, Sendabl
         case missingSharedResult
     }
 
-    // These simulated fields deliberately retain their original types and
-    // coding keys. The custom encoder below emits exactly this old shape for
-    // simulated traces, so their golden terminal bytes remain unchanged.
     public let lifecycle: String
     public let competitionID: String
     public let scheduleTimeZoneIdentifier: String
@@ -87,9 +76,6 @@ public struct CompetitionSemanticTerminalProjection: Codable, Equatable, Sendabl
             let remoteWindow = try result.window(for: configuration.remote)
             self.opponentPlanContentIdentity = ""
             self.opponentPlanCommitmentHex = ""
-            // A shared server result is the immutable terminal evidence for a
-            // remote competition.  This is intentionally true even though the
-            // simulated `ScoreLedger` is not the source of those rows.
             self.ledgerIsFrozen = true
             self.scoringPolicyIdentity = configuration.scoringPolicyIdentity
             self.downwardRevisionPolicy = projection.scoreLedger.downwardRevisionPolicy
@@ -164,9 +150,6 @@ public struct CompetitionSemanticTerminalProjection: Codable, Equatable, Sendabl
             ledgerIsFrozen = try c.decode(Bool.self, forKey: .ledgerIsFrozen); days = try c.decode([Day].self, forKey: .days)
             remoteOwnerProfileID = nil; remoteParticipantProfileID = nil; remoteOwnerWindowCommitment = nil; remoteParticipantWindowCommitment = nil; remoteResultHash = nil; remoteDays = []
         } else {
-            // Remote finalization never uses the local score ledger policy;
-            // retain a deterministic in-memory value solely for the shared
-            // terminal type while keeping it out of the remote wire shape.
             downwardRevisionPolicy = .maximumObserved
             opponentPlanContentIdentity = ""; opponentPlanCommitmentHex = ""; ledgerIsFrozen = true; days = []
             remoteOwnerProfileID = try c.decode(String.self, forKey: .remoteOwnerProfileID); remoteParticipantProfileID = try c.decode(String.self, forKey: .remoteParticipantProfileID)

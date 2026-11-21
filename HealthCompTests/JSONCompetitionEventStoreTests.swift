@@ -619,7 +619,6 @@ final class JSONCompetitionEventStoreTests: XCTestCase {
                 )
             }
 
-
             let staleTemporaries = try temporaryURLs(
                 root: root,
                 id: genesis.competitionID
@@ -1069,7 +1068,6 @@ final class JSONCompetitionEventStoreTests: XCTestCase {
         try primaryBytes.write(to: primary)
         try previousBytes.write(to: previous)
 
-        // Listing still succeeds; only this match's load fails.
         let listed = try await store.ids()
         XCTAssertEqual(listed, [genesis.competitionID])
 
@@ -2006,7 +2004,6 @@ final class JSONCompetitionEventStoreTests: XCTestCase {
             )
         }
     }
-
 
     private func deleteAttempt(
         store: JSONCompetitionEventStore,

@@ -7,7 +7,6 @@ enum CompetitionRefreshDiagnosticTests {
         do {
             try run()
         } catch {
-            // Never print unexpected log content or system error descriptions.
             print("FAIL: competition_refresh_diagnostic_output")
             exit(1)
         }

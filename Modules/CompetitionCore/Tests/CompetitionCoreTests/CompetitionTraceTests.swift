@@ -110,11 +110,11 @@ final class CompetitionTraceTests: XCTestCase {
 
     private func loadGolden(_ name: String) throws -> CompetitionGoldenTrace {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent() // CompetitionCoreTests
-            .deletingLastPathComponent() // Tests
-            .deletingLastPathComponent() // CompetitionCore
-            .deletingLastPathComponent() // Modules
-            .deletingLastPathComponent() // repository root
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
         let url = repositoryRoot
             .appendingPathComponent("HealthCompTests/Fixtures", isDirectory: true)
             .appendingPathComponent(name)
@@ -222,9 +222,6 @@ private struct CompetitionTraceRunner {
         let finalPoints = opponentPlan.days.map(\.finalPoints)
         let targetPoints = ownerPoints(opponentPoints: finalPoints)
 
-        // Day 1 crosses the America/Los_Angeles spring DST transition. The
-        // production path observes calendar boundaries incrementally; the
-        // accelerated path jumps directly between the same logical dates.
         try recordRefresh(
             at: dayStarts[0].addingTimeInterval(12 * 3_600),
             trigger: .foreground,

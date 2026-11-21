@@ -3,13 +3,10 @@ import CompetitionCore
 import Foundation
 
 enum CompetitionLiveActivityPreference {
-    /// Matches that already got a card, oldest first, so one swiped away
-    /// doesn't come back on the next launch.
     static let startedKey = "healthcomp.liveActivity.startedMatchIDs"
     static let startedLimit = 20
 }
 
-/// A running (`.active` or `.stale`) activity.
 struct CompetitionLiveActivitySnapshot: Equatable, Sendable {
     let matchID: String
     let state: MatchActivityAttributes.ContentState
@@ -18,14 +15,10 @@ struct CompetitionLiveActivitySnapshot: Equatable, Sendable {
 enum CompetitionLiveActivityStep: Equatable, Sendable {
     case start(MatchActivityAttributes, MatchActivityAttributes.ContentState)
     case update(matchID: String, MatchActivityAttributes.ContentState, staleDate: Date?)
-    /// `forgetStart` lets the card start again: true for ends the person
-    /// didn't cause by finishing the match.
     case end(matchID: String, forgetStart: Bool)
 }
 
-/// Which card runs, for which match, with what content. Pure.
 enum CompetitionLiveActivityPlanner {
-    // ponytail: iOS caps a Live Activity at 8 h; 7.5 h guarantees the stale (pending) look before that. Push-to-start would lift this.
     static let startLead: TimeInterval = 7.5 * 60 * 60
 
     static func content(
@@ -43,7 +36,6 @@ enum CompetitionLiveActivityPlanner {
         return MatchActivityAttributes.ContentState(
             phase: phase,
             title: status.title,
-            // Pending has no timing, like a card gone stale at midnight.
             timing: phase == .live ? status.timing : nil,
             opponentName: p.opponentDisplayName,
             userPoints: p.userPoints,
@@ -73,7 +65,6 @@ enum CompetitionLiveActivityPlanner {
         locale: Locale = .current,
         timeZone: TimeZone = .current
     ) -> [CompetitionLiveActivityStep] {
-        // The fixture runs on a logical clock, so its stale date would be wrong.
         guard isAllowed, source == .remoteParticipants else {
             return current.map { .end(matchID: $0.matchID, forgetStart: true) }
         }
@@ -83,13 +74,11 @@ enum CompetitionLiveActivityPlanner {
         ) { first, _ in first }
         var steps: [CompetitionLiveActivityStep] = []
         for (index, activity) in current.enumerated() {
-            // A leftover from a race: keep the first.
             guard index == 0 else {
                 steps.append(.end(matchID: activity.matchID, forgetStart: false))
                 continue
             }
             guard let p = byID[activity.matchID] else {
-                // Without discovery a missing match may still be there.
                 if knownCompetitionIDs != nil {
                     steps.append(.end(matchID: activity.matchID, forgetStart: false))
                 }
@@ -104,7 +93,6 @@ enum CompetitionLiveActivityPlanner {
                 steps.append(.update(matchID: activity.matchID, state, staleDate: staleDate))
             }
         }
-        // An existing card keeps its match until it ends.
         guard current.isEmpty else { return steps }
         let candidates = presentations.compactMap { p -> CompetitionLiveActivityStep? in
             guard case .endsToday = p.lifecycle,
@@ -123,10 +111,8 @@ enum CompetitionLiveActivityPlanner {
     }
 }
 
-/// ActivityKit behind closures, so tests never touch it.
 struct CompetitionLiveActivityClient: Sendable {
     var current: @Sendable () async -> [CompetitionLiveActivitySnapshot]
-    /// False when iOS refuses, for example with the app in the background.
     var start: @Sendable (
         MatchActivityAttributes, MatchActivityAttributes.ContentState, _ staleDate: Date?
     ) async -> Bool
@@ -135,7 +121,6 @@ struct CompetitionLiveActivityClient: Sendable {
     ) async -> Void
     var end: @Sendable (_ matchID: String) async -> Void
     var isAllowed: @Sendable () -> Bool
-    /// Oldest first.
     var startedMatchIDs: @Sendable () -> [String]
     var setStartedMatchIDs: @Sendable ([String]) -> Void
 
@@ -192,8 +177,6 @@ struct CompetitionLiveActivityClient: Sendable {
     )
 }
 
-/// Runs the planner against the latest publication and applies its steps.
-/// Callers serialize calls (the remote coordinator's operation gate).
 actor CompetitionLiveActivities {
     private let client: CompetitionLiveActivityClient
     private let now: @Sendable () -> Date
@@ -209,7 +192,6 @@ actor CompetitionLiveActivities {
         await reconcileLatest()
     }
 
-    /// No network: replans the stored publication against the real time.
     func reconcileLatest() async {
         guard let latest else { return }
         let before = client.startedMatchIDs()
@@ -241,8 +223,6 @@ actor CompetitionLiveActivities {
         if started != before { client.setStartedMatchIDs(started) }
     }
 
-    /// Sign-out, session end or a failed mount: nobody's name stays on the
-    /// Lock Screen, and a later mount may start the card again.
     func endAll() async {
         latest = nil
         let ended = await client.current().map(\.matchID)

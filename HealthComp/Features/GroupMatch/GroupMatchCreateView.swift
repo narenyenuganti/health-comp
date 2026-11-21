@@ -2,7 +2,6 @@ import CompetitionCore
 import ComposableArchitecture
 import SwiftUI
 
-/// Someone you can already challenge.
 struct GroupMatchPlayer: Hashable, Sendable {
     let profileID: UUID
     let name: String
@@ -26,11 +25,9 @@ struct GroupMatchPlayer: Hashable, Sendable {
     }
 }
 
-/// Who you're sending the match to, seat by seat. You are never in it.
 struct GroupMatchLineup: Equatable {
     enum Entry: Hashable {
         case person(GroupMatchPlayer)
-        /// Named by their personal challenge link, never an open seat.
         case linked(CompetitionChallengeLinkCode, name: String)
         case bot(BotMode)
 
@@ -48,7 +45,6 @@ struct GroupMatchLineup: Equatable {
     }
 
     private(set) var format: GroupMatchFormat
-    /// Nil is a seat still to fill. In doubles the first is your partner.
     private(set) var seats: [Entry?]
 
     init(format: GroupMatchFormat, entries: [Entry] = []) {
@@ -57,7 +53,6 @@ struct GroupMatchLineup: Equatable {
         place(entries)
     }
 
-    /// The same format and players as a match that didn't start.
     init(match: GroupMatchPresentation) {
         let others = match.seats
             .filter { $0.id != match.viewerSeatID }
@@ -70,12 +65,10 @@ struct GroupMatchLineup: Equatable {
         })
     }
 
-    /// Doubles: 1 for your team, 2 for theirs. Nil otherwise.
     func team(ofSeat index: Int) -> Int? {
         format == .doubles ? (index == 0 ? 1 : 2) : nil
     }
 
-    /// Teams with an empty seat; `[nil]` while a free-for-all has one.
     var openTeams: [Int?] {
         var teams: [Int?] = []
         for index in seats.indices where seats[index] == nil && !teams.contains(team(ofSeat: index)) {
@@ -84,7 +77,6 @@ struct GroupMatchLineup: Equatable {
         return teams
     }
 
-    /// Only a four-way's empty seat can go, which makes it a three-way.
     func canRemoveSeat(_ index: Int) -> Bool {
         seats[index] == nil && format == .fourWay
     }
@@ -122,7 +114,6 @@ struct GroupMatchLineup: Equatable {
         }
     }
 
-    /// Keeps whoever fits when the format changes.
     mutating func reshape(to format: GroupMatchFormat) {
         guard format != self.format else { return }
         let entries = seats.compactMap { $0 }
@@ -137,13 +128,10 @@ struct GroupMatchLineup: Equatable {
     }
 }
 
-/// What a pasted challenge link turned out to be.
 enum GroupMatchLinkLookup: Equatable, Sendable {
     case idle, resolving, invalid, notFound, unavailable, failed
     case found(name: String)
 
-    /// The duel sheet's `resolve_challenge_link`: a name only, never a seat.
-    /// Not found and unavailable stay one answer, as on the duel sheet.
     static func resolve(_ code: CompetitionChallengeLinkCode) async -> Self {
         @Dependency(\.competitionClient) var competitionClient
         do {
@@ -158,16 +146,13 @@ enum GroupMatchLinkLookup: Equatable, Sendable {
     }
 }
 
-/// New Match: pick a format, fill the seats, add bots, send.
 struct GroupMatchCreateView: View {
     enum Step: Hashable {
         case lineup, bots, link
     }
 
     let store: StoreOf<GroupMatchFeature>
-    /// People you've played.
     let people: [GroupMatchPlayer]
-    /// Duel keeps today's challenge sheet.
     let onDuel: () -> Void
     let lookUpLink: @Sendable (CompetitionChallengeLinkCode) async -> GroupMatchLinkLookup
     private let prefilled: [GroupMatchPlayer]
@@ -175,16 +160,13 @@ struct GroupMatchCreateView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var path: [Step]
-    /// Nil is Duel.
     @State private var selection: GroupMatchFormat?
     @State private var lineup: GroupMatchLineup
     @State private var bot: BotMode = .pacer
-    /// Waiting for a team in doubles while both have room.
     @State private var pendingEntry: GroupMatchLineup.Entry?
     @State private var asksTeam = false
     @State private var sent: GroupMatchCommand?
     @State private var linkText = ""
-    /// The code being looked up or found; nil once the text changes.
     @State private var linkCode: CompetitionChallengeLinkCode?
     @State private var link: GroupMatchLinkLookup = .idle
 
@@ -234,8 +216,6 @@ struct GroupMatchCreateView: View {
         }
     }
 
-    // MARK: Format
-
     private static let formats: [(GroupMatchFormat?, String, String, [FormatGlyph.Mark])] = [
         (nil, "Duel", "You against one person or a bot.", [.you, .gap(11), .them]),
         (.threeWay, "Three-Way", "Three players, every one for themselves.", [.you, .gap(8), .them, .gap(8), .them]),
@@ -280,8 +260,6 @@ struct GroupMatchCreateView: View {
             }
         }
     }
-
-    // MARK: Lineup
 
     private var lineupScreen: some View {
         GroupMatchPage {
@@ -397,9 +375,7 @@ struct GroupMatchCreateView: View {
     private func seatRow(_ index: Int) -> some View {
         let number = index + 2
         let entry = lineup.seats[index]
-        // In doubles seat 3 opens their team's panel.
         if lineup.format != .doubles || index != 1 { CompetitionRowDivider(inset: 0) }
-        // At accessibility sizes Remove goes under the name, which keeps the line.
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
         layout {
@@ -423,7 +399,6 @@ struct GroupMatchCreateView: View {
             if entry != nil || lineup.canRemoveSeat(index) {
                 Button("Remove") {
                     lineup.remove(seat: index)
-                    // Back keeps the three-way this made.
                     selection = lineup.format
                 }
                 .font(.subheadline.weight(.semibold))
@@ -436,8 +411,6 @@ struct GroupMatchCreateView: View {
         }
     }
 
-    /// People you've played who aren't seated, including anyone a rematch
-    /// prefilled and you removed.
     private var candidates: [GroupMatchPlayer] {
         var players = people
         for player in prefilled where !players.contains(player) { players.append(player) }
@@ -469,12 +442,9 @@ struct GroupMatchCreateView: View {
         if path.last == .bots || path.last == .link { path.removeLast() }
     }
 
-    // MARK: Challenge link
-
     private var linkScreen: some View {
         GroupMatchPage {
             GroupMatchHeading("Their challenge link", detail: "Paste the link they shared. It adds them, and only them.")
-            // Return looks it up rather than adding a line.
             TextField("Challenge link", text: Binding(get: { linkText }, set: { text in
                 let clean = text.filter { !$0.isNewline }
                 if clean != linkText {
@@ -547,12 +517,9 @@ struct GroupMatchCreateView: View {
         link = .resolving
         Task {
             let result = await lookUpLink(code)
-            // Edited meanwhile: that answer is for a different link.
             if linkCode == code, link == .resolving { link = result }
         }
     }
-
-    // MARK: Bots
 
     private static let bots: [(BotMode, String, [CGFloat])] = [
         (.pacer, "The usual week, steady every day.", [18, 19, 18, 19, 18, 19, 18]),
@@ -599,7 +566,6 @@ struct GroupMatchCreateView: View {
     }
 }
 
-/// A big selectable card: format or bot. The practice sheet uses it too.
 struct GroupMatchOptionCard<Glyph: View>: View {
     let title: String
     let detail: String
@@ -638,8 +604,6 @@ struct GroupMatchOptionCard<Glyph: View>: View {
     }
 }
 
-/// The mark's slanted bars, one per player: amber you, an amber outline
-/// for your partner, ink for everyone else.
 private struct FormatGlyph: View {
     enum Mark { case you, partner, them, gap(CGFloat) }
 
@@ -650,7 +614,6 @@ private struct FormatGlyph: View {
             ForEach(marks.indices, id: \.self) { index in
                 switch marks[index] {
                 case .you: SlantedBar().fill(Theme.youFill).frame(width: 11, height: 28)
-                // A thin stroke: amber as text, which holds contrast.
                 case .partner: SlantedBar().stroke(Theme.you, lineWidth: 2).frame(width: 11, height: 28)
                 case .them: SlantedBar().fill(Theme.ink).frame(width: 11, height: 28)
                 case let .gap(width): Color.clear.frame(width: width, height: 1)
@@ -661,7 +624,6 @@ private struct FormatGlyph: View {
     }
 }
 
-/// A bot's square with three bars, for "Add a bot" and Duel's "Play a Bot".
 struct BotGlyph: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 2) {
@@ -676,7 +638,6 @@ struct BotGlyph: View {
     }
 }
 
-/// Add: a small grey capsule.
 private struct GroupMatchPillButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 

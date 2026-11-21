@@ -3,25 +3,19 @@ import SwiftUI
 
 struct ClaimCompetitionView: View {
     let liveStatus: MainTabFeature.InviteClaimStatus
-    /// Who sent it, from the server; shown only to the person it was sent to.
     var livePreview: CompetitionInvitePreview? = nil
-    /// Your display name, for your side of the face-off.
     var ownName = ""
     var now: Date = Date()
     var hasQueuedChallenge = false
     var declineFailed = false
     let accept: () -> Void
     let notNow: () -> Void
-    /// Runs after the confirmation; the sender is told.
     let decline: () -> Void
-    /// Decline and Block, when offered.
     var block: (() -> Void)? = nil
     let retry: () -> Void
     let dismiss: () -> Void
 
     @State private var showsDeclineConfirmation = false
-    /// `.idle` lands as the sheet starts to leave, with the preview already
-    /// gone, so the slide-down keeps drawing the last real state.
     @State private var lastStatus = MainTabFeature.InviteClaimStatus.loadingPreview
     @State private var lastPreview: CompetitionInvitePreview?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -37,14 +31,12 @@ struct ClaimCompetitionView: View {
     }
 
     var body: some View {
-        // At accessibility sizes the controls scroll with the content.
         let pinsControls = !dynamicTypeSize.isAccessibilitySize
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     Spacer(minLength: 12)
                     statusEmblem
-                    // They sent it to you, so you see their photo.
                     if showsPreview, let preview {
                         CompetitionInvitationFaceOff(
                             ownName: ownName,
@@ -112,7 +104,6 @@ struct ClaimCompetitionView: View {
                         .background(Theme.ground)
                 }
             }
-            // Here, not on the NavigationStack, so the bar stays still.
             .moving(Motion.settle, value: settleKey)
             .moving(Motion.settle, value: hasQueuedChallenge)
             .background(Theme.ground)
@@ -157,13 +148,10 @@ struct ClaimCompetitionView: View {
         .sensoryFeedback(.error, trigger: declineFailed) { _, new in new }
     }
 
-    /// `.ready` and `.declining` are one screen: a new id would regrow the mark.
     private var slotKey: MainTabFeature.InviteClaimStatus {
         status == .declining ? .ready : status
     }
 
-    /// The reveal is one fade: an inset still rising would show the rules
-    /// through the buttons, and nothing already on screen needs to move.
     private var settleKey: MainTabFeature.InviteClaimStatus {
         slotKey == .loadingPreview ? .ready : slotKey
     }
@@ -227,7 +215,6 @@ struct ClaimCompetitionView: View {
         .accessibilityHidden(true)
     }
 
-    /// The spinner stays one view from opening through accepting.
     private var emblemKey: MainTabFeature.InviteClaimStatus {
         switch status {
         case .claiming, .waitingForCompetition: .loadingPreview
@@ -265,7 +252,6 @@ struct ClaimCompetitionView: View {
             .foregroundStyle(Theme.ink)
     }
 
-    /// One slot: a new control crossfades over the last while height settles.
     private var controlSlot: some View {
         ZStack(alignment: .top) {
             actionControls
@@ -302,9 +288,6 @@ struct ClaimCompetitionView: View {
                     .frame(maxWidth: 440, minHeight: 44)
                     .accessibilityElement(children: .combine)
                 } else if preview != nil {
-                    // Shown over Health before anything has started, the
-                    // challenge has no preview yet, so there's nothing to
-                    // decline on the server; Not Now still works.
                     Button("Decline", role: .destructive) {
                         showsDeclineConfirmation = true
                     }
@@ -420,14 +403,10 @@ struct ClaimCompetitionView: View {
     }
 }
 
-/// "Pacific Time": the sender's calendar, always shown because it defines
-/// the week.
 func competitionTimeZoneName(_ identifier: String, locale: Locale = .current) -> String {
     TimeZone(identifier: identifier)?.localizedName(for: .generic, locale: locale) ?? identifier
 }
 
-/// Day 1 if accepted at `now`: the day after acceptance in the sender's
-/// calendar, the same rule the server freezes at accept time.
 func competitionClaimStartDay(_ preview: CompetitionInvitePreview, now: Date) -> CompetitionDay? {
     let calendar = try? CompetitionCalendar(timeZoneIdentifier: preview.timeZoneIdentifier)
     return try? calendar?.startDay(afterAcceptanceAt: now)

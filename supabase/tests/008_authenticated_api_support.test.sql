@@ -403,8 +403,6 @@ insert into public.profiles (
   '81000000-0000-0000-0000-000000000003',
   'Second Creator', 'active'
 );
--- The second creator challenges a third account: the first creator's pending
--- challenge to them would make a challenge back a reciprocal conflict.
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, created_at, updated_at
 ) values (
@@ -861,7 +859,6 @@ select lives_ok(
   )$$,
   'the profile registers a device token'
 );
--- Teardown lost the local id without revoking the row; the phone made a new one.
 select lives_ok(
   $$select public.register_current_device_installation(
     '85000000-0000-4000-8000-0000000000a2', repeat('e5', 32), 'production'

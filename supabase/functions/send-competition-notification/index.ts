@@ -244,9 +244,6 @@ function pkcs8Bytes(pem: string): ArrayBuffer {
   }
 }
 
-// Apple wants a provider token refreshed at most once per 20 minutes and
-// rejects one older than an hour, so a warm worker reuses it for 40 minutes.
-// A 403 from APNs (expired or invalid token) drops it early.
 let cachedProviderToken:
   | { key: string; token: string; issuedAt: number }
   | null = null;
@@ -300,11 +297,6 @@ async function signApnsProviderToken(
   return `${input}.${base64Url(signature)}`;
 }
 
-// The app owns every visible match notification (named, with scores, in the
-// user's locale), so score uploads and results no longer alert. A null payload
-// resolves the work row as discarded without contacting APNs.
-// ponytail: triggers still enqueue score/result rows that resolve as discarded; drop enqueue_competition_notification_work_from_score/_from_result in a forward migration (e.g. with PR 7's) once pgTAP 012/019 fixtures insert work rows directly.
-// Server alerts stay generic: no name, so they are safe on a lock screen.
 const genericAlerts: Partial<
   Record<NotificationWorkItem["kind"], { title: string; body?: string }>
 > = {
@@ -404,8 +396,6 @@ async function resolution(
 ): Promise<Resolution> {
   if (response.status === 200) {
     const apnsUniqueId = response.headers.get("apns-unique-id");
-    // Apple documents this opaque response identifier only for development
-    // delivery logs. Acceptance is not proof that a device received the push.
     return {
       outcome: "sent",
       retryAfterSeconds: null,
@@ -488,7 +478,6 @@ export async function sendCompetitionNotificationHandler(
     lease_seconds: leaseSeconds,
     supports_friends: true,
   });
-  // Before the migration, only the old overload exists in the schema cache.
   if (leased.error?.code === "PGRST202") {
     leased = await client.rpc("lease_competition_notification_work", {
       batch_size: batchSize,

@@ -215,7 +215,6 @@ select throws_ok(
   )$$,
   'P0001', 'active_match_exists', 'a scheduled match blocks a new challenge between the pair');
 reset role;
--- Synthetic time boundary: the primary match's week has ended.
 update public.competitions set start_day = start_day - 8
 where id = (select id from invite_test_context where name = 'primary');
 set local role service_role;

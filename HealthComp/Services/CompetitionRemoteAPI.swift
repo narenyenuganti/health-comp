@@ -8,11 +8,8 @@ enum CompetitionRemoteFailure: Error, Equatable, Sendable {
     case inviteUnavailable
     case recipientUnavailable
     case pendingInvitationExists
-    /// The two people share a match whose week hasn't ended.
     case activeMatchExists
-    /// The chosen person already challenged you.
     case incomingChallengeExists
-    /// The challenge link is your own.
     case ownChallengeLink
     case divergentDuplicate
     case staleRevision
@@ -25,13 +22,9 @@ enum CompetitionRemoteFailure: Error, Equatable, Sendable {
     case appAttestRejected
     case appAttestContextUnavailable
     case appAttestProofConflict
-    /// A named person has no installation that can show group matches; the
-    /// server names the first such seat's profile.
     case groupUpdateRequired(profileID: UUID?, displayName: String? = nil)
-    /// You already have five pending or live group matches.
     case groupCreationLimit
     case invalidUsername
-    /// Taken or reserved; the server doesn't say which.
     case usernameUnavailable
     case searchRateLimited
     case invalidFriendSettings
@@ -39,7 +32,6 @@ enum CompetitionRemoteFailure: Error, Equatable, Sendable {
     case invalidProfileID
     case invalidFriendRequestResponse
     case friendRequestLimit
-    /// Accept when the request is gone or the person is unavailable.
     case requestUnavailable
     case operationFailed
 }
@@ -55,7 +47,6 @@ struct CompetitionRemoteAPI: Sendable {
     var fetchCompetition: @Sendable (
         _ competitionID: UUID
     ) async throws -> CompetitionDescriptor
-    /// A successful, exact-ID lookup; transport failures are never absence.
     var competitionExists: @Sendable (UUID) async throws -> Bool = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
@@ -112,19 +103,15 @@ struct CompetitionRemoteAPI: Sendable {
     var listChallenges: @Sendable () async throws -> CompetitionChallengeList = {
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Both people's reactions in your matches, newest first.
     var listReactions: @Sendable () async throws -> [CompetitionReactionRecord] = {
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// A nil kind removes your reaction on that target.
     var setReaction: @Sendable (CompetitionReactionRequest) async throws -> Void = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Sleep beta: your Rings + Sleep duels and both players' nights.
     var listSleepScoring: @Sendable () async throws -> [CompetitionSleepMatch] = {
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Turns sleep on for a challenge you just created, before anyone accepts.
     var enableSleepScoring: @Sendable (UUID) async throws -> Void = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
@@ -145,63 +132,48 @@ struct CompetitionRemoteAPI: Sendable {
     var cancelCompetition: @Sendable (UUID) async throws -> Void = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Declines the challenge (by competition id) and blocks its sender.
     var blockChallenger: @Sendable (UUID) async throws -> Void = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// The people you blocked, newest first.
     var listBlockedProfiles: @Sendable () async throws -> [AuthenticatedProfile] = {
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Takes a profile id.
     var unblockProfile: @Sendable (UUID) async throws -> Void = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Asks the other person to open HealthComp; returns the time the server accepted the nudge.
     var nudgeCompetitionParticipant: @Sendable (UUID) async throws -> Date = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
     var loadChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode = {
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Replaces your link's code; the old link stops working.
     var resetChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode = {
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// The link owner's display name; a link never gives out their account id.
     var resolveChallengeLink: @Sendable (
         CompetitionChallengeLinkCode
     ) async throws -> String = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// The current photo of each of these people (at most 200 ids) that you
-    /// may see, yours included. A missing id shows initials.
     var listProfilePhotos: @Sendable ([UUID]) async throws -> [ProfilePhotoReference] = { _ in [] }
-    /// Uploads the processed JPEG at `reference` (your own id, a new version)
-    /// and makes it your photo.
     var setProfilePhoto: @Sendable (ProfilePhotoReference, Data) async throws -> Void = { _, _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Your own photo (`ownerProfileID` is you) and the review notice.
     var ownProfilePhoto: @Sendable (_ ownerProfileID: UUID) async throws -> OwnProfilePhoto = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Shows initials from now on; the objects stay until removed.
     var clearProfilePhoto: @Sendable () async throws -> Void = {
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Deletes every object in your folder except the `keeping` version.
     var removeProfilePhotoObjects: @Sendable (
         _ ownerProfileID: UUID,
         _ keeping: UUID?
     ) async throws -> Void = { _, _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// The JPEG, downloaded with your session (no public or signed URL).
     var downloadProfilePhoto: @Sendable (ProfilePhotoReference) async throws -> Data = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Reports this person's photo and hides their photos from you for good.
     var reportProfilePhoto: @Sendable (UUID) async throws -> Void = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
@@ -220,7 +192,6 @@ struct CompetitionRemoteAPI: Sendable {
     ) async throws -> FriendSettings = { _, _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Nil unless they share it with you, whatever the reason.
     var getCareerSummary: @Sendable (UUID) async throws -> CompetitionCareer? = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
@@ -248,24 +219,20 @@ struct CompetitionRemoteAPI: Sendable {
     var removeFriend: @Sendable (UUID) async throws -> FriendRelationship = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// Blocks a person by profile id; answers with their blocked-list row.
     var blockProfile: @Sendable (UUID) async throws -> AuthenticatedProfile = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
     var reportProfile: @Sendable (UUID) async throws -> Void = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// The raw `list_group_matches` body; `GroupMatchWire` validates it.
     var listGroupMatches: @Sendable () async throws -> Data = {
         throw CompetitionRemoteFailure.operationFailed
     }
-    /// One group match RPC; answers the match's id.
     var sendGroupMatchCommand: @Sendable (GroupMatchRemoteCommand) async throws -> UUID = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
 }
 
-/// What the person a challenge was sent to may see before accepting it.
 struct CompetitionInvitePreview: Equatable, Sendable {
     enum State: String, Equatable, Sendable { case pending, accepted }
 
@@ -276,8 +243,6 @@ struct CompetitionInvitePreview: Equatable, Sendable {
     let expiresAt: Date
 }
 
-/// Challenges sent to you, and the last day's declines and cancels that the
-/// other person did.
 struct CompetitionChallengeList: Equatable, Sendable {
     struct Incoming: Equatable, Sendable {
         let competitionID: UUID
@@ -292,7 +257,6 @@ struct CompetitionChallengeList: Equatable, Sendable {
 
         let competitionID: UUID
         let kind: Kind
-        /// "Former competitor" once that person deleted their account.
         let other: AuthenticatedProfile
         let closedAt: Date
     }
@@ -311,7 +275,6 @@ struct CompetitionReactionRecord: Equatable, Sendable {
     let updatedAt: Date
 }
 
-/// One player's night in a sleep duel: points only, never times or stages.
 struct CompetitionSleepNight: Equatable, Sendable {
     let profileID: UUID
     let dayOrdinal: Int
@@ -335,10 +298,8 @@ enum CompetitionRemoteTransportRequest: Equatable, Sendable {
     case listCompetitions
     case fetchCompetition(UUID)
     case competitionPresence(UUID)
-    /// The `profile-photos` bucket, with the caller's session.
     case uploadProfilePhoto(path: String, data: Data)
     case downloadProfilePhoto(path: String)
-    /// Answers a JSON array of the object names in that folder.
     case listProfilePhotoFolder(UUID)
     case removeProfilePhotos(paths: [String])
 }
@@ -352,7 +313,6 @@ enum CompetitionRemoteTransportFailure: Error, Equatable, Sendable {
     case cancelled
     case network
     case relay
-    /// PostgREST's `details` and `hint` can identify a player who needs an update.
     case server(statusCode: Int?, code: String?, message: String, detail: String? = nil, hint: String? = nil)
     case other
 }

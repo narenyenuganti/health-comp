@@ -1,5 +1,4 @@
 begin;
--- Included inside each group test transaction; no product fixture state persists.
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
@@ -44,7 +43,6 @@ begin
  update public.competitions set start_day=current_date-days_ago,invitation_expires_at=now()-interval '20 days',
    best_available_deadline=(current_date-days_ago+9)::timestamp at time zone 'UTC' where id=cid;
 end; $$;
--- Real submission path: fixed semantic identity and evaluation time allow exact replay.
 create function pg_temp.score(cid uuid,person integer,day integer,rev bigint,points integer default 30000) returns jsonb language plpgsql as $$
 declare evaluated timestamptz; d text;
 begin
@@ -56,7 +54,6 @@ begin
    least(points,20000),greatest(points-20000,0),0,'available','healthcomp.activity-score.v1',d);
 end; $$;
 
--- Reconciled photos preserve friends/search/request access and group acceptance consent.
 insert into private.friendships(profile_low,profile_high) values(least(pg_temp.pid(7),pg_temp.pid(8)),greatest(pg_temp.pid(7),pg_temp.pid(8)));
 select pg_temp.as_user(7);
 select ok(private.can_view_profile_photo(pg_temp.pid(8)),'friend photo without any shared match remains visible');

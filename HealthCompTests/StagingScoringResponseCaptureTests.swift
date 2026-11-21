@@ -242,8 +242,6 @@ final class StagingScoringResponseCaptureTests: XCTestCase {
         defer { fixture.close() }
         let provider = fixture.provider()
         let owner = try provider.authenticationLifetime()
-        // Long enough that a loaded runner still rejects before expiry; then
-        // wait for the expiry itself rather than racing a fixed sleep.
         XCTAssertTrue(try provider.armStagingScoringResponseCapture(timeout: .seconds(1)))
         try await fixture.reject(owner.client)
         XCTAssertTrue(fixture.observers[0].hasCapturedResponse)

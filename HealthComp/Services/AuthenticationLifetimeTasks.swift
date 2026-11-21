@@ -1,6 +1,5 @@
 import Foundation
 
-/// Owns app-created listener tasks, not the SDK's internal background tasks.
 final class AuthenticationLifetimeTasks: @unchecked Sendable {
     enum Failure: Error { case retired }
     private let lock = NSLock()
@@ -20,8 +19,6 @@ final class AuthenticationLifetimeTasks: @unchecked Sendable {
         }
     }
 
-    /// Call from the retiring coordinator, never from a task owned by this set.
-    /// Cancellation is cooperative; no success is reported until work settles.
     func cancelAndDrain() async {
         let pending = lock.withLock {
             retired = true

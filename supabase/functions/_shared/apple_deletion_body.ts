@@ -39,8 +39,6 @@ export async function readAppleDeletionBody(
     };
     return await Promise.race([read(), interrupted]);
   } catch {
-    // A producer's cancel hook may never settle. Request cancellation must not
-    // wait for it, and underlying error text must not enter the response.
     void reader.cancel().catch(() => {});
     throw invalid();
   } finally {

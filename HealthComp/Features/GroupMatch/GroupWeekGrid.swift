@@ -2,7 +2,6 @@ import CompetitionCore
 import SwiftUI
 
 extension GroupMatchPresentation {
-    /// The day being played, or nil before Day 1 and after Day 7.
     var liveDay: Int? {
         switch lifecycle {
         case let .active(dayOrdinal): dayOrdinal
@@ -11,8 +10,6 @@ extension GroupMatchPresentation {
         }
     }
 
-    /// Today's banter for this viewer: nil before Day 3, off a live day, or
-    /// when nothing triggers. The same scores give every phone the same line.
     var banter: String? {
         guard let liveDay else { return nil }
         var bots: [UUID: String] = [:]
@@ -26,7 +23,6 @@ extension GroupMatchPresentation {
         )
     }
 
-    /// Last day with scores: the live day, or all seven once the week is over.
     var lastPlayedDay: Int {
         switch lifecycle {
         case let .active(dayOrdinal): dayOrdinal
@@ -49,7 +45,6 @@ extension GroupMatchPresentation {
         return members.sorted { ($0.id == viewerSeatID ? 0 : $0.number) < ($1.id == viewerSeatID ? 0 : $1.number) }
     }
 
-    /// A seat's accepted points for one day; nil while not synced, unavailable or after leaving.
     func dayCentipoints(_ seat: GroupMatchSeat, ordinal: Int) -> Int? {
         guard let value = days.first(where: { $0.seatID == seat.id && $0.ordinal == ordinal })?.value,
               case let .centipoints(points) = value
@@ -57,14 +52,12 @@ extension GroupMatchPresentation {
         return points
     }
 
-    /// One day on its own, ranked by MatchScoring: seats, or teams in doubles.
     func dayStandings(ordinal: Int) -> [MatchStanding] {
         (try? MatchScoring.standings(
             configuration: configuration, days: days.filter { $0.ordinal == ordinal }, throughDay: ordinal
         ).standings) ?? []
     }
 
-    /// Who won a finished day. Today's leaders aren't winners yet.
     func finalDayWinners(ordinal: Int) -> [MatchStandingSubject] {
         guard ordinal < liveDay ?? 8, case let .winners(subjects) = dayWinners(ordinal: ordinal) else { return [] }
         return subjects
@@ -75,7 +68,6 @@ extension GroupMatchPresentation {
     }
 }
 
-/// "BOT" or "LEFT" beside a name.
 struct GroupMatchTag: View {
     let title: String
 
@@ -95,8 +87,6 @@ struct GroupMatchTag: View {
     }
 }
 
-/// The week, one row per seat (per team in doubles) in standings order. A
-/// filled square won that day; amber is you. Each played day opens that day.
 struct GroupWeekGrid: View {
     let match: GroupMatchPresentation
     let openDay: (Int) -> Void
@@ -123,7 +113,6 @@ struct GroupWeekGrid: View {
         }
         .lineLimit(1)
         .minimumScaleFactor(0.5)
-        // Seven columns of numbers fit a phone only up to here.
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .padding(12)
         .themePanel()
@@ -133,8 +122,6 @@ struct GroupWeekGrid: View {
 
     private func rowName(_ subject: MatchStandingSubject) -> some View {
         let isYou = subject == match.viewerSubject
-        // Doubles rows say whose team, not both full names, which would take
-        // the days' width; the scoreboard above names the teams.
         let name = match.format == .doubles ? (isYou ? "Your team" : "Their team") : match.name(of: subject)
         return Text(name)
             .font(.subheadline.weight(isYou ? .bold : .regular))
@@ -193,7 +180,6 @@ struct GroupWeekGrid: View {
         return String(weekdayText(match.calendarDays[ordinal - 1], locale: locale).prefix(1))
     }
 
-    /// "Day 1, Thursday. Sam 448, won the day. You 421."
     private func dayLabel(
         _ ordinal: Int,
         subjects: [MatchStandingSubject],

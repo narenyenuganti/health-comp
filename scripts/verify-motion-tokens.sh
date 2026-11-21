@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# settle and grow must go through View.moving, or Reduce Motion keeps them.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 

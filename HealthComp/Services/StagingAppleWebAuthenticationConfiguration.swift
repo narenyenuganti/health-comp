@@ -11,8 +11,6 @@ struct StagingAppleWebAuthenticationConfiguration: Equatable, Sendable {
         redirectURL = URL(string: "healthcomp-staging-auth://apple/callback")!
     }
 
-    // Eligibility only: this does not enable a UI, create an SDK client, or prove
-    // the hosted provider and paired deletion flow have been qualified.
     static func parse(_ infoDictionary: [String: Any]) -> Self? {
 #if HEALTHCOMP_STAGING
         guard infoDictionary["CFBundleIdentifier"] as? String
@@ -32,9 +30,6 @@ struct StagingAppleWebAuthenticationConfiguration: Equatable, Sendable {
 #endif
     }
 
-    // Call only for the callback delivered to the owning browser operation.
-    // PKCE, cancellation, replay and server identity checks belong to that
-    // operation; a well-shaped URL alone must never import an Auth session.
     func authorizationCode(from callbackURL: URL) throws -> String {
         guard let components = URLComponents(
             url: callbackURL,
@@ -60,9 +55,6 @@ struct StagingAppleWebAuthenticationConfiguration: Equatable, Sendable {
         return code
     }
 
-    // Shape/correlation only. The caller owns the pending operation and must
-    // discard it on completion/cancellation. This does not prove deletion or
-    // consume the server claim, and must never be used to import an Auth session.
     func validateDeletionCallback(_ callbackURL: URL, requestID: String) throws {
         guard requestID.utf8.count == 64,
               requestID.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),

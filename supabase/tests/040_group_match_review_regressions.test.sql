@@ -1,5 +1,4 @@
 begin;
--- Included inside each group test transaction; no product fixture state persists.
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
@@ -44,7 +43,6 @@ begin
  update public.competitions set start_day=current_date-days_ago,invitation_expires_at=now()-interval '20 days',
    best_available_deadline=(current_date-days_ago+9)::timestamp at time zone 'UTC' where id=cid;
 end; $$;
--- Real submission path: fixed semantic identity and evaluation time allow exact replay.
 create function pg_temp.score(cid uuid,person integer,day integer,rev bigint,points integer default 30000) returns jsonb language plpgsql as $$
 declare evaluated timestamptz; d text;
 begin
@@ -57,7 +55,6 @@ begin
 end; $$;
 
 select pg_temp.as_user(1);
--- Invalid structures must have the same error for valid, blocked and nonexistent links.
 insert into private.challenge_links(profile_id,code) values(pg_temp.pid(2),'AAAAAAAAAAAAAAAAAAAAAA');
 insert into private.account_blocks values(pg_temp.pid(2),pg_temp.pid(1),now());
 select throws_ok($$select public.create_group_match('doubles',jsonb_build_array(
@@ -95,7 +92,6 @@ select pg_temp.as_user(1);
 select throws_ok($$select public.leave_group_match(pg_temp.gid('prestart'))$$,'P0001','leave_not_allowed','leave before day one refused');
 select pg_temp.as_user(8);
 select throws_ok($$select public.accept_group_match(pg_temp.gid('prestart'))$$,'P0001','group_match_unavailable','nonparticipant accept refused before lineup locks');
--- An outsider can neither read nor change someone else's group.
 select throws_ok($$select public.preview_group_match(pg_temp.gid('prestart'))$$,'P0001','group_match_unavailable','nonparticipant preview refused');
 select throws_ok($$select public.leave_group_match(pg_temp.gid('prestart'))$$,'P0001','group_match_unavailable','nonparticipant leave refused');
 select throws_ok($$select public.decline_group_match(pg_temp.gid('prestart'))$$,'P0001','group_match_unavailable','nonparticipant decline refused');
@@ -115,11 +111,9 @@ select private.enqueue_reaction_notification(pg_temp.gid('live'),pg_temp.pid(1),
 select private.allocate_competition_server_seq(pg_temp.gid('live'),'group_reaction_changed',pg_temp.pid(3),now());
 select private.enqueue_reaction_notification(pg_temp.gid('live'),pg_temp.pid(1),pg_temp.pid(3));
 select is((select count(*) from private.competition_notification_work where competition_id=pg_temp.gid('live') and kind='reaction' and state='pending'),1::bigint,'muted reaction does not silence another player');
--- An accepted invitation in a never-scheduled group does not establish a past-opponent exemption.
 select pg_temp.make_match('link-cancel'); select pg_temp.as_user(2); select public.accept_group_match(pg_temp.gid('link-cancel'));
 select pg_temp.as_user(1); select public.cancel_group_match(pg_temp.gid('link-cancel'));
 update private.challenge_links set code='CCCCCCCCCCCCCCCCCCCCCC' where profile_id=pg_temp.pid(2);
--- Use a link-created lineup with fresh profiles, so the earlier live match does not exempt the pair.
 select pg_temp.as_user(4);
 insert into private.challenge_links(profile_id,code) values(pg_temp.pid(5),'DDDDDDDDDDDDDDDDDDDDDD');
 insert into gm values('link-only',(public.create_group_match('three_way',jsonb_build_array(
@@ -131,7 +125,6 @@ select ok(private.challenge_link_revoked_v1(pg_temp.pid(4),pg_temp.pid(5)),'neve
 select is((public.create_group_match('three_way',jsonb_build_array(
  jsonb_build_object('kind','human','profile_id',pg_temp.pid(4)),jsonb_build_object('kind','human','challenge_link_code','DDDDDDDDDDDDDDDDDDDDDD'),jsonb_build_object('kind','human','profile_id',pg_temp.pid(6))),'UTC',md5('link-only-key')::uuid)->>'competition_id')::uuid,pg_temp.gid('link-only'),'same create key returns original even after link reset');
 select throws_ok($$select public.create_group_match('three_way',pg_temp.lineup(3,3),'UTC',md5('link-only-key')::uuid)$$,'P0001','idempotency_conflict','same key with different setup refused');
--- Leaving the only remaining unstable person after day seven finalizes immediately.
 select pg_temp.make_match('ready'); select pg_temp.make_live(pg_temp.gid('ready'),8);
 select pg_temp.score(pg_temp.gid('ready'),n,d,d) from generate_series(1,2) n,generate_series(1,7) d;
 select pg_temp.as_user(1);
@@ -152,7 +145,6 @@ select pg_temp.as_user(3); select public.leave_group_match(pg_temp.gid('all-left
 select ok(not exists(select 1 from public.competition_group_results where competition_id=pg_temp.gid('all-left')),'all-left live week does not finalize early');
 select private.finalize_due_competitions_batch(100,now()+interval '7 days');
 select is((select finalization_basis from public.competition_group_results where competition_id=pg_temp.gid('all-left')),'stable','hosted batch publishes all-left group at week end before fallback deadline');
--- Closed-before-start states stay hidden even if they once had a future schedule.
 select pg_temp.make_match('closed-cancelled'); select pg_temp.accept_all(pg_temp.gid('closed-cancelled'));
 select pg_temp.as_user(1); select public.cancel_group_match(pg_temp.gid('closed-cancelled'));
 select pg_temp.make_match('closed-withdraw'); select pg_temp.accept_all(pg_temp.gid('closed-withdraw'));
@@ -164,7 +156,6 @@ select ok(not exists(select 1 from jsonb_array_elements(public.list_group_matche
  (pg_temp.gid('closed-cancelled')::text,pg_temp.gid('closed-withdraw')::text,pg_temp.gid('closed-expired')::text)),'all closed-before-start lifecycles with blocks stay hidden');
 select ok(exists(select 1 from jsonb_array_elements(public.list_group_matches()->'matches') m where m->>'competition_id'=pg_temp.gid('live')::text),'an actually started match stays available under the ruling');
 delete from private.account_blocks;
--- The 14 most recent distinct available dates exclude the oldest seven-date cohort.
 select pg_temp.make_match('base-old'); select pg_temp.make_live(pg_temp.gid('base-old'),21);
 update public.competitions set best_available_deadline=now()+interval '1 day' where id=pg_temp.gid('base-old');
 select pg_temp.score(pg_temp.gid('base-old'),1,d,d,10000) from generate_series(1,7) d;
@@ -177,7 +168,6 @@ select pg_temp.make_match('base-new'); select pg_temp.make_live(pg_temp.gid('bas
 select pg_temp.score(pg_temp.gid('base-new'),1,d,d,40000) from generate_series(1,7) d;
 select private.finalize_competition_locked(pg_temp.gid('base-new'),now()+interval '3 days');
 select is(private.group_player_baseline(pg_temp.pid(1)),300,'baseline uses 14 newest distinct dates, not 21 dates');
--- The last live account deletion banks the last person's scores before closing the match.
 select pg_temp.as_user(4);
 insert into gm values('delete-last',(public.create_group_match('three_way',jsonb_build_array(
  jsonb_build_object('kind','human','profile_id',pg_temp.pid(4)),jsonb_build_object('kind','human','challenge_link_code','EEEEEEEEEEEEEEEEEEEEEE'),jsonb_build_object('kind','bot','bot_mode','pacer')),'UTC',extensions.gen_random_uuid())->>'competition_id')::uuid);

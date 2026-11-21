@@ -3,7 +3,6 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
 create function pg_temp.pid(n integer) returns uuid language sql immutable as $$ select md5('wake-profile-'||n)::uuid $$;
--- Ignore only realtime.send's transport-generated id when checking the payload.
 create temporary view wakes as select payload - 'id' as payload,event,topic,private
 from realtime.messages where topic in (select 'profile:'||pg_temp.pid(n)::text from generate_series(1,6) n);
 create function pg_temp.as_user(n integer) returns void language sql as $$
@@ -50,10 +49,8 @@ reset role;
 select ok((select bool_and(payload='{"server_cursor_hint":"0"}'::jsonb
   and event='competition_changed' and private) from wakes),'wake event and payload exact existing contract');
 select is((select count(*) from public.competition_change_log),(select n from before_changes),'friends never add change-log entries');
--- Deactivation notifies each active relationship counterpart once, never reports.
 insert into private.friendships values(least(pg_temp.pid(1),pg_temp.pid(3)),greatest(pg_temp.pid(1),pg_temp.pid(3)),now());
 insert into private.friend_requests values(pg_temp.pid(1),pg_temp.pid(3),now()),(pg_temp.pid(4),pg_temp.pid(1),now()),(pg_temp.pid(1),pg_temp.pid(5),now());
--- Corrupt fixture state bypasses the purge only to test its active-recipient filter.
 alter table public.profiles disable trigger purge_friends_on_profile_deactivation;
 update public.profiles set state='deleting',username=null where id=pg_temp.pid(5);
 alter table public.profiles enable trigger purge_friends_on_profile_deactivation;
@@ -63,7 +60,6 @@ select is(pg_temp.wake_count(3),1::bigint,'deactivation deduplicates friendship 
 select is(pg_temp.wake_count(4),1::bigint,'deactivation wakes incoming requester');
 select is(pg_temp.wake_count(5),0::bigint,'deactivation never wakes inactive counterpart');
 select is(pg_temp.wake_count(6),0::bigint,'deactivation never wakes report-only counterpart');
--- Each new RPC is actually denied to both disallowed roles, beyond ACL inspection.
 create temporary table calls(sql text);
 insert into calls values('get_friend_settings()'),('set_username(''alice'')'),('username_available(''alice'')'),
   ('update_friend_settings(true,''friends_only'')'),('search_people(''alice'')'),('list_friends()'),

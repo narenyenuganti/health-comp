@@ -1,5 +1,4 @@
 begin;
--- Included inside each group test transaction; no product fixture state persists.
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
@@ -44,7 +43,6 @@ begin
  update public.competitions set start_day=current_date-days_ago,invitation_expires_at=now()-interval '20 days',
    best_available_deadline=(current_date-days_ago+9)::timestamp at time zone 'UTC' where id=cid;
 end; $$;
--- Real submission path: fixed semantic identity and evaluation time allow exact replay.
 create function pg_temp.score(cid uuid,person integer,day integer,rev bigint,points integer default 30000) returns jsonb language plpgsql as $$
 declare evaluated timestamptz; d text;
 begin
@@ -56,7 +54,6 @@ begin
    case when points is not null then least(points,20000) end,case when points is not null then greatest(points-20000,0) end,case when points is not null then 0 end,case when points is null then 'sourceDataUnavailable' else 'available' end,'healthcomp.activity-score.v1',d);
 end; $$;
 
--- A four-way has available zero, accepted unavailable, missing, after-leave and bot days.
 select pg_temp.make_match('four','four_way',3);
 select pg_temp.as_user(1);
 select is(public.preview_group_match(pg_temp.gid('four'))->'result','null'::jsonb,'unfinished result stays null');
@@ -69,14 +66,12 @@ select is(pg_temp.score(pg_temp.gid('four'),2,1,1,30000)->>'disposition','append
 select is(pg_temp.score(pg_temp.gid('four'),2,2,2,null)->>'disposition','appended','unavailable human score accepted');
 select is(private.finalize_competition_locked(pg_temp.gid('four'),now()+interval '10 days')->>'basis','best_available','four-way finalized with leaver and missing days');
 
--- Doubles keeps the team standings and individual weekly/day totals separately.
 select pg_temp.make_match('doubles','doubles',3);
 select pg_temp.make_live(pg_temp.gid('doubles'),8);
 update public.competition_seats set bot_daily_totals=array[100,100,100,100,100,100,100] where competition_id=pg_temp.gid('doubles') and kind='bot';
 select pg_temp.score(pg_temp.gid('doubles'),n,d,d,n*10000) from generate_series(1,3) n,generate_series(1,7) d;
 select is(private.finalize_competition_locked(pg_temp.gid('doubles'),now()+interval '2 days')->>'basis','best_available','doubles finalized');
 create temporary table stored_results as select * from public.competition_group_results;
--- A later change to live bot inputs cannot change a finished result projection.
 update public.competition_seats set bot_daily_totals=array[0,0,0,0,0,0,0] where kind='bot';
 select pg_temp.as_user(1);
 set local role authenticated;
@@ -136,7 +131,6 @@ select ok((select bool_and(r.immutable_hash=extensions.digest(convert_to('health
 select ok((select bool_and((match->'result')-array['version','seats']=(to_jsonb(r)-'frozen_payload')||jsonb_build_object('server_seq',r.server_seq::text,'immutable_hash',encode(r.immutable_hash,'hex')))
  from read_models join public.competition_group_results r on r.competition_id=(match->>'competition_id')::uuid),'every pre-existing result field stays byte-for-byte equivalent');
 set constraints all immediate;
--- Installed builds decode each reaction against exactly seven keys; a later column must not reach them.
 insert into private.competition_reactions(competition_id,author_profile_id,target_profile_id,day_ordinal,reaction)
   values (pg_temp.gid('doubles'),pg_temp.pid(1),pg_temp.pid(2),1,'clap');
 alter table private.competition_reactions add column probe_later_column integer;

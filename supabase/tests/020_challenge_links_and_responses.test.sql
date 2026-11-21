@@ -3,8 +3,6 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
 
--- Grants: every new RPC is authenticated-only; private helpers and the link
--- table are unreachable from API roles.
 select is((
   select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname in ('accept_competition_challenge',
@@ -29,7 +27,6 @@ select ok(not has_table_privilege('authenticated', 'private.challenge_links', 's
   and not has_table_privilege('service_role', 'private.challenge_links', 'select'),
   'challenge links are not readable by API roles');
 
--- A Naren (sender), B Maya (recipient), C Third, D Dana, E Eve.
 insert into auth.users (id) values
   ('c7000000-0000-4000-8000-000000000001'), ('c7000000-0000-4000-8000-000000000002'),
   ('c7000000-0000-4000-8000-000000000003'), ('c7000000-0000-4000-8000-000000000004'),
@@ -40,7 +37,6 @@ insert into public.profiles (id, auth_user_id, display_name, state) values
   ('c7100000-0000-4000-8000-000000000003', 'c7000000-0000-4000-8000-000000000003', 'Third', 'active'),
   ('c7100000-0000-4000-8000-000000000004', 'c7000000-0000-4000-8000-000000000004', 'Dana', 'active'),
   ('c7100000-0000-4000-8000-000000000005', 'c7000000-0000-4000-8000-000000000005', 'Eve', 'active');
--- Naren has two installations; everyone else one. All run a challenge-capable app.
 insert into public.device_installations (id, profile_id, installation_id, apns_token, environment, state, supports_challenges) values
   ('c7200000-0000-4000-8000-000000000001', 'c7100000-0000-4000-8000-000000000001', 'c7300000-0000-4000-8000-000000000001', repeat('a1', 32), 'sandbox', 'active', true),
   ('c7200000-0000-4000-8000-000000000006', 'c7100000-0000-4000-8000-000000000001', 'c7300000-0000-4000-8000-000000000006', repeat('a6', 32), 'sandbox', 'active', true),
@@ -68,11 +64,9 @@ create function pg_temp.keys(value jsonb) returns text[] language sql as $$
   select array_agg(k order by k) from jsonb_object_keys(value) k;
 $$;
 
--- Eve challenges Third before Eve's account starts deleting (lease and preview below).
 insert into r (label, id) values ('ec1', pg_temp.challenge('c7000000-0000-4000-8000-000000000005',
   'c7100000-0000-4000-8000-000000000003', 'ce', 'c7400000-0000-4000-8000-0000000000e1'));
 
--- Challenge links.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c7000000-0000-4000-8000-000000000002"}', true);
 insert into r (label, v) values ('maya-link', public.get_my_challenge_link());
@@ -106,7 +100,6 @@ select throws_ok($$select public.resolve_challenge_link((select v->>'code' from 
   'P0001', 'recipient_unavailable', 'an inactive owner''s link is unavailable');
 reset role;
 
--- Create: Naren challenges Maya; the recipient is told once.
 insert into r (label, id) values ('ab1', pg_temp.challenge('c7000000-0000-4000-8000-000000000001',
   'c7100000-0000-4000-8000-000000000002', 'c1', 'c7400000-0000-4000-8000-000000000001'));
 select is(pg_temp.challenge('c7000000-0000-4000-8000-000000000001',
@@ -129,7 +122,6 @@ insert into r (label, v) select 'ab1-preview', jsonb_build_object('competition_i
   'time_zone_identifier', 'America/Los_Angeles', 'expires_at', c.invitation_expires_at)
 from public.competitions c where c.id = (select id from r where label = 'ab1');
 
--- Preview: recipient only.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c7000000-0000-4000-8000-000000000002"}', true);
 select is(public.preview_competition_invite(decode(repeat('c1', 32), 'hex')),
@@ -159,7 +151,6 @@ select throws_ok($$select public.preview_competition_invite(decode(repeat('c1', 
   'P0001', 'cannot_claim_own_invite', 'the creator previewing their own link is told so');
 select is(public.list_challenges()->'incoming', '[]'::jsonb, 'the sender has nothing incoming');
 
--- Accept in the app, without the token.
 select throws_ok($$select public.accept_competition_challenge((select id from r where label = 'ab1'))$$,
   'P0001', 'cannot_claim_own_invite', 'the creator cannot accept their own challenge');
 select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c7000000-0000-4000-8000-000000000003"}', true);
@@ -188,14 +179,12 @@ select is((select count(*) from public.competition_change_log
   (select next_server_seq - 1 from public.competitions where id = (select id from r where label = 'ab1')),
   'accept by id keeps a gap-free server cursor');
 
--- Overlap: a scheduled match blocks new challenges and legacy reciprocal accepts.
 select throws_ok($$select pg_temp.challenge('c7000000-0000-4000-8000-000000000001',
   'c7100000-0000-4000-8000-000000000002', 'c4', 'c7400000-0000-4000-8000-000000000004')$$,
   'P0001', 'active_match_exists', 'create is blocked while the pair has a scheduled match');
 select throws_ok($$select pg_temp.challenge('c7000000-0000-4000-8000-000000000002',
   'c7100000-0000-4000-8000-000000000001', 'c5', 'c7400000-0000-4000-8000-000000000005')$$,
   'P0001', 'active_match_exists', 'the other direction is blocked too');
--- A pre-existing reciprocal pending challenge (created before this rule).
 set constraints all deferred;
 insert into public.competitions (id, creator_profile_id, invited_profile_id, time_zone_identifier,
   scoring_policy_identity, lifecycle, invitation_expires_at)
@@ -225,7 +214,6 @@ reset role;
 select is((select count(*) from private.competition_notification_work
   where competition_id = 'c7500000-0000-4000-8000-000000000001'), 0::bigint,
   'withdrawing a challenge tells no one');
--- Synthetic time boundary: the match's Day 7 has passed (tallying).
 update public.competitions set start_day = start_day - 8
 where id = (select id from r where label = 'ab1');
 select lives_ok($$insert into r (label, id) values ('ab2', pg_temp.challenge('c7000000-0000-4000-8000-000000000001',
@@ -248,7 +236,6 @@ select throws_ok($$select public.accept_competition_challenge((select id from r 
   'P0001', 'invite_unavailable', 'a cancelled challenge cannot be accepted');
 reset role;
 
--- Decline: Naren challenges Third, who declines.
 insert into r (label, id) values ('ac1', pg_temp.challenge('c7000000-0000-4000-8000-000000000001',
   'c7100000-0000-4000-8000-000000000003', 'd1', 'c7400000-0000-4000-8000-000000000011'));
 set local role authenticated;
@@ -291,7 +278,6 @@ select is(public.list_challenges()->'closed',
   'the creator lists the decline with names only');
 reset role;
 
--- Expired: Naren challenges Third again; it lapses before an answer.
 insert into r (label, id) values ('ac2', pg_temp.challenge('c7000000-0000-4000-8000-000000000001',
   'c7100000-0000-4000-8000-000000000003', 'd2', 'c7400000-0000-4000-8000-000000000012'));
 update public.competition_invites set created_at = now() - interval '25 hours', expires_at = now() - interval '1 second'
@@ -307,7 +293,6 @@ select throws_ok($$select public.preview_competition_invite(decode(repeat('d2', 
 select is(public.list_challenges()->'incoming', '[]'::jsonb, 'an expired challenge is not listed');
 reset role;
 
--- Mute: Dana muted Third, so Third's decline is suppressed for Dana.
 insert into r (label, id) values ('dc1', pg_temp.challenge('c7000000-0000-4000-8000-000000000004',
   'c7100000-0000-4000-8000-000000000003', 'd3', 'c7400000-0000-4000-8000-000000000013'));
 insert into private.competition_notification_mutes (profile_id, opponent_profile_id)
@@ -320,7 +305,6 @@ reset role;
 select results_eq($$select state from pg_temp.challenge_work((select id from r where label = 'dc1'), 'challenge_declined')$$,
   $$values ('suppressed'::text)$$, 'a muted creator''s decline notification is suppressed');
 
--- Cancel Match: Naren challenges Third; Third accepts, then cancels before Day 1.
 insert into r (label, id) values ('ac3', pg_temp.challenge('c7000000-0000-4000-8000-000000000001',
   'c7100000-0000-4000-8000-000000000003', 'd4', 'c7400000-0000-4000-8000-000000000014'));
 set local role authenticated;
@@ -352,7 +336,6 @@ select is((select jsonb_agg(jsonb_build_array(e->>'kind', e->'other'->>'display_
   'the other participant lists the cancel, newest first');
 reset role;
 
--- Cancel Match by the creator, in a relationship that is only cancelled.
 insert into r (label, id) values ('db1', pg_temp.challenge('c7000000-0000-4000-8000-000000000004',
   'c7100000-0000-4000-8000-000000000002', 'd5', 'c7400000-0000-4000-8000-000000000015'));
 set local role authenticated;
@@ -366,7 +349,6 @@ select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c7000000
 select is((select display_name from public.profiles where id = 'c7100000-0000-4000-8000-000000000004'),
   'Dana', 'a counterpart in a cancelled-only relationship stays visible');
 reset role;
--- An account-deletion cancel leaves an anonymized counterpart (no closed_by).
 insert into public.profiles (id, auth_user_id, display_name, state, anonymized_at)
 values ('c7100000-0000-4000-8000-000000000009', null, 'Former competitor', 'anonymized', now());
 set constraints all deferred;
@@ -384,7 +366,6 @@ select is((select display_name from public.profiles where id = 'c7100000-0000-40
   'Former competitor', 'an anonymized counterpart of a deletion cancel stays visible');
 reset role;
 
--- The account-deletion cancel (a direct lifecycle update) drops the schedule too.
 insert into r (label, id) values ('ae1', pg_temp.challenge('c7000000-0000-4000-8000-000000000001',
   'c7100000-0000-4000-8000-000000000004', 'd7', 'c7400000-0000-4000-8000-000000000017'));
 set local role authenticated;
@@ -397,7 +378,6 @@ select ok((select start_day is null and best_available_deadline is null
   from public.competitions where id = (select id from r where label = 'ae1')),
   'any cancel of a scheduled match clears its schedule');
 
--- Cancel windows: Day 1 has started, and a completed match.
 insert into r (label, id) values ('ad1', pg_temp.challenge('c7000000-0000-4000-8000-000000000001',
   'c7100000-0000-4000-8000-000000000004', 'd6', 'c7400000-0000-4000-8000-000000000016'));
 set local role authenticated;
@@ -416,7 +396,6 @@ select throws_ok($$select public.cancel_competition((select id from r where labe
   'P0001', 'cancel_not_allowed', 'a completed match cannot be cancelled');
 reset role;
 
--- Lease: stale challenge pushes are discarded; leased items keep seven keys.
 set local role service_role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 insert into r (label, v) values ('lease', public.lease_competition_notification_work(100, 60));

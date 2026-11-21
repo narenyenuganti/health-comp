@@ -1,0 +1,38 @@
+# ADR-0010: Design System, Motion, Sound, and Ceremonies
+
+- **Status:** Accepted
+- **Date:** 2026-11-21
+- **Scope:** `HealthComp/App/Theme.swift`, `HealthComp/App/Motion.swift`, `HealthComp/Services/Sounds.swift`, `HealthComp/App/HealthCompApp.swift`, `HealthComp/Features/Competition/*`
+
+## Context
+
+HealthComp uses a strict semantic color and motion language ("L2 · Ring code") shared across iPhone, Apple Watch, widgets, and cinematic ceremonies (Launch handoff, Versus intro, Belt ceremony, Judges' reveal). Accessibility (Dynamic Type, Increase Contrast, Reduce Motion, VoiceOver) and XCTest accessibility audits impose specific layout and animation invariants.
+
+## Decisions
+
+### 1. Semantic Palette (`Theme.swift`) and Typography
+- Color always means *you*: Move, Exercise, Stand (and Sleep Beta's `Theme.sleep` indigo) appear only on your own ring detail, and amber (`Theme.you` / `Theme.youFill`) denotes your score, wins, and brand highlights. Opponents, primary buttons, and destructive footer buttons stay neutral so no color carries two meanings (red is reserved for Move).
+- Light mode darkens `Theme.you` (`0x8F5C00`) to preserve 4.5:1 contrast on ground/panel/control; `Increase Contrast` steps secondary greys and hairlines to stronger values. `Theme.beltWell` uses dark ground in light mode and panel in dark mode so the card's top edge stays visible.
+- Scoreboard numerals use `UIFont.preferredFont(forTextStyle: .largeTitle).withSize(size)` rather than `.system` because `.system` falls back to SF Compact instead of SF Pro Compressed.
+- `BrandMark` lives in a `100×80` box with a 12° slash (`SlantedBar`); `LaunchMark` matches the `90 pt` launch-screen image width and aligns its 54%-across slash onto Home's hero scoreboard slash during `LaunchHandoff`.
+
+### 2. Motion Tokens (`Motion.swift`) and Audio (`Sounds.swift`)
+- `Motion.swift` is SwiftUI-only so every target (app, widgets, watch) shares the same tokens: `grow` (brand overshoot curve, geometry only, never color), `settle` (zero-bounce spring; nothing may wait on its tail), `fade`, `press`, `late` (`0.15s` ease-out delayed `0.2s`), `beat(_:)` (`150ms` staggered first-result clock), `pendingOpacity = 0.02` (invisible-looking while remaining hittable and in the accessibility tree; `0` and `0.001` break hit-testing), and `rain = 2.3s`.
+- `Motion.settle` and `Motion.grow` must always go through `View.moving(_:value:)` (enforced by `scripts/verify-motion-tokens.sh`) so Reduce Motion snaps them cleanly to their final state; `fade` and `press` remain active under Reduce Motion.
+- `.scoreRoll(_:id:)` keys on `(match, day)` or lead side so switching matches, crossing midnight, or switching days never animates an unrelated score rolling down to zero. Animations on Home/Result/Detail key only on derived structural state—never on `CompetitionPublication` or `LocalCompetitionPresentation`, whose `evaluatedAt` changes on every publish and would animate time strings.
+- `Sounds.swift` uses ambient audio (respecting silent mode and allowing background music to continue), preloads after the first frame (`Sounds.prepare()`), shifts playback earlier by each file's `accent` offset (compensating for cold-load latency), squares the Settings volume slider for perceptual linearity, mutes during test runs, and stops pending sounds immediately on animation skip.
+
+### 3. Editorial Ceremonies (Sanctioned Timing Exceptions)
+- `CompetitionVersusIntro.swift`, `GroupMatchVersusIntro.swift`, `CompetitionBeltCeremony.swift`, `CompetitionJudgesReveal.swift`:
+  - Cinematic clocks (`VersusClock`, belt clip beat JSON timings, judges' scorecard/ring clock) are explicitly sanctioned exceptions to keeping all timing numbers inside `Motion.swift`.
+  - All ceremonies render on black regardless of system color scheme, autoplay once per match per device (marked via `CompetitionMotionSeen`), are gated off in Test Labs unless explicitly enabled via launch arguments (`--versus-intro`, `--belt-ceremonies`, `--judges-decision`), skip cleanly on tap or backgrounding, respect Reduce Motion (composed stills/fades), and replace timed playback with a delayed spoken announcement under VoiceOver (delayed ~`0.75s` after navigation push so VoiceOver's screen-change announcement does not cut it off).
+  - `CompetitionBeltCeremonyVideo` uses `AVPlayerLayer` (not `AVPlayerViewController`) with `player.isMuted = true` so no system controls appear and the user's audio session stays untouched; timings track player playback time so slow starts never desync haptics/audio from frames.
+  - `CompetitionVersusIntro` mounts on the `NavigationStack` (not a destination) so it covers the navigation bar, decides photos once at start, caps Dynamic Type at `.accessibility2` so names stay clear of the 12° slash, and keeps the giant cropped initial clear of text labels.
+  - `CompetitionResultView` writes its first-view seen mark *on leaving* (not on appear) so the Verdict animation does not terminate itself mid-play; a full-screen ceremony cover counts as leaving only after Verdict starts.
+
+### 4. Charts, Score Formatting, Reactions, and Recap Sharing
+- `CompetitionDateFormatting.swift`: Foundation-only so `scripts/test-competition-local-date-formatting.sh` compiles it standalone. Displayed margins always derive from the *shown* rounded numbers (`competitionDisplayedMargin`), switching from whole points to 2–4 decimals only when whole points would hide a decided winner; `competitionRoundedParts` assigns rounding remainders to the largest raw part so ring parts always sum to the displayed total.
+- `CompetitionWeekChart.swift`, `ActivityRingsView.swift`: Week bars animate width (never scale) to preserve the 12° slanted edge; the lead line enforces a `50 pt` minimum scale so small margins never read as blowouts and shifts moment badges clear of lead-change slashes (`competitionLeadMomentY`); "What it takes" suggests Move and Exercise only (never Stand), rounds up so following it always takes the lead, and requires accepted and latest snapshots to match so it never asks for activity already completed.
+- `CompetitionReactions.swift`: `CompetitionReactionsSeen` encodes only `seenAt` (making the `RawRepresentable` wrapper `Codable` would recurse through `rawValue`). Reaction chips use a custom `CompetitionReactionChipStyle` (`PrimitiveButtonStyle`) that fires on tap only and cancels on drag, because bottom-sheet drags do not cancel standard `Button` touches. `CompetitionReactionEmoji` renders glyphs as `Image` and `CompetitionReactionLabel` uses `.kerning` instead of `.tracking` to avoid false positives in XCTest's text-clipping audit.
+- `CompetitionRecapView.swift`: Recap cards and transparent stickers render at fixed sizes independent of Dynamic Type, generate PNG bytes on Share tap (avoiding frame drops during sheet slide-up), pin `UITraitCollection` colors on render, and present `UIActivityViewController` directly because SwiftUI's `ShareLink` dismissed the enclosing recap sheet after Save Image. Month/year recap summaries show at most 5 rival rows so a year recap does not duplicate History.
+- `CompetitionDetailView.swift`, `CompetitionSharingView.swift`: Segmented controls pair weight with an outlined thumb because `ground` on `control` is only 1.2:1; Home uses a plain `VStack` (so bidirectional scroll works) with custom VoiceOver-accessible swipe-to-archive rows and separates the profile-photo tap from the card center so activating a card opens the match rather than the user's profile; several responsive rows deliberately choose `AnyLayout` over `ViewThatFits` because XCTest's Dynamic Type audit flags text swapped out by `ViewThatFits`.

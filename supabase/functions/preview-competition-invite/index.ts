@@ -40,8 +40,6 @@ function isPreviewRow(value: unknown): value is InvitePreviewRow {
     typeof row.expires_at === "string";
 }
 
-// Recipient-only preview of one invite link: who sent it, the sender's
-// calendar and when it expires. Every unavailable case is one 404.
 export async function previewCompetitionInviteHandler(
   request: Request,
   dependencies: HandlerDependencies = defaultDependencies,

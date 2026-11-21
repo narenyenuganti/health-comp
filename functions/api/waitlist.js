@@ -1,7 +1,3 @@
-// POST /api/waitlist: emails each homepage signup to the inbox through Resend.
-// RESEND_API_KEY is a secret in the Cloudflare Pages project settings.
-// ponytail: the inbox is the list and the honeypot is the only bot filter; add a
-// table or Cloudflare rate limiting if spam or volume ever outgrows Resend's free tier.
 export async function onRequestPost({ request, env }) {
   const form = await request.formData();
   if (form.get("_honey")) return Response.json({ ok: true });

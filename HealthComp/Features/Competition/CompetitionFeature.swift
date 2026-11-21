@@ -4,8 +4,6 @@ import Foundation
 
 @Reducer
 struct CompetitionFeature {
-    /// Where a challenge is being created: the + sheet, or one result
-    /// screen's rematch. Each slot keeps its own key, status and link.
     enum InviteSlot: Hashable, Sendable {
         case sheet
         case rematch(of: CompetitionID)
@@ -13,7 +11,6 @@ struct CompetitionFeature {
 
     enum InviteCreationFailure: Equatable, Sendable {
         case connection, unavailable, recipientGone, alreadyPending
-        /// The server knew of a challenge or match with them first.
         case conflict
     }
 
@@ -36,8 +33,6 @@ struct CompetitionFeature {
         case failed
     }
 
-    /// The + sheet's person. Someone found by their challenge link is kept
-    /// as the link's code: the link never gives out their account id.
     struct InviteRecipient: Equatable, Sendable {
         let target: CompetitionInviteRecipient
         let displayName: String
@@ -52,8 +47,6 @@ struct CompetitionFeature {
             self.displayName = displayName
         }
 
-        /// Only an account id lets the sheet see an existing challenge or
-        /// match first; for a link, the server says so on Send.
         var profileID: UUID? {
             if case let .profile(id) = target { id } else { nil }
         }
@@ -66,9 +59,7 @@ struct CompetitionFeature {
     enum ChallengeSheetStatus: Equatable, Sendable {
         case ready, creating
         case alreadyChallenged(LocalCompetitionPresentation)
-        /// They already challenged you.
         case challengedYou(LocalCompetitionPresentation)
-        /// You already have a match with them that hasn't ended.
         case inMatch(LocalCompetitionPresentation)
         case sent(
             challengeID: CompetitionID,
@@ -81,7 +72,6 @@ struct CompetitionFeature {
     enum CompetitionRematchState: Equatable, Sendable {
         case available, sending
         case sent(challengeID: CompetitionID, expiresAt: Date?, link: InviteLinkState?)
-        /// The other person rematched you; it opens their challenge.
         case received(LocalCompetitionPresentation)
         case next(LocalCompetitionPresentation)
         case alreadyChallenged(LocalCompetitionPresentation)
@@ -94,7 +84,6 @@ struct CompetitionFeature {
         case sending
         case sent(Date)
         case failed
-        /// The server said no: they updated, or the result no longer waits on them.
         case notNeeded(Date)
     }
 
@@ -116,44 +105,31 @@ struct CompetitionFeature {
         var mutedOpponentIdentities: Set<String>
         var muteOpponentIdentitiesInFlight: Set<String>
         var mutePreferencesLoadFailed: Bool
-        /// Per person: the `isMuted` value that failed to save.
         var muteSaveFailures: [String: Bool]
         var notificationAuthorizationState:
             CompetitionNotificationAuthorizationState?
         var notificationAuthorizationRequestIsInFlight: Bool
         var inviteCreations: [InviteSlot: InviteCreation]
         var inviteLinks: [CompetitionID: InviteLinkState]
-        // The + sheet's person; a rematch never writes these.
         var inviteRecipient: InviteRecipient?
         var inviteRecipientCode = ""
         var inviteRecipientStatus: InviteRecipientStatus = .idle
-        /// Sleep beta: the + sheet's format is Rings + Sleep.
         var inviteWithSleep = false
-        /// The signed-in profile, so Home can draw its initial.
         var ownProfile: AuthenticatedProfile?
-        /// Your reusable challenge link, once loaded.
         var challengeLink: URL?
         var challengeLinkLoadFailed = false
         var challengeLinkIsResetting = false
         var challengeLinkResetFailed = false
-        /// People you blocked, newest first; nil until Account loads them.
         var blockedPeople: [AuthenticatedProfile]?
-        /// Careers people share with you, from the last time their page opened.
         var careers: [UUID: CompetitionCareer] = [:]
-        /// Nil until the server answers, which hides the switch.
         var sharesCareer: Bool?
         var isSavingCareerSharing = false
         var unblocksInFlight: Set<UUID> = []
-        /// The person whose last Unblock failed; the error shows in their row.
         var unblockFailed: UUID?
-        /// Per match; not persisted.
         var nudges: [CompetitionID: NudgeStatus] = [:]
-        /// Reactions being saved: the kind being set, or nil while removing.
         var pendingReactions: [CompetitionReactionKey: CompetitionReactionKind?] = [:]
         var reactionFailures: Set<CompetitionReactionKey> = []
-        /// Photos you may see, by profile id; anyone missing shows initials.
         var profilePhotos: [UUID: ProfilePhoto] = [:]
-        /// People whose photo you reported on this iPhone.
         var reportedPhotoOwners: Set<UUID> = []
         var photoReportsInFlight: Set<UUID> = []
         var ownPhoto = OwnPhotoState()
@@ -200,23 +176,16 @@ struct CompetitionFeature {
             commandIDsInFlight.contains(id)
         }
 
-        /// What `PersonAvatar` reads from the environment.
         var profilePhotoImages: ProfilePhotoImages {
             ProfilePhotoImages(ownID: ownProfile?.id, photos: profilePhotos)
         }
 
         var photoOwners: [UUID] { photoOwners(claimSender: nil) }
 
-        /// You, the sender of a challenge being claimed (they sent it to
-        /// you, so you may see theirs), everyone on a real match or group
-        /// match, your Friends lists and the search results, sorted so it
-        /// can key a task.
         func photoOwners(claimSender: UUID?) -> [UUID] {
             guard publication?.source == .remoteParticipants else {
                 return claimSender.map { [$0] } ?? []
             }
-            // Most likely on screen first. Separate statements: as one
-            // expression, Xcode 16's compiler gives up type-checking it.
             var owners: [UUID] = []
             if let id = ownProfile?.id { owners.append(id) }
             if let claimSender { owners.append(claimSender) }
@@ -230,15 +199,12 @@ struct CompetitionFeature {
             owners += groupMatches.flatMap { $0.seats.compactMap(\.profileID) }
             owners += list.friends.map(\.id)
             owners += list.outgoing.map(\.id)
-            // ponytail: past 200 people the rest stay initials; page the
-            // lookup if anyone gets there.
             var seen: Set<UUID> = []
             return owners.filter { seen.insert($0).inserted }
                 .prefix(CompetitionFeature.maxPhotoOwners)
                 .sorted { $0.uuidString < $1.uuidString }
         }
 
-        /// One match's reaction state, for its match and result screens.
         func reactionControl(
             for id: CompetitionID,
             send: @escaping (Action) -> Void
@@ -253,14 +219,12 @@ struct CompetitionFeature {
         }
     }
 
-    /// Your photo in Account: saving or removing it, and why it's gone.
     struct OwnPhotoState: Equatable, Sendable {
         enum Status: Equatable, Sendable {
             case idle, saving, saveFailed, removing, removeFailed
         }
 
         var status: Status = .idle
-        /// A reviewer removed your last photo; cleared once you set or remove one.
         var removedByReview = false
     }
 
@@ -269,9 +233,7 @@ struct CompetitionFeature {
         case publication(CompetitionPublication)
         case inviteRecipientCodeChanged(String)
         case findInviteRecipientTapped
-        /// The trimmed input that was looked up, and its answer.
         case inviteRecipientResponse(String, Result<InviteRecipient, CompetitionRemoteFailure>)
-        /// Someone's challenge link resolved: prefill the + sheet's person.
         case challengeRecipientChosen(InviteRecipient)
         case cancelTapped(CompetitionID)
         case nudgeTapped(CompetitionID)
@@ -284,13 +246,10 @@ struct CompetitionFeature {
         case reactionFinished(CompetitionReactionKey, succeeded: Bool)
         case challengeLinkRequested
         case challengeLinkResponse(URL?)
-        /// Reset Link, after its confirmation.
         case challengeLinkResetConfirmed
         case challengeLinkResetResponse(URL?)
         case createInviteTapped
-        /// Sleep beta: the + sheet's Rings / Rings + Sleep picker.
         case inviteSleepToggled(Bool)
-        /// Sleep beta: Continue on the screen before Health's sleep sheet.
         case sleepAccessRequested
         case createInviteResponse(
             InviteSlot,
@@ -302,7 +261,6 @@ struct CompetitionFeature {
         case inviteLinkResponse(CompetitionID, InviteLinkState)
         case acceptTapped(CompetitionID)
         case declineTapped(CompetitionID)
-        /// Decline and block the sender.
         case blockTapped(CompetitionID)
         case careerRequested(UUID)
         case careerLoaded(UUID, CompetitionCareer?)
@@ -336,7 +294,6 @@ struct CompetitionFeature {
         case sceneBecameActive
         case timeZoneChanged
         case stop
-        /// Shown people's photos: this iPhone's cache first, then the server.
         case profilePhotosNeeded([UUID])
         case profilePhotosListed(
             owners: [UUID],
@@ -346,10 +303,8 @@ struct CompetitionFeature {
         case profilePhotoLoaded(UUID, ProfilePhoto)
         case ownPhotoRequested
         case ownPhotoLoaded(OwnProfilePhoto)
-        /// A `ProfilePhotoImage.jpeg(from:crop:)` result.
         case ownPhotoSaveTapped(Data)
         case ownPhotoSaveFinished(ProfilePhoto?)
-        /// Move and Scale closed without saving.
         case ownPhotoCropClosed
         case ownPhotoRemoveConfirmed
         case ownPhotoRemoveFinished(succeeded: Bool)
@@ -360,7 +315,6 @@ struct CompetitionFeature {
         case group(GroupMatchFeature.Action)
     }
 
-    /// `list_profile_photos` takes at most this many ids.
     static let maxPhotoOwners = 200
 
     @Dependency(\.competitionClient) var competitionClient
@@ -390,27 +344,19 @@ struct CompetitionFeature {
         }
         Reduce { state, action in
             switch action {
-            // A list load already running may have read before this block
-            // and would bring nobody back, so it's dropped as Unblock does.
             case .friends(.blockTapped):
                 return .cancel(id: CancelID.blockedPeople)
 
             case let .friends(.blockFinished(_, .success(profile))):
-                // Unknown stays unknown until the list loads.
                 state.blockedPeople = state.blockedPeople.map { [profile] + $0.filter { $0.id != profile.id } }
                 let owners = state.photoOwners
                 return .merge(
                     state.blockedPeople == nil ? .send(.blockedPeopleRequested) : .none,
-                    // The server cancelled any challenge between you.
                     reconcile(trigger: .pullToRefresh),
-                    // It hides their photo now, as for Decline and Block.
                     owners.isEmpty ? .none : .send(.profilePhotosNeeded(owners))
                 )
 
             case .friends(.blockFinished(_, .failure)):
-                // A connection lost after sending may hide a block the server
-                // applied: ask it rather than assume either way. Friends
-                // reloads its list as well.
                 return .send(.blockedPeopleRequested)
 
             case let .group(.delegate(.published(publication))):
@@ -455,8 +401,6 @@ struct CompetitionFeature {
                     state.commandIDsInFlight.remove(id)
                     state.commandExpectedPublicationRevisions[id] = nil
                 }
-                // Each realtime wakeup publishes, so a request sent or
-                // answered elsewhere reaches the badge and lists here too.
                 let friendsInUse = state.friends.list != nil || state.friends.loadFailed
                 guard publication.source == .remoteParticipants, friendsInUse else { return .none }
                 return .send(.friends(.requested))
@@ -476,8 +420,6 @@ struct CompetitionFeature {
                 guard !state.isChallengeSheetLocked,
                       state.inviteRecipientStatus != .lookingUp,
                       !input.isEmpty else { return .none }
-                // A challenge link (either URL form) or its bare code, or a
-                // 1.0.2 account code.
                 let lookup: @Sendable () async throws -> InviteRecipient
                 var expectedID: UUID?
                 if let code = Self.challengeLinkCode(in: input) {
@@ -489,7 +431,6 @@ struct CompetitionFeature {
                     }
                 } else if let id = UUID(uuidString: input),
                           id != UUID(uuidString: "00000000-0000-0000-0000-000000000000") {
-                    // Your own code never reaches the server.
                     guard id != state.ownProfile?.id else {
                         state.inviteRecipientStatus = .ownCode
                         return .none
@@ -586,7 +527,6 @@ struct CompetitionFeature {
                     }
                     await send(.nudgeResponse(id, tappedAt: tappedAt, result))
                 }
-                // No cancelInFlight: nudges for two matches can both run.
                 .cancellable(id: CancelID.nudge)
 
             case let .reactionTapped(id, target, kind):
@@ -595,16 +535,13 @@ struct CompetitionFeature {
                       let competition = state.publication?.dashboard.competitions
                         .first(where: { $0.id == id })
                 else { return .none }
-                // The same preset again removes it.
                 let next: CompetitionReactionKind? =
                     competition.ownReaction(target)?.kind == kind ? nil : kind
-                // Must be .some: assigning nil would remove the key.
                 state.pendingReactions[key] = .some(next)
                 state.reactionFailures.remove(key)
                 return .run { send in
                     do {
                         let publication = try await competitionClient.setReaction(id, target, next)
-                        // Before finishing, so the chip never flickers back.
                         await send(.publication(publication))
                         await send(.reactionFinished(key, succeeded: true))
                     } catch {
@@ -624,15 +561,12 @@ struct CompetitionFeature {
                     state.nudges[id] = .sent(nudgedAt)
                 case .failure(.forbidden), .failure(.notFound):
                     state.nudges[id] = .notNeeded(tappedAt)
-                    // Not .pullToRefresh: Staging wraps that in operator capture.
                     return reconcile(trigger: .foreground)
                 case .failure:
                     state.nudges[id] = .failed
                 }
                 return .none
 
-            // Loaded each time it's shown, so a reset on another iPhone
-            // shows here too. A reset in flight answers for itself.
             case .challengeLinkRequested:
                 guard !state.challengeLinkIsResetting else { return .none }
                 state.challengeLinkLoadFailed = false
@@ -644,8 +578,6 @@ struct CompetitionFeature {
                 }
                 .cancellable(id: CancelID.challengeLink, cancelInFlight: true)
 
-            // A failed refresh keeps the link already shown. A different
-            // link means a reset that looked failed did happen.
             case let .challengeLinkResponse(url):
                 if let url, url != state.challengeLink {
                     state.challengeLink = url
@@ -659,7 +591,6 @@ struct CompetitionFeature {
                 state.challengeLinkIsResetting = true
                 state.challengeLinkResetFailed = false
                 return .merge(
-                    // A load started before the reset could bring back the old code.
                     .cancel(id: CancelID.challengeLink),
                     .run { send in
                         let code = try? await competitionClient.resetChallengeLinkCode()
@@ -670,8 +601,6 @@ struct CompetitionFeature {
                     .cancellable(id: CancelID.challengeLinkReset, cancelInFlight: true)
                 )
 
-            // A failed reset may still have happened on the server, so the
-            // link is loaded again to show what the server has.
             case let .challengeLinkResetResponse(url):
                 state.challengeLinkIsResetting = false
                 state.challengeLinkResetFailed = url == nil
@@ -693,8 +622,6 @@ struct CompetitionFeature {
                 )
 
             case let .createInviteResponse(slot, idempotencyKey, response):
-                // The link belongs to the challenge, so it is kept even when
-                // the sheet closed while the challenge was being created.
                 if case let .success(link, competitionID, expectedRevision) = response {
                     state.inviteLinks[competitionID] = .ready(
                         link,
@@ -713,15 +640,11 @@ struct CompetitionFeature {
                     creation.status = .sent(competitionID)
                 case .failure(.pendingInvitationExists):
                     creation.status = .failed(.alreadyPending)
-                    // The existing challenge shows up, then offers Open Challenge.
                     effect = reconcile(trigger: .pullToRefresh)
                 case .failure(.activeMatchExists), .failure(.incomingChallengeExists):
                     creation.status = .failed(.conflict)
-                    // Once the dashboard catches up, the derived row replaces this.
                     effect = reconcile(trigger: .pullToRefresh)
                 case .failure(.recipientUnavailable), .failure(.forbidden):
-                    // A friend, Challenge Again or an id: the person is known,
-                    // so only a link that found them can be wrong.
                     guard slot == .sheet, state.inviteRecipient?.profileID == nil else {
                         creation.status = .failed(.recipientGone)
                         break
@@ -731,8 +654,6 @@ struct CompetitionFeature {
                     state.inviteRecipientStatus = .notFound
                     return .none
                 case .failure(.divergentDuplicate):
-                    // A new key, so a changed request can't stay pinned to a
-                    // conflicting one.
                     creation.idempotencyKey = competitionInviteLinkClient
                         .makeIdempotencyKey()
                     creation.status = .failed(.connection)
@@ -810,7 +731,6 @@ struct CompetitionFeature {
                 let isSleepMatch = state.publication?.dashboard.competitions
                     .first { $0.id == id }?.isSleepMatch == true
                 return .run { send in
-                    // A Rings + Sleep challenge asks for sleep as you take it.
                     if isSleepMatch {
                         try? await competitionClient.requestSleepAuthorization()
                     }
@@ -850,8 +770,6 @@ struct CompetitionFeature {
                             expectedRevision: returned.publicationRevision
                         )
                     )
-                    // The server hides their photo now; a fresh lookup drops
-                    // it here and from the disk cache.
                     if !owners.isEmpty {
                         await send(.profilePhotosNeeded(owners))
                     }
@@ -864,12 +782,10 @@ struct CompetitionFeature {
                 .cancellable(id: CancelID.career, cancelInFlight: true)
 
             case let .careerLoaded(id, career):
-                // Nil means they stopped sharing, or it can't be known: show nothing.
                 state.careers[id] = career
                 return .none
 
             case .careerSharingRequested:
-                // It would cancel the save, which shares its id.
                 guard !state.isSavingCareerSharing else { return .none }
                 return .run { send in
                     await send(.careerSharingLoaded(try? await competitionClient.getCareerSharing()))
@@ -892,7 +808,6 @@ struct CompetitionFeature {
 
             case let .careerSharingSaved(enabled):
                 state.isSavingCareerSharing = false
-                // A failed save puts the switch back, by asking the server.
                 if let enabled {
                     state.sharesCareer = enabled
                     return .none
@@ -909,7 +824,6 @@ struct CompetitionFeature {
                 .cancellable(id: CancelID.blockedPeople, cancelInFlight: true)
 
             case let .blockedPeopleResponse(people):
-                // A failed refresh keeps whatever was shown.
                 if let people { state.blockedPeople = people }
                 return .none
 
@@ -918,9 +832,6 @@ struct CompetitionFeature {
                     return .none
                 }
                 state.unblockFailed = nil
-                // A list load already running may have read before this
-                // unblock and would bring the row back, so it's dropped.
-                // Not cancellable: the server call finishes.
                 return .merge(
                     .cancel(id: CancelID.blockedPeople),
                     .run { send in
@@ -930,7 +841,6 @@ struct CompetitionFeature {
                 )
 
             case let .unblockFinished(id, succeeded):
-                // stop clears the set, so a late result never marks the next account.
                 guard state.unblocksInFlight.remove(id) != nil else { return .none }
                 if succeeded {
                     state.blockedPeople?.removeAll { $0.id == id }
@@ -959,7 +869,6 @@ struct CompetitionFeature {
                           let profileID = RemoteCompetitionOpponentIdentity.profileID(parent.opponentIdentity)
                     else { return .none }
                     switch state.rematchState(for: parent) {
-                    // A conflict that has since closed can be tried again.
                     case .available, .failed(.connection), .failed(.alreadyPending), .failed(.conflict):
                         break
                     default:
@@ -987,8 +896,6 @@ struct CompetitionFeature {
                     )
                 }
 
-            // Prefills the Challenge sheet with the same account as a closed
-            // challenge. Nothing is created until Create is tapped.
             case let .challengeAgainTapped(id):
                 guard state.publication?.source == .remoteParticipants,
                       let parent = state.publication?.dashboard.competitions.first(where: { $0.id == id }),
@@ -1051,8 +958,6 @@ struct CompetitionFeature {
                     state.mutePreferencesLoadFailed = true
                     return .none
                 }
-                // A read that started before a tap can't undo the change
-                // still saving.
                 let saving = state.muteOpponentIdentitiesInFlight
                 state.mutedOpponentIdentities = identities.subtracting(saving)
                     .union(state.mutedOpponentIdentities.intersection(saving))
@@ -1098,8 +1003,6 @@ struct CompetitionFeature {
 
             case let .muteFinished(identity, isMuted, succeeded):
                 state.muteOpponentIdentitiesInFlight.remove(identity)
-                // A save that worked proves the store is reachable again, so
-                // a stale load failure gets another chance to clear.
                 guard !succeeded else {
                     return state.mutePreferencesLoadFailed
                         ? loadMutePreferences(state: state)
@@ -1118,8 +1021,6 @@ struct CompetitionFeature {
                 return .none
 
             case .notificationChoicesChanged:
-                // Replans with the new switches, ends a switched-off Live
-                // Activity and re-registers the installation.
                 return .run { _ in
                     await competitionClient.reconcileNotifications()
                 }
@@ -1165,14 +1066,12 @@ struct CompetitionFeature {
                 return reconcile(trigger: .pullToRefresh)
 
             case .sceneBecameActive:
-                // Changes made in iOS Settings show without a relaunch.
                 return .merge(
                     reconcile(trigger: .foreground),
                     loadMutePreferences(state: state),
                     loadNotificationAuthorization(
                         current: state.notificationAuthorizationState
                     ),
-                    // Only a link already shown is refreshed.
                     state.challengeLink == nil ? .none : .send(.challengeLinkRequested)
                 )
 
@@ -1234,20 +1133,15 @@ struct CompetitionFeature {
 
             case let .profilePhotosNeeded(owners):
                 guard !owners.isEmpty else { return .none }
-                // Each request is everyone who may be on screen: decoded
-                // photos of anyone else (an old search) are let go.
                 let wanted = Set(owners)
                 state.profilePhotos = state.profilePhotos.filter { wanted.contains($0.key) }
                 let missing = owners.filter { state.profilePhotos[$0] == nil }
                 let versions = state.profilePhotos.compactMapValues(\.version)
-                // Each lookup replaces the last. A failure leaves initials
-                // and tries again next time.
                 return .run { send in
                     var versions = versions
                     for owner in missing {
                         if let cached = await competitionClient.cachedProfilePhotoData(owner),
                            let photo = ProfilePhoto(jpeg: cached.data, version: cached.version) {
-                            // Already current once the list confirms it: no second read.
                             versions[owner] = cached.version
                             await send(.profilePhotoLoaded(owner, photo))
                         }
@@ -1273,7 +1167,6 @@ struct CompetitionFeature {
                 .cancellable(id: CancelID.profilePhotos, cancelInFlight: true)
 
             case let .profilePhotosListed(owners, visible, reported):
-                // Removed, blocked, reported or no longer shared: back to the initial.
                 let shown = Set(visible.map(\.ownerProfileID))
                 for owner in owners where !shown.contains(owner) {
                     state.profilePhotos[owner] = nil
@@ -1353,14 +1246,12 @@ struct CompetitionFeature {
                 guard !state.reportedPhotoOwners.contains(owner),
                       state.photoReportsInFlight.insert(owner).inserted
                 else { return .none }
-                // Not cancellable: the server call finishes.
                 return .run { send in
                     let succeeded = (try? await competitionClient.reportProfilePhoto(owner)) != nil
                     await send(.photoReportFinished(owner, succeeded: succeeded))
                 }
 
             case let .photoReportFinished(owner, succeeded):
-                // stop clears the set, so a late result never marks the next account.
                 guard state.photoReportsInFlight.remove(owner) != nil else { return .none }
                 if succeeded {
                     state.profilePhotos[owner] = nil
@@ -1371,7 +1262,6 @@ struct CompetitionFeature {
         }
     }
 
-    /// A challenge link URL (https or the app's scheme) or a bare 22-character code.
     static func challengeLinkCode(in input: String) -> CompetitionChallengeLinkCode? {
         if let url = URL(string: input),
            case let .challengeLink(code)? = CompetitionRoute(url: url) {
@@ -1386,8 +1276,6 @@ struct CompetitionFeature {
         }
     }
 
-    /// Drops links whose challenge is no longer pending. A missing challenge
-    /// only counts once discovery is complete.
     private func pruneInviteLinks(state: inout State) {
         guard let publication = state.publication else { return }
         for (id, link) in state.inviteLinks {
@@ -1410,7 +1298,6 @@ struct CompetitionFeature {
         }
     }
 
-    // A partial/failed discovery is not evidence that the server retired this invitation.
     private func discoveryIsIncomplete(
         for id: CompetitionID,
         in publication: CompetitionPublication
@@ -1430,8 +1317,6 @@ struct CompetitionFeature {
         }
     }
 
-    /// Reads the muted list. Skipped while a mute is saving, so the read can't
-    /// undo that optimistic change.
     private func loadMutePreferences(state: State) -> Effect<Action> {
         guard state.muteOpponentIdentitiesInFlight.isEmpty else { return .none }
         let current = state.mutedOpponentIdentities
@@ -1440,8 +1325,6 @@ struct CompetitionFeature {
             do {
                 let loaded = try await competitionClient
                     .loadMutedOpponentIdentities()
-                // A success after a failure clears the failure, even when
-                // nothing changed.
                 if loaded != current || loadFailed {
                     await send(.mutePreferencesLoaded(loaded))
                 }
@@ -1494,7 +1377,6 @@ struct CompetitionFeature {
             )
             return .none
         }
-        // Try Again after a lost connection replays the same request.
         let idempotencyKey: UUID
         if let existing,
            existing.recipient == recipient.target,
@@ -1524,8 +1406,6 @@ struct CompetitionFeature {
                 var outcome = try await competitionClient.createInvite(
                     request
                 )
-                // ponytail: if this fails the challenge stays rings-only and
-                // nothing says so; retry or surface it if that ever happens.
                 if withSleep,
                    let published = try? await competitionClient.enableSleep(
                        CompetitionID(outcome.invite.competitionID)
@@ -1589,7 +1469,6 @@ struct CompetitionFeature {
 }
 
 extension CompetitionFeature.State {
-    /// The sheet can't change person once its challenge is being created or sent.
     var isChallengeSheetLocked: Bool {
         switch inviteCreations[.sheet]?.status {
         case .creating?, .sent?: true
@@ -1597,8 +1476,6 @@ extension CompetitionFeature.State {
         }
     }
 
-    /// A pending outgoing challenge to this person. After PR 4 the remote
-    /// dashboard never carries a lapsed pending challenge, so no expiry check.
     func pendingOutgoingChallenge(
         to opponentIdentity: String
     ) -> LocalCompetitionPresentation? {
@@ -1639,7 +1516,6 @@ extension CompetitionFeature.State {
         return .ready
     }
 
-    /// Their pending challenge to you.
     func incomingChallenge(from opponentIdentity: String) -> LocalCompetitionPresentation? {
         guard let publication, publication.source == .remoteParticipants else { return nil }
         return publication.dashboard.competitions.first {
@@ -1648,8 +1524,6 @@ extension CompetitionFeature.State {
         }
     }
 
-    /// A match with them whose week hasn't ended, earliest start first.
-    /// Tallying doesn't count, matching the server.
     func matchInProgress(with opponentIdentity: String) -> LocalCompetitionPresentation? {
         guard let publication, publication.source == .remoteParticipants else { return nil }
         return publication.dashboard.competitions.filter {
@@ -1674,7 +1548,6 @@ extension CompetitionFeature.State {
         let children = (publication?.dashboard.competitions ?? []).filter {
             guard $0.rematchParentID == parent.id else { return false }
             switch $0.lifecycle {
-            // A closed child counts as no child; Home already shows how it closed.
             case .declined, .expired, .cancelled: return false
             default: return true
             }
@@ -1689,7 +1562,6 @@ extension CompetitionFeature.State {
             if case .pending(direction, _, _) = c.lifecycle { return true }
             return false
         }
-        // Either person can rematch; only your own pending rematch has a link here.
         if let child = children.first(where: { isPendingChild($0, .outgoing) })
             ?? children.first(where: { isPendingChild($0, .incoming) })
             ?? children.first(where: isUnderway)

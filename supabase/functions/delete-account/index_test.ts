@@ -184,7 +184,6 @@ Deno.test("live deletion adapters route Auth and RPC through the configured fetc
   assertEquals((await live.begin(authUserID)).phase, "prepared");
   assertEquals(paths, ["/auth/v1/user", "/rest/v1/rpc/begin_account_deletion"]);
 
-  // Real auth-js: a rejected token is 401, an Auth outage is retryable 503.
   for (const [authStatus, expected] of [[403, 401], [503, 503], [429, 503]]) {
     const outage = createLiveDependencies({
       environment: (name) => ({
@@ -559,7 +558,6 @@ Deno.test("lost auth-delete response succeeds only when durable completion confi
     error: "account_deletion_retryable",
   });
 
-  // The user is gone; a 503 would make the retry hit 401 and look signed out.
   const confirmReadFailed = await deleteAccountHandler(
     request(),
     dependencies({
@@ -608,7 +606,6 @@ Deno.test("Apple token client validates exchange and successful revocation reque
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     ),
-    // Apple also uses 200 when the supplied token is already invalid.
     new Response(null, { status: 200 }),
   ];
   const tokenClient = createAppleTokenClient({

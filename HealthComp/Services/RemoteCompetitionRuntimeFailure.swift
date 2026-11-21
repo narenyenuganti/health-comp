@@ -24,7 +24,6 @@ enum RemoteCompetitionRuntimeFailure: Error, Equatable, Sendable {
         case finalAttestation = "refresh_contract_stage_final_attestation"
     }
 
-    /// Fixed categories only, with no IDs, Health values, tokens or error text.
     func recordRefreshDiagnostic(contractStage: ContractStage? = nil) {
 #if HEALTHCOMP_STAGING
         let label: String

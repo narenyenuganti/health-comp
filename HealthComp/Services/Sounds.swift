@@ -1,6 +1,5 @@
 import AVFoundation
 
-/// The app's eleven sounds, by the moment each one plays on.
 enum SoundEffect: String, CaseIterable {
     case versus = "matchup_display"
     case ahead = "menu_spirits_target_pointup"
@@ -14,8 +13,6 @@ enum SoundEffect: String, CaseIterable {
     case slam = "common_criticalhit"
     case crowd = "audience_cheer_l"
 
-    /// Seconds into the file where its hit is heard: a sound starts this
-    /// early, so the hit lands on the picture's.
     var accent: TimeInterval {
         switch self {
         case .versus: 0.085
@@ -28,7 +25,6 @@ enum SoundEffect: String, CaseIterable {
         }
     }
 
-    /// How loud the moment is, times what levels its file against the others.
     var gain: Float {
         switch self {
         case .versus: 1
@@ -46,8 +42,6 @@ enum SoundEffect: String, CaseIterable {
     }
 }
 
-/// Plays them. Ambient audio: silent mode mutes it, and the person's music
-/// keeps playing underneath.
 @MainActor
 enum Sounds {
     static let enabledKey = "healthcomp.sounds.enabled"
@@ -55,8 +49,6 @@ enum Sounds {
 
     private static var players: [SoundEffect: AVAudioPlayer] = [:]
 
-    /// Test runs play at zero volume: the same path, and no noise from the
-    /// Mac behind the simulator.
     static let isMuted: Bool = {
         #if DEBUG
         let process = ProcessInfo.processInfo
@@ -67,34 +59,27 @@ enum Sounds {
         #endif
     }()
 
-    /// Nil when Settings has sounds off. The slider is squared, so halfway
-    /// sounds about half as loud.
     static func level(_ effect: SoundEffect, defaults: UserDefaults = .standard) -> Float? {
         guard defaults.object(forKey: enabledKey) as? Bool != false else { return nil }
         let volume = min(max(defaults.object(forKey: volumeKey) as? Double ?? 1, 0), 1)
         return 0.8 * effect.gain * Float(volume * volume)
     }
 
-    /// Plays so the sound's hit lands `delay` seconds from now.
     static func play(_ effect: SoundEffect, in delay: TimeInterval = 0) {
         let calledAt = ProcessInfo.processInfo.systemUptime
         guard let level = level(effect), level > 0, let player = player(effect) else { return }
         player.stop()
         player.currentTime = 0
         player.volume = isMuted ? 0 : level
-        // A first-use load took time: aim at the moment asked for, not later.
         let loading = ProcessInfo.processInfo.systemUptime - calledAt
         player.play(atTime: player.deviceCurrentTime + max(0, delay - loading - effect.accent))
     }
 
-    /// Loads every sound ahead of its first moment, so no animation opens
-    /// with a file load. Call once the first frame is up.
     static func prepare() {
         guard level(.versus) != nil else { return }
         SoundEffect.allCases.forEach { _ = player($0) }
     }
 
-    /// A skipped animation takes its sounds with it, waiting ones too.
     static func stop() {
         players.values.forEach { $0.stop() }
     }

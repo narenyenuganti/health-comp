@@ -24,8 +24,6 @@ export function createAppleDeletionTransport(
       ? AbortSignal.any([controller.signal, callerSignal])
       : controller.signal;
     if (signal.aborted) throw abortError();
-    // Await the real transport. Never detach an RPC/deletion workflow through
-    // Promise.race: a timeout cannot prove remote rollback or non-acceptance.
     return await transport(input, { ...init, signal });
   };
   return {

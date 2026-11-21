@@ -42,7 +42,6 @@ export async function appleDeletionWebCompleteHandler(
     userID = await dependencies.deletion.authenticate(authorization);
     if (!userID) return reject(401);
   } catch (error) {
-    // Auth could not answer (see verifiedUserId): retryable, not signed out.
     return reject(
       (error as { status?: unknown } | null)?.status === 503 ? 503 : 401,
     );
@@ -84,7 +83,6 @@ export async function appleDeletionWebCompleteHandler(
     if (requestID === null) {
       throw new AccountDeletionHTTPError(401, "reauthentication_required");
     }
-    // Resolve the trusted configuration before consuming a single-use grant.
     const client = dependencies.webClient();
     const digest = new Uint8Array(
       await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)),

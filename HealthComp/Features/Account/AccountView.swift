@@ -6,11 +6,8 @@ struct AccountView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     let store: StoreOf<AccountFeature>
-    /// A challenge link arrived before sign-in.
     var hasPendingChallenge = false
 
-    /// The root fades this screen off after the store has become the signed-in
-    /// account's, which isn't this screen's to draw, so it keeps its last state.
     private final class LastDrawn {
         var state: AccountFeature.State?
     }
@@ -33,8 +30,6 @@ struct AccountView: View {
                         displayNameField
                             .transition(Motion.appear)
                     }
-                    // Launch failure and profile conflict fold the message
-                    // into the subtitle.
                     if state.mode == .signedOut || state.mode == .settingUpProfile,
                        let message = state.message {
                         Text(message.text)
@@ -63,7 +58,6 @@ struct AccountView: View {
         }
     }
 
-    /// Account deleted and session ended report something already done.
     private static func isFailure(
         _: AccountFeature.Message?,
         _ new: AccountFeature.Message?
@@ -145,7 +139,6 @@ struct AccountView: View {
 
     private var actions: some View {
         VStack(spacing: 12) {
-            // A ZStack, so two buttons never stack during the crossfade.
             ZStack {
                 primaryButton
                     .transition(Motion.appear)
@@ -159,7 +152,6 @@ struct AccountView: View {
                 .disabled(state.isRequestInFlight)
                 .accessibilityIdentifier("account.sign-in-with-apple.browser")
             }
-            // A way out for the wrong Apple ID or second thoughts.
             if state.mode == .settingUpProfile {
                 Button("Sign Out") {
                     store.send(.signOutButtonTapped)
@@ -169,8 +161,6 @@ struct AccountView: View {
                 .accessibilityIdentifier("account.setup.sign-out")
             }
             Link(destination: URL(string: "https://healthcomp.app/privacy")!) {
-                // 48, not 44: centered content can land on a fractional
-                // origin and round the target below 44 pt.
                 Text("Privacy Policy")
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(Theme.ink)
@@ -236,7 +226,6 @@ struct AccountView: View {
     private var title: String {
         switch state.mode {
         case .signedOut:
-            // The Apple sheet has closed but the exchange is still running.
             state.isRequestInFlight ? "Signing in…"
                 : hasPendingChallenge ? "You have a challenge" : "Welcome to HealthComp"
         case .settingUpProfile: "Choose your display name"
@@ -251,7 +240,6 @@ struct AccountView: View {
         case .signedOut:
             hasPendingChallenge ? "Sign in with the account it was sent to." : nil
         case .settingUpProfile:
-            // A new account can't be a challenge's recipient.
             "The people you play will see this name. You can change it later."
         case .launchFailure:
             state.message?.text ?? "Check your connection and try again."

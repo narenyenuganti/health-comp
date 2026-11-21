@@ -1,9 +1,5 @@
 import Foundation
 
-/// A remote competitor's immutable backend profile identity.
-///
-/// Mutable presentation data intentionally belongs to the application layer,
-/// not to replayable competition state.
 public struct RemoteParticipant: Codable, Equatable, Hashable, Sendable {
     public enum ValidationError: Error, Equatable, Sendable { case invalidProfileID }
 

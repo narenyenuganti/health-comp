@@ -42,7 +42,6 @@ final class GroupMatchCreateUITests: XCTestCase {
         XCTAssertTrue(create.isEnabled)
         shot(app, "LineupFFA-three-way")
 
-        // Back and forward keeps the three-way.
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.buttons["competition.group.format.three-way"].waitForExistence(timeout: 4))
         XCTAssertTrue(app.buttons["competition.group.format.three-way"].isSelected)
@@ -50,7 +49,6 @@ final class GroupMatchCreateUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Three-Way"].waitForExistence(timeout: 4))
         XCTAssertTrue(create.isEnabled)
         create.tap()
-        // The lab's server accepts at once: no error line, and the app is still up.
         let failure = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS %@", "create the match")).firstMatch
         XCTAssertFalse(failure.waitForExistence(timeout: 3), "Create showed its error line.")
@@ -107,19 +105,16 @@ final class GroupMatchCreateUITests: XCTestCase {
         XCTAssertFalse(app.buttons["competition.group.create"].isEnabled)
         shot(app, "LineupDoubles-one-empty")
 
-        // Only their team has room, so Leo goes straight there.
         app.buttons["competition.group.person.\(Self.leo).add"].tap()
         XCTAssertTrue(app.groupElement("competition.group.seat.4").label.contains("Leo"))
         XCTAssertTrue(app.buttons["competition.group.create"].isEnabled)
 
-        // With room on both teams, you pick the team.
         app.buttons["competition.group.seat.2.remove"].tap()
         app.buttons["competition.group.seat.3.remove"].tap()
         app.buttons["competition.group.person.\(Self.priya).add"].tap()
         let theirs = app.buttons["Their Team"]
         XCTAssertTrue(theirs.waitForExistence(timeout: 4))
         theirs.tap()
-        // The dialog places the seat once it has finished closing.
         let placed = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "label CONTAINS 'Priya'"),
             object: app.groupElement("competition.group.seat.3")

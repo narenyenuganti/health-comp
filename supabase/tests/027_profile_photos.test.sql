@@ -40,9 +40,6 @@ select ok(not has_column_privilege('authenticated', 'public.profiles', 'photo_ve
   and not has_column_privilege('anon', 'public.profiles', 'photo_removed_version', 'select'),
   'photo_version, photo_removed_by_review and photo_removed_version are not readable from the profiles table');
 
--- A Naren (owner), B Maya (finished match), C Tess (Naren's pending
--- challenge), D Dev (stranger), E Eli (Naren blocked him), F Fay (blocked
--- Naren), G Gus (reports Naren), H Hal (deletes his account).
 insert into auth.users (id) select ('ca000000-0000-4000-8000-00000000000' || n)::uuid
 from unnest(array['1','2','3','4','5','6','7','8']) n;
 insert into public.profiles (id, auth_user_id, display_name, state)
@@ -75,8 +72,6 @@ begin
     gen_random_uuid(), 1::smallint, pg_temp.pid(recipient));
 end;
 $$;
--- What the caller can see of target's photo: the listed version, and the
--- objects in target's folder the storage policies let them read.
 create function pg_temp.sees(target text) returns text language sql as $$
   select coalesce((public.list_profile_photos(array[pg_temp.pid(target)])
       #>> '{photos,0,photo_version}'), 'none')
@@ -86,8 +81,6 @@ $$;
 grant execute on function pg_temp.pid(text), pg_temp.ver(text), pg_temp.obj(text, text),
   pg_temp.sees(text) to authenticated;
 
--- Finished matches between Naren and Maya, Eli, Fay, Gus and Hal; Naren's
--- pending challenge to Tess; and Tess's photo, so the challenger can be checked.
 do $$
 declare
   other text;
@@ -109,7 +102,6 @@ $$;
 insert into private.account_blocks (blocker_profile_id, blocked_profile_id) values
   (pg_temp.pid('1'), pg_temp.pid('5')), (pg_temp.pid('6'), pg_temp.pid('1'));
 
--- Uploads: only your own folder, only '<profile id>/<uuid>.jpg', at most three.
 set local role authenticated;
 select pg_temp.as_user('1');
 select lives_ok($$insert into storage.objects (bucket_id, name) values ('profile-photos', pg_temp.obj('1', '1'))$$,
@@ -138,7 +130,6 @@ select is((select count(*) from public.competition_change_log l
     and l.payload_snapshot = jsonb_build_object('profile_id', pg_temp.pid('1'), 'display_name', 'Naren')),
   6::bigint, 'setting a photo wakes each of Naren''s matches with the unchanged presentation payload');
 
--- Who sees Naren's photo.
 set local role authenticated;
 select pg_temp.as_user('1');
 select is(pg_temp.sees('1'), pg_temp.ver('1')::text || ' / 1', 'the owner sees his own photo');
@@ -146,7 +137,6 @@ select pg_temp.as_user('2');
 select is(pg_temp.sees('1'), pg_temp.ver('1')::text || ' / 1', 'an opponent from a finished match sees it');
 select pg_temp.as_user('3');
 select is(pg_temp.sees('1'), pg_temp.ver('1')::text || ' / 1', 'the person Naren challenged sees it');
--- What Storage sets while minting a signed URL.
 select set_config('storage.operation', 'storage.object.sign', true);
 select pg_temp.as_user('2');
 select is(pg_temp.sees('1'), pg_temp.ver('1')::text || ' / 0', 'nobody else can sign a URL for it');
@@ -179,7 +169,6 @@ select throws_ok($$select public.list_profile_photos((select array_agg(gen_rando
   '22023', 'invalid_profile_ids', 'at most 200 ids');
 select throws_ok($$select public.list_profile_photos(null)$$, '22023', 'invalid_profile_ids', 'ids are required');
 
--- Reports hide the photo for the reporter only, and only after a sighting.
 select pg_temp.as_user('4');
 select throws_ok($$select public.report_profile_photo(pg_temp.pid('1'))$$,
   'P0001', 'photo_unavailable', 'a stranger cannot report (or probe) a photo');
@@ -196,7 +185,6 @@ select results_eq($$select reporter_profile_id, reported_profile_id, photo_versi
   where reported_profile_id = pg_temp.pid('1')$$,
   $$values (pg_temp.pid('7'), pg_temp.pid('1'), pg_temp.ver('1'))$$, 'one report row names the reported version');
 
--- Changing: the new version replaces the old for others; leftovers stay the owner's.
 set local role authenticated;
 select pg_temp.as_user('1');
 select lives_ok($$insert into storage.objects (bucket_id, name) values ('profile-photos', pg_temp.obj('1', '2'))$$,
@@ -212,7 +200,6 @@ select is(pg_temp.sees('1'), pg_temp.ver('2')::text || ' / 1', 'Maya reads only 
 select is((select count(*) from storage.objects where name = pg_temp.obj('1', '1')), 0::bigint,
   'and not the old one by name');
 reset role;
--- The Storage API sets this for its own deletes.
 set local storage.allow_delete_query = 'true';
 set local role authenticated;
 select pg_temp.as_user('2');
@@ -223,21 +210,17 @@ select pg_temp.as_user('1');
 with deleted as (delete from storage.objects where name in (pg_temp.obj('1', '1'), pg_temp.obj('1', '4')) returning 1)
 select is((select count(*) from deleted), 2::bigint, 'Naren removes his leftovers');
 
--- A declined challenge ends the invitee's view.
 select pg_temp.as_user('3');
 select lives_ok($$select public.decline_competition_challenge((select id from r where label = 'tess'))$$,
   'Tess declines');
 select is(pg_temp.sees('1'), 'none / 0', 'and sees initials from then on');
 
--- Removing.
 select pg_temp.as_user('1');
 select is(public.clear_profile_photo(), jsonb_build_object('photo_version', null), 'Naren removes his photo');
 select is(pg_temp.sees('1'), 'none / 1', 'his object stays his own until the app deletes it');
 select pg_temp.as_user('2');
 select is(pg_temp.sees('1'), 'none / 0', 'Maya sees initials');
 
--- A reviewer's removal: initials for everyone, and the owner is told until
--- he sets or clears a photo.
 select pg_temp.as_user('1');
 select lives_ok($$select public.set_profile_photo(pg_temp.ver('2'))$$, 'Naren sets a photo again');
 select is(public.own_profile_photo(), jsonb_build_object('photo_version', pg_temp.ver('2'), 'removed_by_review', false),
@@ -260,7 +243,6 @@ select is(public.own_profile_photo() ->> 'removed_by_review', 'false', 'and the 
 select throws_ok($$select public.set_profile_photo(pg_temp.ver('2'))$$,
   'P0001', 'photo_upload_required', 'nor after dismissing the notice');
 
--- Deleting an account: its photo and its reports both ways go at once.
 reset role;
 insert into private.profile_photo_reports (reporter_profile_id, reported_profile_id, photo_version)
 values (pg_temp.pid('8'), pg_temp.pid('3'), pg_temp.ver('3')), (pg_temp.pid('2'), pg_temp.pid('8'), pg_temp.ver('8'));
@@ -288,7 +270,6 @@ reset role;
 select throws_ok($$update public.profiles set photo_version = pg_temp.ver('8') where id = pg_temp.pid('8')$$,
   '23514', null, 'only an active profile can have a photo');
 
--- Anonymous callers get nothing.
 set local role anon;
 select throws_ok($$select public.list_profile_photos(array[pg_temp.pid('1')])$$,
   '42501', null, 'anon cannot list photos');

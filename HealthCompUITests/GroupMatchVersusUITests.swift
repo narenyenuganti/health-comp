@@ -1,7 +1,5 @@
 import XCTest
 
-/// The group versus intro over a scheduled match, held with `--versus-hold`
-/// (Reduce Motion shows it composed), and again from the live ••• menu.
 final class GroupMatchVersusUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -9,7 +7,6 @@ final class GroupMatchVersusUITests: XCTestCase {
 
     private static let hold = ["--versus-intro", "--versus-hold"]
 
-    /// By label: the lab root's identifier replaces any id on the overlay.
     private func intro(_ app: XCUIApplication, _ prefix: String) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
     }
@@ -42,9 +39,7 @@ final class GroupMatchVersusUITests: XCTestCase {
     func testReplaysFromTheMenuOnALaterDay() {
         let app = XCUIApplication.launchGroupLab("live-ffa", arguments: Self.hold)
         XCTAssertTrue(app.groupElement("competition.group.standings").waitForExistence(timeout: 8))
-        // Day 4: no autoplay.
         XCTAssertFalse(intro(app, "Four-Way. ").waitForExistence(timeout: 2))
-        // The wrapper, as iOS 18 exposes it.
         app.groupElement("competition.more").tap()
         let replay = app.buttons["competition.versus.replay"]
         XCTAssertTrue(replay.waitForExistence(timeout: 3))

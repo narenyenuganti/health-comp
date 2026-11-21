@@ -1,11 +1,5 @@
 import XCTest
 
-/// The final-day Live Activity (spec §9.6, PR 7): the Test Lab's preview of
-/// every card state, the real Dynamic Island and Lock Screen, and the
-/// light/dark × default/AX5 screenshot matrix. The Test Lab's "Start Live
-/// Activity" starts the chosen sample (`-liveActivityPreviewSample`), ending
-/// `secondsLeft` after launch, so a test can also watch the card turn into
-/// "Final score pending" without the app running.
 final class LiveActivityUITests: XCTestCase {
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     private var secondsLeft: TimeInterval = 90
@@ -19,15 +13,11 @@ final class LiveActivityUITests: XCTestCase {
     override func tearDownWithError() throws {
         XCUIDevice.shared.appearance = .light
         if changedTextSize { setLargestText(false) }
-        // Opening the preview ends the sample, so nothing stays on the Lock Screen.
         let app = launch()
         sleep(2)
         app.terminate()
     }
 
-    // MARK: Samples
-
-    /// What each sample's cards say, in the app's own words.
     private struct Sample {
         let key: String
         let name: String
@@ -35,15 +25,12 @@ final class LiveActivityUITests: XCTestCase {
         let them: String
         let lead: String
         var timing = "Ends at midnight"
-        /// The header drops the timing rather than cut the title short.
         var timingFits = true
         var freshness: String?
 
         var youLabel: String { "You \(you) points" }
         var themLabel: String { "\(name) \(them) points" }
 
-        /// The Lock Screen card's VoiceOver label. Accessibility sizes drop
-        /// the timing and the Updated line, as they do on screen.
         func live(large: Bool = false, timingFits: Bool? = nil) -> String {
             ["Last day · \(name)", large || !(timingFits ?? self.timingFits) ? nil : timing, youLabel, themLabel, lead, large ? nil : freshness]
                 .compactMap { $0 }.joined(separator: ", ")
@@ -70,19 +57,12 @@ final class LiveActivityUITests: XCTestCase {
 
     private func sample(_ key: String) -> Sample { samples.first { $0.key == key }! }
 
-    // MARK: In-app preview
-
-    /// Every score state: live, gone stale at midnight, and tallying, plus the
-    /// island's expanded, compact and minimal looks. Exact VoiceOver labels,
-    /// one of each, and a full-size Start button.
     func testPreviewShowsEveryScoreStateInTheAppsWords() throws {
         for sample in samples {
             let app = launch(sample: sample.key, arguments: ["-AppleInterfaceStyle", "Light"])
             let live = previewElement(app, "live")
             XCTAssertTrue(live.waitForExistence(timeout: 10), sample.key)
             XCTAssertEqual(plain(live.label), sample.live(), sample.key)
-            // Gone stale at midnight with no app run, or set by the app once
-            // the match is tallying: the same words either way.
             XCTAssertEqual(plain(previewElement(app, "pending").label), sample.pending(), sample.key)
             XCTAssertEqual(plain(previewElement(app, "tallying").label), sample.pending(), sample.key)
             for suffix in ["live", "pending", "tallying", "expanded", "compact", "minimal", "start"] {
@@ -106,8 +86,6 @@ final class LiveActivityUITests: XCTestCase {
         }
     }
 
-    /// At AX5 the card keeps the header, both scores and the lead, drops the
-    /// timing and the Updated line, and no text is clipped.
     func testPreviewAtLargestTextKeepsTheScoreAndLead() throws {
         for key in ["lead", "long"] {
             let sample = sample(key)
@@ -119,24 +97,19 @@ final class LiveActivityUITests: XCTestCase {
             XCTAssertEqual(plain(live.label), sample.live(large: true), key)
             XCTAssertEqual(plain(previewElement(app, "pending").label), sample.pending(large: true), key)
             XCTAssertEqual(plain(previewElement(app, "tallying").label), sample.pending(large: true), key)
-            // The card never grows past the Lock Screen's 160 pt.
             XCTAssertLessThanOrEqual(live.frame.height, 160)
             try app.performAccessibilityAudit(for: [.textClipped, .sufficientElementDescription]) { issue in
-                // The Test Lab's own title is not this feature's.
                 !(issue.element?.identifier.hasPrefix("liveActivity.preview") ?? false)
             }
             app.terminate()
         }
     }
 
-    // MARK: Real Dynamic Island and Lock Screen
-
     func testLiveActivityShowsInTheIslandAndOnTheLockScreenThenGoesPending() throws {
         let app = launch()
         let start = app.buttons["liveActivity.preview.start"]
         XCTAssertTrue(start.waitForExistence(timeout: 10))
         let startedAt = Date()
-        // A second tap replaces the sample: never two cards.
         start.tap()
         sleep(1)
         start.tap()
@@ -145,7 +118,6 @@ final class LiveActivityUITests: XCTestCase {
         sleep(2)
         allowLiveActivities()
 
-        // Compact island: one score on each side of the camera.
         let you = springboardElement("You 2,190 points")
         let sam = springboardElement("Sam 2,171 points")
         XCTAssertTrue(you.waitForExistence(timeout: 10), springboard.debugDescription)
@@ -153,7 +125,6 @@ final class LiveActivityUITests: XCTestCase {
         XCTAssertEqual(springboardPlaces("You 2,190 points"), 1, springboard.debugDescription)
         shot("island-compact")
 
-        // Expanded island after a long press.
         you.press(forDuration: 1.2)
         sleep(2)
         XCTAssertTrue(springboardElement("You lead by 19.").waitForExistence(timeout: 5), springboard.debugDescription)
@@ -161,7 +132,6 @@ final class LiveActivityUITests: XCTestCase {
         XCUIDevice.shared.press(.home)
         sleep(1)
 
-        // Lock Screen card, live.
         showLockScreen()
         let card = springboardElement("Last day · Sam")
         XCTAssertTrue(card.waitForExistence(timeout: 10), springboard.debugDescription)
@@ -172,24 +142,19 @@ final class LiveActivityUITests: XCTestCase {
         sleep(3)
         shot("lock-live-dark")
         XCUIDevice.shared.appearance = .light
-        // Unlock while waiting, or the display sleeps and the next lock
-        // presses leave it off.
         XCUIDevice.shared.press(.home)
         sleep(2)
 
-        // Past its stale date the card reads pending, with no app run.
         waitUntilStale(startedAt)
         showLockScreen()
         let pending = springboardElement("Final score pending · Sam")
         XCTAssertTrue(pending.waitForExistence(timeout: 40), springboard.debugDescription)
         XCTAssertEqual(plain(pending.label), sample("lead").pending())
         shot("lock-pending")
-        XCUIDevice.shared.press(.home)  // unlocks: the simulator has no passcode
+        XCUIDevice.shared.press(.home)
         sleep(1)
     }
 
-    /// Losing, level, an account deleted mid-match and a 64-character name in
-    /// another time zone, each on the real Lock Screen and in the island.
     func testEveryScoreStateOnTheLockScreenAndInTheIsland() throws {
         secondsLeft = 3600
         for key in ["behind", "square", "former", "long"] {
@@ -219,8 +184,6 @@ final class LiveActivityUITests: XCTestCase {
             let card = springboardElement("Last day · \(sample.name)")
             XCTAssertTrue(card.waitForExistence(timeout: 10), "\(key)\n\(springboard.debugDescription)")
             shot("lock-live-\(key)")
-            // The Lock Screen card is a few points wider than the preview's,
-            // so a title that only just misses there may fit here.
             XCTAssertTrue([sample.live(), sample.live(timingFits: true)].contains(plain(card.label)),
                           "\(key): \(card.label)")
             XCUIDevice.shared.press(.home)
@@ -228,10 +191,6 @@ final class LiveActivityUITests: XCTestCase {
         }
     }
 
-    /// An update reaches the running card in the compact island. A lead flip,
-    /// the open island and the Lock Screen follow for a recording to judge the
-    /// score roll: updates this close together can land over 40 s late, so
-    /// only the first is checked.
     func testRunningCardTakesUpdatesInTheIslandAndOnTheLockScreen() throws {
         secondsLeft = 3600
         let app = launch(arguments: ["-liveActivityPreviewUpdateDelay", "9"])
@@ -241,10 +200,8 @@ final class LiveActivityUITests: XCTestCase {
         start.tap()
         sleep(2)
 
-        /// Taps a Test Lab button, then shows the card before the update lands.
         func tapThenLeave(_ button: String, show: () -> Void) {
             app.activate()
-            // A tap during the app's return animation can be dropped.
             sleep(1)
             let button = app.buttons["liveActivity.preview.\(button)"]
             for _ in 0..<6 where !button.isHittable { app.swipeUp() }
@@ -255,7 +212,6 @@ final class LiveActivityUITests: XCTestCase {
             show()
         }
 
-        // Compact island.
         tapThenLeave("update") {}
         let you = springboardElement("You 2,202 points")
         XCTAssertTrue(you.waitForExistence(timeout: 40), springboard.debugDescription)
@@ -263,20 +219,17 @@ final class LiveActivityUITests: XCTestCase {
         tapThenLeave("flip") {}
         sleep(12)
 
-        // Expanded island.
         tapThenLeave("flip") { springboardElement("You 2,202 points").press(forDuration: 1.2) }
         sleep(12)
         XCUIDevice.shared.press(.home)
         sleep(1)
 
-        // Lock Screen card.
         tapThenLeave("update") { showLockScreen() }
         sleep(12)
         XCUIDevice.shared.press(.home)
         sleep(1)
     }
 
-    /// Tapping the island opens HealthComp (the card's link).
     func testTappingTheIslandOpensHealthComp() throws {
         secondsLeft = 3600
         let app = launch()
@@ -294,10 +247,6 @@ final class LiveActivityUITests: XCTestCase {
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "the island opens HealthComp")
     }
 
-    // MARK: Screenshot matrix
-
-    /// The real island and Lock Screen, light and dark, at the default size
-    /// and with the system at AX5, live and then pending.
     func testSystemScreenshotMatrix() throws {
         secondsLeft = 75
         for size in ["default", "ax5"] {
@@ -321,7 +270,6 @@ final class LiveActivityUITests: XCTestCase {
                 sleep(2)
                 let expanded = springboardElement("You lead by 19.")
                 XCTAssertTrue(expanded.waitForExistence(timeout: 5), springboard.debugDescription)
-                // The island has no room for the Updated line past the default size.
                 XCTAssertEqual(springboardElement("You: updated").exists, size == "default",
                                springboard.debugDescription)
                 shot("island-expanded-\(appearance)-\(size)")
@@ -355,8 +303,6 @@ final class LiveActivityUITests: XCTestCase {
         }
     }
 
-    // MARK: Helpers
-
     @discardableResult
     private func launch(sample: String = "lead", arguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
@@ -376,8 +322,6 @@ final class LiveActivityUITests: XCTestCase {
         app.descendants(matching: .any)["liveActivity.preview.\(suffix)"]
     }
 
-    /// iOS asks whether HealthComp may show Live Activities, and later
-    /// whether to keep allowing them.
     private func allowLiveActivities() {
         let allow = springboard.buttons
             .matching(NSPredicate(format: "label IN %@", ["Allow", "Always Allow"])).firstMatch
@@ -403,18 +347,14 @@ final class LiveActivityUITests: XCTestCase {
             .matching(NSPredicate(format: "label CONTAINS %@", text))
     }
 
-    /// How many separate places on screen show `text`. SpringBoard exposes
-    /// both a container and the text inside it, at nearly the same spot.
     private func springboardPlaces(_ text: String) -> Int {
         Set(springboardElements(text).allElementsBoundByIndex.map { Int($0.frame.midY / 60) }).count
     }
 
-    /// Times use a narrow no-break space before AM/PM.
     private func plain(_ label: String) -> String {
         label.replacingOccurrences(of: "\u{202F}", with: " ")
     }
 
-    /// Back to the compact island: Home can leave the expanded one open.
     private func collapseIsland(_ expanded: XCUIElement) {
         for _ in 0..<3 where expanded.exists {
             XCUIDevice.shared.press(.home)
@@ -431,8 +371,6 @@ final class LiveActivityUITests: XCTestCase {
         springboardElements(text).firstMatch
     }
 
-    /// Settings → Accessibility → Display & Text Size → Larger Text, as in
-    /// WidgetUITests: on sets AX5, off returns exactly to the default.
     private func setLargestText(_ on: Bool) {
         changedTextSize = true
         let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")

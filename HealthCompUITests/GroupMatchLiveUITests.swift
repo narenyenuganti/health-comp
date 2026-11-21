@@ -1,7 +1,5 @@
 import XCTest
 
-/// Live free-for-all, live with a bot, one day, and Leave Match, in the
-/// `group-matches` lab. Now is Day 4 of a week that began on Thursday.
 final class GroupMatchLiveUITests: XCTestCase {
     private static let audit = XCUIAccessibilityAuditType.textClipped
         .union(.hitRegion)
@@ -30,7 +28,6 @@ final class GroupMatchLiveUITests: XCTestCase {
         let dayOne = app.groupElement("competition.group.week.1")
         XCTAssertTrue(dayOne.label.contains("Sam 448 points, won the day"), dayOne.label)
         XCTAssertTrue(app.groupElement("competition.group.week.2").label.contains("You 437 points, won the day"))
-        // Today isn't won yet, and later days haven't happened.
         XCTAssertFalse(app.groupElement("competition.group.week.4").label.contains("won the day"))
         XCTAssertTrue(app.groupElement("competition.group.week.5").label.hasSuffix("Not played yet."))
         XCTAssertFalse(app.buttons["competition.group.nudge"].exists)
@@ -50,10 +47,8 @@ final class GroupMatchLiveUITests: XCTestCase {
             sam.label,
             "Sam, won the day, 451 points, Move 180 percent, Exercise 135 percent, Stand 135 percent"
         )
-        // Best first: Sam, Priya, you, Leo.
         let order = [2, 3, 1, 4].map { app.groupElement("competition.group.day.player.\($0)").frame.minY }
         XCTAssertEqual(order, order.sorted())
-        // Your own day takes no reaction.
         XCTAssertFalse(app.buttons["competition.group.day.player.1"].exists)
         XCTAssertTrue(app.groupElement("competition.group.day.player.1").label.hasPrefix("You, 398 points"))
         shot(app, "DayFFA-final")
@@ -84,7 +79,6 @@ final class GroupMatchLiveUITests: XCTestCase {
         app.groupElement("competition.group.week.1").tap()
         let erratic = app.groupElement("competition.group.day.player.3")
         XCTAssertTrue(erratic.waitForExistence(timeout: 5))
-        // Points, no rings, and no reaction.
         XCTAssertEqual(erratic.label, "Erratic, bot, won the day, 520 points")
         XCTAssertFalse(app.buttons["competition.group.day.player.3"].exists)
         XCTAssertTrue(app.buttons["competition.group.day.player.2"].exists)
@@ -93,7 +87,6 @@ final class GroupMatchLiveUITests: XCTestCase {
 
     func testLeaveMatchConfirmsAndShowsYouLeft() {
         let app = XCUIApplication.launchGroupLab("live-ffa")
-        // iOS 18 exposes Menu's identified wrapper, not its nested button, as hittable.
         let more = app.groupElement("competition.more")
         XCTAssertTrue(more.waitForExistence(timeout: 8))
         more.tap()
@@ -105,7 +98,6 @@ final class GroupMatchLiveUITests: XCTestCase {
         XCTAssertTrue(dialog.waitForExistence(timeout: 3))
         XCTAssertTrue(dialog.staticTexts["Your synced points stay in. Points not sent yet won’t count."].exists)
         shot(app, "LiveFFA-leave-confirm")
-        // Keep Playing changes nothing.
         let keep = dialog.buttons["Keep Playing"].exists ? dialog.buttons["Keep Playing"] : app.buttons["Keep Playing"]
         keep.tap()
         XCTAssertTrue(dialog.waitForNonExistence(timeout: 3))
@@ -122,7 +114,6 @@ final class GroupMatchLiveUITests: XCTestCase {
         waitForExpectations(timeout: 5)
         XCTAssertFalse(more.exists)
         XCTAssertEqual(app.groupElement("competition.group.lead").label, "You left on Day 4. Your 1,664 stays in.")
-        // Nothing left to chase once you've left.
         XCTAssertFalse(app.groupElement("competition.group.what-it-takes").exists)
         shot(app, "LiveFFA-left")
     }

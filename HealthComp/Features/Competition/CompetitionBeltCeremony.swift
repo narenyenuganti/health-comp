@@ -2,17 +2,11 @@ import AVFoundation
 import CompetitionCore
 import SwiftUI
 
-// The belt ceremony's clip timings, hold and roll are sanctioned exceptions to
-// "numbers live in Motion.swift": they belong to the rendered clips.
-
-/// What one belt event plays: a clip and the words that land on it.
 struct CompetitionBeltCeremonyScript: Equatable, Identifiable {
-    /// Bundle name of the clip, its beat JSON and its poster.
     let clip: String
     let headline: String
     let title: String
     var detail: String? = nil
-    /// The reign's title defenses, rolled up under the title.
     var defenses: Int? = nil
     var isYours = true
 
@@ -24,8 +18,6 @@ struct CompetitionBeltCeremonyScript: Equatable, Identifiable {
     }
 }
 
-/// Nil for everything without a cinematic: they took a vacant belt, they
-/// defended, a tie, a vacant belt, or a retired pair.
 func competitionBeltCeremonyScript(
     _ event: CompetitionBeltEvent?,
     opponentName name: String
@@ -61,8 +53,6 @@ func competitionBeltCeremonyScript(
     }
 }
 
-/// A clip's file and when things happen in it, from its beat JSON. A render
-/// writes either `[beat]` or `{"beats": [beat]}`.
 struct CompetitionBeltCeremonyClip {
     private struct Beat: Decodable {
         let t: TimeInterval
@@ -71,9 +61,7 @@ struct CompetitionBeltCeremonyClip {
     private struct File: Decodable { let beats: [Beat] }
 
     let url: URL
-    /// When the words land: the clip's last settle beat, where it holds.
     let settle: TimeInterval
-    /// One heavy haptic each. Lost is one thud at the yank, then nothing.
     let impacts: [TimeInterval]
 
     init?(named name: String, in bundle: Bundle = .main) {
@@ -91,24 +79,17 @@ struct CompetitionBeltCeremonyClip {
     }
 }
 
-/// Test Lab launches run without ceremonies, so its tests stay untouched,
-/// unless `--belt-ceremonies` asks for them.
 private let competitionBeltCeremoniesAreOn: Bool = {
     let arguments = ProcessInfo.processInfo.arguments
     return arguments.contains("--belt-ceremonies")
         || !arguments.contains { $0.hasSuffix("-competition-test-lab") }
 }()
 
-/// True when this result has a ceremony to play or replay.
 func competitionBeltCeremonyCanPlay(_ event: CompetitionBeltEvent?, opponentName: String) -> Bool {
     competitionBeltCeremoniesAreOn && competitionBeltCeremonyScript(event, opponentName: opponentName) != nil
 }
 
 extension View {
-    /// The first-view belt ceremony over the Result screen. `onFinished` starts
-    /// the Verdict, at once when there is nothing to play. Setting `replay`
-    /// plays it again from the result's belt banner; a replay does not call
-    /// `onFinished`.
     func competitionBeltCeremony(
         event: CompetitionBeltEvent?,
         opponentName: String,
@@ -221,7 +202,6 @@ private struct CompetitionBeltCeremony: ViewModifier {
 
     private func playJudges() {
         guard competition != nil else { return }
-        // VoiceOver gets the final state: the result, spoken, in place of the timed reveal.
         if voiceOver {
             finishJudges()
             announcePending()
@@ -256,8 +236,6 @@ private struct CompetitionBeltCeremony: ViewModifier {
     private func announcePending() {
         guard let text = pendingAnnouncement else { return }
         pendingAnnouncement = nil
-        // After the push or the cover's dismissal, or VoiceOver's own reading
-        // of the result screen cuts it off (as the versus intro waits).
         Task {
             try? await Task.sleep(for: .seconds(0.75))
             AccessibilityNotification.Announcement(text).post()
@@ -299,8 +277,6 @@ private struct CompetitionBeltCeremony: ViewModifier {
     }
 }
 
-/// Full screen on black: the clip, or its poster under Reduce Motion, with the
-/// words on the settle beat. A tap anywhere skips it.
 private struct CompetitionBeltCeremonyPlayer: View {
     private static let hold: Duration = .seconds(1.2)
 
@@ -325,7 +301,6 @@ private struct CompetitionBeltCeremonyPlayer: View {
                     .ignoresSafeArea()
             }
             if let poster {
-                // In an overlay, so the filled image can't widen the ZStack.
                 Color.clear
                     .overlay {
                         Image(uiImage: poster)
@@ -344,7 +319,6 @@ private struct CompetitionBeltCeremonyPlayer: View {
                     .transition(Motion.appear)
             }
         }
-        // The words' 38% is of the whole screen, where the clips hold clear.
         .ignoresSafeArea()
         .environment(\.colorScheme, .dark)
         .statusBarHidden()
@@ -373,8 +347,6 @@ private struct CompetitionBeltCeremonyPlayer: View {
     }
 
 #if DEBUG
-    /// A launch argument can't switch Reduce Motion on in a simulator:
-    /// `--belt-reduce-motion` takes its path for the UI tests.
     private static let assumesReduceMotion = ProcessInfo.processInfo.arguments.contains("--belt-reduce-motion")
 #else
     private static let assumesReduceMotion = false
@@ -396,13 +368,10 @@ private struct CompetitionBeltCeremonyPlayer: View {
         try? await Task.sleep(for: Duration.seconds(0.2) + Self.hold)
     }
 
-    /// Falls through to the end if the clip won't load. Each wait measures
-    /// from the player, so a slow start can't pull the beats off the picture.
     private func playClip() async {
         guard let clip = CompetitionBeltCeremonyClip(named: script.clip) else { return }
         let item = AVPlayerItem(url: clip.url)
         let player = AVPlayer(playerItem: item)
-        // No audio track and no audio session: the person's music keeps playing.
         player.isMuted = true
         player.allowsExternalPlayback = false
         self.player = player
@@ -420,12 +389,9 @@ private struct CompetitionBeltCeremonyPlayer: View {
             if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
             return !Task.isCancelled && !isLeaving && item.status != .failed
         }
-        // Yours only: a slash as the belt is torn away, a slam on the clip's
-        // big hit and the crowd on the words. Losing the belt is silent.
         var sounds: [TimeInterval: SoundEffect] = [:]
         if script.isYours {
             if script.clip == "taken", let tear = clip.impacts.first { sounds[tear] = .slash }
-            // The plate forging, the stud's hit, the belt slamming home.
             let slam = ["earned": 2, "defended": 0, "taken": 1][script.clip] ?? 0
             if clip.impacts.indices.contains(slam) { sounds[clip.impacts[slam]] = .slam }
             sounds[clip.settle] = .crowd
@@ -433,7 +399,6 @@ private struct CompetitionBeltCeremonyPlayer: View {
         let beats = clip.impacts.map { ($0, false) } + [(clip.settle, true)]
         for (time, isSettle) in beats.sorted(by: { $0.0 < $1.0 }) {
             if let sound = sounds[time] {
-                // Timed off the player just ahead of the beat, as the waits are.
                 guard await wait(until: time - 0.3) else { return }
                 Sounds.play(sound, in: time - player.currentTime().seconds)
             }
@@ -453,7 +418,6 @@ private struct CompetitionBeltCeremonyPlayer: View {
         leave()
     }
 
-    /// Skip, the end of the hold, or backgrounding, whichever comes first.
     private func leave(animated: Bool = true) {
         guard !isLeaving else { return }
         player?.pause()
@@ -471,7 +435,6 @@ private struct CompetitionBeltCeremonyPlayer: View {
     }
 }
 
-/// The lower 38% of the screen, where the clips hold still.
 private struct CompetitionBeltCeremonyWords: View {
     let script: CompetitionBeltCeremonyScript
     let rolls: Bool
@@ -515,7 +478,6 @@ private struct CompetitionBeltCeremonyWords: View {
                         rolled = defenses
                         return
                     }
-                    // 180 ms a bar, inside the hold however long the reign.
                     let step = min(0.18, 1 / Double(max(defenses, 1)))
                     for count in 1...max(defenses, 1) {
                         try? await Task.sleep(for: .seconds(step))
@@ -531,8 +493,6 @@ private struct CompetitionBeltCeremonyWords: View {
     }
 }
 
-/// AVPlayerLayer rather than AVPlayerViewController: no controls, nothing
-/// system-owned on screen, and the clip fills the frame.
 private struct CompetitionBeltCeremonyVideo: UIViewRepresentable {
     final class PlayerView: UIView {
         override class var layerClass: AnyClass { AVPlayerLayer.self }
@@ -556,8 +516,6 @@ private struct CompetitionBeltCeremonyVideo: UIViewRepresentable {
     func updateUIView(_ view: PlayerView, context: Context) {}
 }
 
-// MARK: Judges' decision
-
 struct CompetitionJudgeCard: Equatable {
     let you: [Double?]
     let them: [Double?]
@@ -574,7 +532,6 @@ struct CompetitionJudgesDecision: Equatable {
     let label: String
 }
 
-/// Cards describe the week; final total points always decide the match.
 func competitionJudgesDecision(
     days: [LocalCompetitionDayPresentation], you: Double, them: Double
 ) -> CompetitionJudgesDecision {

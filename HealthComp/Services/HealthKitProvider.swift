@@ -27,7 +27,6 @@ struct HealthKitCompetitionDependencies: @unchecked Sendable {
     let observerUpdates: @Sendable () -> AsyncStream<HealthKitObserverWakeup>
     let stopObserverUpdates: @Sendable () async -> Void
     let enableBackgroundDelivery: @Sendable (HKSampleType) async throws -> Void
-    /// Sleep beta: its own permission, asked only when someone plays Rings + Sleep.
     let requestSleepAuthorization: @Sendable () async throws -> Void
     let readSleepSamples: @Sendable (DateInterval) async throws -> [SleepSample]
 
@@ -72,10 +71,6 @@ struct HealthKitCompetitionDependencies: @unchecked Sendable {
 }
 
 final class HealthKitProvider: @unchecked Sendable {
-    // HealthKit observer completion ownership must outlive any individual
-    // feature/provider instance. The production state is process-rooted so a
-    // replacement environment can replay pending signals instead of tearing
-    // down callbacks before their journal outcome is persisted.
     private static let productionOwnershipRegistry =
         HealthKitSignalOwnershipRegistry()
     private static let productionSignalState = HealthKitProviderSignalState(
@@ -122,9 +117,6 @@ final class HealthKitProvider: @unchecked Sendable {
         try await competitionDependencies.requestSleepAuthorization()
     }
 
-    /// Asleep intervals from trusted trackers. Empty when sleep access was
-    /// denied: HealthKit never says which.
-    // ponytail: no observer or background delivery for sleep; it is read on every refresh, add HKObserverQuery if overnight pushes matter.
     func readSleepSamples(_ interval: DateInterval) async throws -> [SleepSample] {
         guard competitionDependencies.isHealthDataAvailable() else {
             throw CompetitionActivitySourceError.healthDataUnavailable
@@ -137,8 +129,6 @@ final class HealthKitProvider: @unchecked Sendable {
         }
     }
 
-    /// The asleep stages from Apple Watch or Oura. Hand-entered sleep and
-    /// every other app are left out.
     static func sleepSample(from sample: HKCategorySample) -> SleepSample? {
         guard let value = HKCategoryValueSleepAnalysis(rawValue: sample.value),
               HKCategoryValueSleepAnalysis.allAsleepValues.contains(value),
@@ -180,9 +170,6 @@ final class HealthKitProvider: @unchecked Sendable {
         do {
             standMode = try competitionDependencies.resolveStandMode()
         } catch {
-            // Public HealthKit does not expose read-denial state. If the
-            // characteristic cannot be read, preserve a neutral Stand/Roll
-            // identity while retaining the numeric ring reading.
             standMode = .unknown
         }
 
@@ -266,9 +253,6 @@ final class HealthKitProvider: @unchecked Sendable {
         try ownershipRegistry.retire(lease)
     }
 
-    // Direct-provider tests and migration-only callers can still resolve the
-    // current lease by profile. Production coordinators retain and present the
-    // exact lease issued to them.
     func quiesceSignalOwnership(
         for profileID: UUID
     ) async throws -> [EnvironmentSignal] {
@@ -420,7 +404,6 @@ final class HealthKitProvider: @unchecked Sendable {
             throw CompetitionActivitySourceError.invalidResponse
         }
         let calendar = try competitionCalendar(window.calendar)
-        // An explicit component time zone can filter out otherwise-readable day summaries.
         let start = DateComponents(
             calendar: calendar,
             era: first.era,
@@ -474,8 +457,6 @@ final class HealthKitProvider: @unchecked Sendable {
         case .errorDatabaseInaccessible:
             return .protectedDataUnavailable
         default:
-            // Read authorization is private. Even an authorization-related
-            // query error is not exposed as proof that the user denied reads.
             return .unclassifiedQueryFailure
         }
     }
@@ -548,9 +529,6 @@ final class HealthKitProvider: @unchecked Sendable {
                                 continuation.yield(summaries)
                             }
                         } catch {
-                            // A foreground/protected-data signal will retry the
-                            // authoritative one-shot read. The async-sequence
-                            // payload is never persisted as source evidence.
                         }
                         continuation.finish()
                     }
@@ -947,9 +925,6 @@ private actor HealthKitProviderSignalState {
     }
 
     deinit {
-        // Production state is process-rooted and does not deinitialize during
-        // app/runtime replacement. Test state may deinitialize here; never call
-        // HealthKit completions without the required persisted refresh outcome.
         observerTask?.cancel()
         for subscription in summarySubscriptions.values {
             subscription.task.cancel()
@@ -1110,8 +1085,6 @@ private actor HealthKitProviderSignalState {
         let ownershipScope = ownershipRegistry.activeScope()
         let updates = makeStream(window)
         let task = Task { [weak self] in
-            // Descriptor payloads are deliberately discarded. They are only a
-            // wakeup signal for a subsequent authoritative one-shot reread.
             for await _ in updates {
                 guard !Task.isCancelled else { break }
                 await self?.emit(
@@ -1184,8 +1157,5 @@ private actor HealthKitProviderSignalState {
         guard continuationToken == token else { return }
         continuationToken = nil
         continuation = nil
-        // Observer callbacks remain owned by this app-lifetime provider until
-        // their persisted refresh calls completeSignal. A later root consumer
-        // receives any still-pending callback signals from stream().
     }
 }

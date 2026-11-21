@@ -1,19 +1,11 @@
 import CompetitionCore
 import SwiftUI
 
-/// Group matches on Home, one card each, in their own block: they never
-/// enter the duel layout, so no duel rule (belt, hero, recent results) can
-/// pick one up. They leave Home on the duels' clock; their detail, History
-/// and record keep them.
 struct GroupMatchHomeCards: View {
     let matches: [GroupMatchPresentation]
     let now: Date
     var select: (CompetitionID) -> Void = { _ in }
 
-    /// Invites, then waiting, live, scheduled, results and didn't-start, each
-    /// in the dashboard's order. A result leaves when a duel's would, a match
-    /// that didn't start when a closed challenge would, and a live match once
-    /// you've left it.
     static func shown(_ matches: [GroupMatchPresentation], now: Date) -> [GroupMatchPresentation] {
         func rank(_ match: GroupMatchPresentation) -> Int? {
             switch match.lifecycle {
@@ -87,11 +79,8 @@ private struct GroupMatchHomeCard: View {
         .accessibilityLabel(accessibilityText)
     }
 
-    // MARK: Status
-
     private var isLive: Bool { match.liveDay != nil }
 
-    /// "Live", "Invite", "Waiting", "Didn't start", "Scheduled", "Final".
     private var stateWord: String {
         switch match.lifecycle {
         case .pending: match.viewer.invite == .invited ? "Invite" : "Waiting"
@@ -102,7 +91,6 @@ private struct GroupMatchHomeCard: View {
         }
     }
 
-    /// "Day 4 of 7", "Starts Mon", the week once finished.
     private var trailing: String? {
         let status = competitionStatusText(
             match.lifecycle, schedule: match.schedule, opponentDisplayName: "", style: .card,
@@ -136,8 +124,6 @@ private struct GroupMatchHomeCard: View {
         .textCase(.uppercase)
     }
 
-    // MARK: Before the start
-
     private func names(_ seats: [GroupMatchSeat]) -> String {
         seats.map(\.name).formatted(.list(type: .and))
     }
@@ -166,7 +152,6 @@ private struct GroupMatchHomeCard: View {
         }
     }
 
-    /// Everyone's avatar, so the card says who before it says how many.
     private var lineup: some View {
         HStack(spacing: -4) {
             ForEach(match.seats.sorted { $0.number < $1.number }) { seat in
@@ -179,8 +164,6 @@ private struct GroupMatchHomeCard: View {
         }
     }
 
-    // MARK: Scores
-
     @ViewBuilder
     private var lead: some View {
         if match.frozenStandings == nil {
@@ -188,7 +171,6 @@ private struct GroupMatchHomeCard: View {
         }
     }
 
-    /// The result in words; nil while live.
     private var finalLine: String? {
         guard match.frozenStandings != nil,
               let place = match.standingRows.first(where: { $0.subject == match.viewerSubject })?.place
@@ -219,8 +201,6 @@ private struct GroupMatchHomeCard: View {
                 .font(.score(size: rowScore))
                 .foregroundStyle(color)
                 .frame(minWidth: 14, alignment: .leading)
-            // At accessibility sizes the name takes the avatar's width and wraps
-            // instead of truncating to a letter; the lineup avatars are decoration here.
             if !dynamicTypeSize.isAccessibilitySize {
                 PersonAvatar(name: seat.name, photo: seat.profileID, size: avatarSize, isYou: isYou, isBot: seat.isBot)
             }
@@ -264,8 +244,6 @@ private struct GroupMatchHomeCard: View {
         }
         .foregroundStyle(isYours ? Theme.you : Theme.ink)
     }
-
-    // MARK: VoiceOver
 
     private var accessibilityText: String {
         var parts = ["\(match.format.title), \(stateWord)"]

@@ -1,9 +1,5 @@
 import XCTest
 
-/// Block a challenger, end to end through the app's own root view, Home,
-/// match screens, claim sheet and Account. The `block` Test Lab scenarios
-/// script the server: Alex's block takes 2 s, Sam's and Naren's first block
-/// fail, Alexandria's first Unblock fails, and every Unblock takes 1.5 s.
 final class BlockChallengerUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -28,11 +24,8 @@ final class BlockChallengerUITests: XCTestCase {
         app = nil
     }
 
-    // MARK: Incoming challenge screen
-
     func testDeclineAndBlockDisablesTheScreenThenLeavesHomeAndListsThemInAccount() {
         launch(.block)
-        // Four challenges to you and one from you, each shown once.
         for id in [Self.alexID, Self.samID, Self.longNameID, Self.narenID, Self.priyaID] {
             XCTAssertEqual(cards(id).count, 1, id)
         }
@@ -57,13 +50,11 @@ final class BlockChallengerUITests: XCTestCase {
         let declineAndBlock = app.buttons["Decline and Block Alex"].firstMatch
         XCTAssertTrue(declineAndBlock.waitForExistence(timeout: 3))
         declineAndBlock.tap()
-        // While the server works, nothing can be tapped twice.
         XCTAssertTrue(eventually { !decline.isEnabled })
         XCTAssertFalse(accept.isEnabled)
         XCTAssertEqual(decline.value as? String, "Action in progress")
         XCTAssertFalse(element("competition.invite.error").exists)
 
-        // Declined: the screen closes and Home drops the challenge.
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 6))
         XCTAssertTrue(cards(Self.alexID).firstMatch.waitForNonExistence(timeout: 3))
         for id in [Self.samID, Self.longNameID, Self.narenID, Self.priyaID] {
@@ -98,7 +89,6 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertTrue(
             app.staticTexts["This declines the challenge. Sam will see a decline and can’t challenge you again."].exists
         )
-        // Cancel keeps everything as it was.
         dismissDialog(cancel: "Cancel")
         XCTAssertTrue(app.staticTexts["Block Sam?"].waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.navigationBars["Sam"].exists)
@@ -116,7 +106,6 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertTrue(eventually(timeout: 3) { decline.isEnabled })
         XCTAssertTrue(app.buttons["competition.invite.accept"].isEnabled)
 
-        // The retry goes through the decline dialog this time.
         scrollToElement(decline)
         decline.tap()
         let declineAndBlock = app.buttons["Decline and Block Sam"].firstMatch
@@ -141,9 +130,7 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         XCTAssertTrue(cards(Self.longNameID).firstMatch.waitForNonExistence(timeout: 3))
 
-        // Nobody is blocked, so Account has no BLOCKED section at all.
         openAccount()
-        // The link loaded, and the list under it (where BLOCKED would be) is empty.
         scrollToElement(element("account.challenge-link.reset"))
         scrollToElement(element("account.health"))
         assertNoBlockedSection()
@@ -151,7 +138,6 @@ final class BlockChallengerUITests: XCTestCase {
 
     func testOnlyAChallengeToYouOffersBlock() {
         launch(.block)
-        // Your own challenge: Cancel, no ••• menu.
         open(Self.priyaID, title: "Priya")
         XCTAssertTrue(app.buttons["competition.invite.cancel"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["competition.more"].exists)
@@ -159,7 +145,6 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertFalse(app.buttons["competition.invite.decline"].exists)
         goBack()
 
-        // A live match keeps its own ••• menu, without Block.
         open(Self.jordanID, title: "Jordan")
         let more = app.buttons["competition.more"]
         XCTAssertTrue(more.waitForExistence(timeout: 3))
@@ -171,8 +156,6 @@ final class BlockChallengerUITests: XCTestCase {
             0
         )
     }
-
-    // MARK: Claim sheet
 
     func testClaimSheetDeclineAndBlockRetriesAfterAFailure() {
         launch(.blockClaim, waitForHome: false)
@@ -192,7 +175,6 @@ final class BlockChallengerUITests: XCTestCase {
         let declineAndBlock = app.buttons["Decline and Block Naren"].firstMatch
         XCTAssertTrue(declineAndBlock.waitForExistence(timeout: 3))
         declineAndBlock.tap()
-        // The sheet closes; Home no longer has Naren's challenge.
         XCTAssertTrue(decline.waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         XCTAssertTrue(cards(Self.narenID).firstMatch.waitForNonExistence(timeout: 3))
@@ -202,11 +184,8 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertEqual(app.buttons.matching(identifier: "account.blocked.unblock").count, 1)
     }
 
-    // MARK: Account
-
     func testUnblockDisablesWhileSavingExplainsAFailureAndClearsTheSectionAtTheEnd() {
         launch(.blockedAccount)
-        // A block declined Alexandria's challenge, so Home doesn't show it.
         XCTAssertEqual(cards(Self.longNameID).count, 0)
         openAccount()
         let longUnblock = app.buttons["Unblock \(Self.longName)"]
@@ -214,7 +193,6 @@ final class BlockChallengerUITests: XCTestCase {
         scrollToElement(morganUnblock)
         XCTAssertTrue(longUnblock.exists)
         XCTAssertEqual(app.buttons.matching(identifier: "account.blocked.unblock").count, 2)
-        // Newest block first.
         XCTAssertLessThan(longUnblock.frame.minY, morganUnblock.frame.minY)
         XCTAssertTrue(app.staticTexts[Self.longName].exists)
         XCTAssertGreaterThanOrEqual(longUnblock.frame.height, 44)
@@ -222,7 +200,6 @@ final class BlockChallengerUITests: XCTestCase {
 
         scrollToElement(longUnblock)
         longUnblock.tap()
-        // Saving: VoiceOver hears it, and a second tap does nothing.
         XCTAssertTrue(eventually { longUnblock.value as? String == "Unblocking" && !longUnblock.isEnabled })
         shot("account-unblocking")
         longUnblock.tap()
@@ -231,8 +208,6 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 5))
         XCTAssertEqual(error.label, "Couldn’t unblock. Check your connection and try again.")
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "account.blocked.error").count, 1)
-        // In Alexandria's row, under her Unblock, above Morgan.
-        // The row settles open, so its frames are final a moment later.
         XCTAssertTrue(eventually {
             error.frame.minY >= longUnblock.frame.maxY - 1
                 && error.frame.maxY < morganUnblock.frame.minY
@@ -240,7 +215,6 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertTrue(longUnblock.exists)
         XCTAssertTrue(eventually { longUnblock.isEnabled && (longUnblock.value as? String ?? "").isEmpty })
 
-        // The next Unblock clears the error at once.
         scrollToElement(morganUnblock)
         morganUnblock.tap()
         XCTAssertTrue(error.waitForNonExistence(timeout: 1))
@@ -248,13 +222,11 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertEqual(app.buttons.matching(identifier: "account.blocked.unblock").count, 1)
         XCTAssertTrue(app.staticTexts["BLOCKED"].exists)
 
-        // The retry removes the last row, and the section goes with it.
         scrollToElement(longUnblock)
         longUnblock.tap()
         XCTAssertTrue(app.staticTexts["BLOCKED"].waitForNonExistence(timeout: 5))
         assertNoBlockedSection()
 
-        // Account reloads the list when it opens again: still nobody.
         closeAccount()
         openAccount()
         scrollToElement(element("account.notifications"))
@@ -275,10 +247,6 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertFalse(element("account.blocked.error").exists)
     }
 
-    // MARK: Screenshots
-
-    /// Every new or changed screen, light and dark, at the default size and
-    /// at AX5. Names are `<screen>-<light|dark>-<default|ax5>`.
     func testBlockScreensAppearanceAndTypeSizeMatrix() throws {
         let sizes = [("default", "UICTContentSizeCategoryL"), ("ax5", "UICTContentSizeCategoryAccessibilityXXXL")]
         for appearance in ["Light", "Dark"] {
@@ -345,8 +313,6 @@ final class BlockChallengerUITests: XCTestCase {
                 longUnblock.tap()
                 XCTAssertTrue(eventually { longUnblock.value as? String == "Unblocking" })
                 shot("account-unblocking-\(suffix)")
-                // At AX5 the error row lands below the fold, where the list
-                // hasn't made it yet: scroll it on screen, as for Health.
                 let unblockError = element("account.blocked.error")
                 scrollToElement(unblockError)
                 XCTAssertEqual(unblockError.label, "Couldn’t unblock. Check your connection and try again.")
@@ -363,14 +329,11 @@ final class BlockChallengerUITests: XCTestCase {
                 app.buttons["Decline and Block Naren"].firstMatch.tap()
                 let claimError = element("competition.claim.decline-error")
                 XCTAssertTrue(claimError.waitForExistence(timeout: 5))
-                // No scroll here: at AX5 a drag can start on Accept and accept.
                 XCTAssertEqual(claimError.label, "Couldn’t decline. Check your connection and try again.")
                 shot("claim-decline-error-\(suffix)")
             }
         }
     }
-
-    // MARK: Helpers
 
     private enum Scenario: String {
         case block
@@ -441,14 +404,12 @@ final class BlockChallengerUITests: XCTestCase {
         )
         XCTAssertTrue(text("\(name)\(Self.declineMessage)").exists, file: file, line: line)
         for label in ["Decline Challenge", "Decline and Block \(name)"] {
-            // UIKit can expose a wrapper and inner button for the same action.
             let actions = app.buttons.matching(NSPredicate(format: "label == %@", label))
                 .allElementsBoundByIndex.filter { $0.children(matching: .button).count == 0 }
             XCTAssertEqual(actions.count, 1, label, file: file, line: line)
         }
     }
 
-    /// The Block confirmation's button has the menu item's label; the menu is gone by now.
     private func confirmBlock(_ name: String) {
         XCTAssertTrue(app.staticTexts["Block \(name)?"].waitForExistence(timeout: 3))
         let confirm = app.buttons.matching(
@@ -458,8 +419,6 @@ final class BlockChallengerUITests: XCTestCase {
         confirm.tap()
     }
 
-    /// A confirmation dialog's cancel button, or a tap outside where iOS
-    /// shows it as a popover without one.
     private func dismissDialog(cancel label: String) {
         let button = app.buttons[label].firstMatch
         if button.exists, button.isHittable {
@@ -468,7 +427,6 @@ final class BlockChallengerUITests: XCTestCase {
             let popover = app.popovers.firstMatch
             XCTAssertTrue(popover.exists)
             XCTAssertGreaterThan(popover.frame.minX, app.frame.minX)
-            // Large-text popovers cover the old top-center dismissal point.
             let outside = CGVector(dx: (popover.frame.minX - app.frame.minX) / 2,
                                    dy: popover.frame.midY - app.frame.minY)
             app.coordinate(withNormalizedOffset: .zero).withOffset(outside).tap()
@@ -482,7 +440,6 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertFalse(element("account.blocked.error").exists, file: file, line: line)
     }
 
-    /// From the BLOCKED header to the footer, or to the screen's edges.
     private func blockedSection() -> CGRect {
         let screen = app.windows.firstMatch.frame
         let header = app.staticTexts["BLOCKED"]
@@ -492,8 +449,6 @@ final class BlockChallengerUITests: XCTestCase {
         return CGRect(x: screen.minX, y: top, width: screen.width, height: max(0, bottom - top))
     }
 
-    /// Polls every 0.1 s. XCTNSPredicateExpectation checks about once a
-    /// second, too slow for a 1.5 s in-flight state.
     private func eventually(timeout: TimeInterval = 1.2, _ condition: () -> Bool) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
@@ -510,11 +465,6 @@ final class BlockChallengerUITests: XCTestCase {
         add(attachment)
     }
 
-    /// Layout and labelling audits. Contrast is left to the existing matrix.
-    /// Only elements fully on screen and inside `region` (by default the
-    /// screen) count: a row cut off by the screen edge reads as clipped
-    /// text, and Account's older sections have their own matrix. Skipped
-    /// issues are attached.
     private func audit(_ name: String, region: CGRect? = nil) throws {
         try XCTContext.runActivity(named: "audit \(name)") { activity in
             let screen = app.windows.firstMatch.frame
@@ -523,9 +473,6 @@ final class BlockChallengerUITests: XCTestCase {
             try app.performAccessibilityAudit(
                 for: [.textClipped, .hitRegion, .sufficientElementDescription]
             ) { issue in
-                // An issue XCTest can’t tie to an element (seen here as a nil
-                // element on the BLOCKED rows) can’t be located; it’s attached and the screenshots
-                // are checked by eye instead.
                 guard let element = issue.element else {
                     skipped.append("\(issue.compactDescription): no element. \(issue.detailedDescription)")
                     return true
@@ -561,8 +508,6 @@ final class BlockChallengerUITests: XCTestCase {
             let end = surface.coordinate(
                 withNormalizedOffset: CGVector(dx: 0.5, dy: movesTowardEarlierContent ? 0.55 : 0.45)
             )
-            // Hold before releasing: no momentum, so the next tap lands on
-            // the control instead of stopping a scroll.
             start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
         }
         XCTAssertTrue(element.exists, "\(element)")

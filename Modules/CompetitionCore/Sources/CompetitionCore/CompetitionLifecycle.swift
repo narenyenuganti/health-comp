@@ -34,10 +34,6 @@ public struct CompetitionSchedule: Codable, Equatable, Sendable {
         self.startDay = startDay
     }
 
-    /// When day 7 ends on a device in `timeZone`. Health reads a day by its
-    /// local date, so a player west of the frozen calendar is still filling
-    /// day 7 after the match moves to tallying; a stable attestation waits
-    /// for this instant (capped by the best-available deadline).
     public func localWindowEnd(in timeZone: TimeZone) throws -> Date {
         let lastDay = try calendar.sevenDayWindow(startingOn: startDay)[6]
         let local = try CompetitionCalendar(timeZoneIdentifier: timeZone.identifier)
@@ -236,10 +232,6 @@ public struct Competition: Equatable, Sendable {
     public internal(set) var lifecycle: CompetitionLifecycle
     public internal(set) var schedule: CompetitionSchedule?
     public internal(set) var opponentPlan: OpponentPlan?
-    /// Present only when the journal was accepted by the remote backend.  This
-    /// deliberately sits alongside (rather than inside) the simulated
-    /// acceptance payload so old journals can never reinterpret an opponent
-    /// plan as a human participant.
     public internal(set) var remoteConfiguration: RemoteCompetitionConfiguration?
     public internal(set) var appliedEventIDs: [String]
 

@@ -1,8 +1,6 @@
 import SwiftUI
 import WidgetKit
 
-/// One widget, four sizes. All copy comes from `CompetitionWidgetSnapshot`;
-/// names, numbers and name-bearing status redact on a locked phone.
 struct CompetitionMatchWidgetView: View {
     let entry: CompetitionWidgetEntry
 
@@ -66,8 +64,6 @@ private struct WidgetBackground: ViewModifier {
     func body(content: Content) -> some View {
         switch family {
         case .accessoryCircular:
-            // The Lock Screen drops an accessory widget's container
-            // background, so the disc goes in the body.
             ZStack {
                 AccessoryWidgetBackground()
                 content
@@ -81,12 +77,9 @@ private struct WidgetBackground: ViewModifier {
     }
 }
 
-/// The uppercase status label: "DAY 5 OF 7".
 private struct StatusLabel: View {
     let text: String
     var namesSomeone = false
-    /// Shrinks a little before truncating, so "FINAL SCORE PENDING" and
-    /// "DAY 1 IS WEDNESDAY" fit the small widget.
     var shrinks = true
 
     var body: some View {
@@ -102,13 +95,10 @@ private struct StatusLabel: View {
 }
 
 private extension CompetitionWidgetSnapshot.Match {
-    /// "Sam won" names someone; the other statuses don't.
     func statusNamesSomeone(at date: Date) -> Bool {
         state(at: date) == .final(.loss)
     }
 }
-
-// MARK: Small
 
 private struct SmallView: View {
     let match: CompetitionWidgetSnapshot.Match
@@ -131,7 +121,6 @@ private struct SmallView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
-            // The lead line drops first; the Updated line stays.
             ViewThatFits(in: .vertical) {
                 layout(showsLead: true)
                 layout(showsLead: false)
@@ -146,7 +135,6 @@ private struct SmallView: View {
             row("You", match.userPointsText(), match.userPoints, Theme.you, isYou: true)
             row(match.name, match.opponentPointsText(), match.opponentPoints, Theme.ink, isYou: false)
             if showsLead, let lead = match.leadLine(at: date) {
-                // A long name gives way in the middle, so the margin at the end stays.
                 Text(lead)
                     .font(.caption)
                     .foregroundStyle(Theme.secondary)
@@ -170,13 +158,11 @@ private struct SmallView: View {
         _ label: String, _ number: String, _ points: Double, _ color: Color, isYou: Bool
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            // Always a few letters of the name: the number shrinks first,
-            // but never truncates, so large text leaves the name less room.
             Text(label)
                 .font(.themeLabel)
                 .foregroundStyle(color)
                 .lineLimit(1)
-                .fixedSize(horizontal: isYou, vertical: false)  // "You" is always whole
+                .fixedSize(horizontal: isYou, vertical: false)
                 .frame(minWidth: isYou ? nil : (typeSize >= .xLarge ? 40 : 64), alignment: .leading)
                 .privacySensitive(!isYou)
             Spacer(minLength: 0)
@@ -189,12 +175,10 @@ private struct SmallView: View {
                 .scoreRoll(points, id: match.id)
                 .widgetAccentable(isYou)
                 .privacySensitive()
-                .layoutPriority(1)  // fills what the name leaves, shrinking to fit
+                .layoutPriority(1)
         }
     }
 }
-
-// MARK: Medium
 
 private struct MediumView: View {
     let match: CompetitionWidgetSnapshot.Match
@@ -216,8 +200,6 @@ private struct MediumView: View {
                 }
                 Spacer(minLength: 0)
             } else {
-                // Large text drops the Today lines. The strip adds no height:
-                // it goes only when the numbers leave it no room.
                 ViewThatFits(in: .vertical) {
                     scores(showsToday: true)
                     scores(showsToday: false)
@@ -227,11 +209,8 @@ private struct MediumView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// "SAM · DAY 5 OF 7" and the Updated time: one row, or two at large
-    /// text sizes so neither truncates to nothing.
     @ViewBuilder
     private var header: some View {
-        // A long name truncates; the status after it stays whole.
         let title = HStack(alignment: .firstTextBaseline, spacing: 0) {
             StatusLabel(text: match.name, namesSomeone: true, shrinks: false)
             StatusLabel(text: " · \(match.mediumStatus(at: date))", shrinks: false)
@@ -311,8 +290,6 @@ private struct MediumView: View {
         }
     }
 
-    /// Capped near the number's width, so a long name truncates instead of
-    /// pushing out the strip and the Today lines.
     private func caption(_ text: String, isYou: Bool) -> some View {
         Text(text)
             .themeLabel()
@@ -323,17 +300,12 @@ private struct MediumView: View {
     }
 
     private var strip: some View {
-        // Won days stay apart from lost ones on a tinted Home Screen.
         CompetitionMatchStrip(match: match, date: date, height: 14, spacing: 4) { _, outcome, bar in
             bar.widgetAccentable(outcome == .won)
         }
     }
 }
 
-// MARK: Group
-
-/// "2ND" over "48 behind Sam", or the two team totals: your place and the
-/// gap in a free-for-all, the team totals in doubles.
 private struct GroupSmallView: View {
     let match: CompetitionWidgetSnapshot.Match
     let group: CompetitionWidgetSnapshot.Group
@@ -378,7 +350,6 @@ private struct GroupSmallView: View {
     }
 }
 
-/// The standings, one row per seat or team, under the header and lead.
 private struct GroupMediumView: View {
     let match: CompetitionWidgetSnapshot.Match
     let group: CompetitionWidgetSnapshot.Group
@@ -386,8 +357,6 @@ private struct GroupMediumView: View {
 
     @ScaledMetric(relativeTo: .title) private var rowSize: CGFloat = 20
 
-    /// Large text drops the lead, then every row but yours and the one above
-    /// (below, when you're first). VoiceOver still reads every seat.
     var body: some View {
         let you = group.rows.firstIndex(where: \.isYou) ?? 0
         let start = max(0, min(you - 1, group.rows.count - 2))
@@ -437,8 +406,6 @@ private struct GroupMediumView: View {
     }
 }
 
-// MARK: Lock Screen
-
 private struct RectangularView: View {
     let match: CompetitionWidgetSnapshot.Match
     let date: Date
@@ -448,7 +415,6 @@ private struct RectangularView: View {
         let hasScores = match.state(at: date) != .scheduled
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(lines.enumerated()), id: \.offset) { index, choices in
-                // Keyed by position: keyed by text, a changed score is a new view.
                 let line = ViewThatFits(in: .horizontal) {
                     ForEach(Array(choices.enumerated()), id: \.offset) { _, choice in
                         Text(choice).lineLimit(1)
@@ -486,16 +452,12 @@ private struct CircularView: View {
                 .font(.title3.weight(.heavy).width(.compressed))
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
-                // Per match, with a separate id for the weekday before Day 1, so
-                // the first margin fades in and switching matches never rolls.
                 .scoreRoll(margin, id: "\(match.id)/\(match.state(at: date) == .scheduled)")
                 .privacySensitive()
         }
         .padding(4)
     }
 }
-
-// MARK: Nothing to show
 
 private struct EmptyStateView: View {
     let text: CompetitionWidgetEmptyText
@@ -514,8 +476,6 @@ private struct EmptyStateView: View {
                         .font(index == 0 ? .headline : .body)
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
-                        // Without this the stack held "Open the app to see
-                        // your matches." to one truncated line.
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -526,7 +486,7 @@ private struct EmptyStateView: View {
                 Text(text.title)
                     .font(.title3.weight(.heavy).width(.condensed))
                     .foregroundStyle(Theme.ink)
-                    .minimumScaleFactor(0.6)  // "HealthComp" can't wrap
+                    .minimumScaleFactor(0.6)
                     .privacySensitive(text.namesSomeone)
                 if let line = text.line {
                     Text(line)

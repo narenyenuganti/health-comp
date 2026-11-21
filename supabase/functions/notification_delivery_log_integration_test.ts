@@ -40,8 +40,6 @@ Deno.test("development correlation never waits on a concurrently locked installa
       await tx`select set_config('request.jwt.claims','{"role":"service_role"}',true)`;
       await tx`select public.finalize_competition(${competitionID}::uuid)`;
     });
-    // Earlier tests leave pending work behind, so find this test's item by
-    // identity rather than assume it is the oldest in the queue.
     const leased = (await sql.begin(async (tx) => {
       await tx`select set_config('request.jwt.claims','{"role":"service_role"}',true)`;
       return (await tx`select public.lease_competition_notification_work(100,60) payload`)[
@@ -59,8 +57,6 @@ Deno.test("development correlation never waits on a concurrently locked installa
       await installationLocker`select 1 from public.device_installations
         where profile_id=${profileA}::uuid and installation_id=${installationID}::uuid
         for update`;
-      // The other connection must finish before this lock is released. A
-      // blocking installation lock would time out instead of resolving work.
       const resolved = await sql.begin(async (tx) => {
         await tx`set local lock_timeout='250ms'`;
         await tx`set local statement_timeout='2s'`;

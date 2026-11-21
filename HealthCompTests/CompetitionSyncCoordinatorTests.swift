@@ -329,7 +329,6 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         let request = try scoreRequest()
         let probe = CompetitionSyncCoordinatorProbe()
         let failedAt = Date(timeIntervalSince1970: 1_786_536_010)
-        // A frozen clock with the real sleeper would fire at once and spin.
         let sleeper = CoordinatorRetrySleeper()
         let coordinator = CompetitionSyncCoordinator(
             profileID: profileID,
@@ -389,7 +388,6 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
             Date(timeIntervalSince1970: 1_786_536_010)
         )
         let probe = CompetitionSyncCoordinatorProbe()
-        // A frozen clock with the real sleeper would fire at once and spin.
         let sleeper = CoordinatorRetrySleeper()
         let coordinator = CompetitionSyncCoordinator(
             profileID: profileID,
@@ -443,7 +441,6 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         let attempts = await probe.remoteCallCount()
         let deadlines = await sleeper.deadlines()
         XCTAssertEqual(attempts, expectedDelays.count)
-        // One timer per attempt: a respin would add more.
         XCTAssertEqual(deadlines.count, expectedDelays.count)
         await coordinator.stop()
     }
@@ -1529,7 +1526,6 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         )
         let failedAt = Date(timeIntervalSince1970: 1_786_536_010)
         let probe = CompetitionSyncCoordinatorProbe()
-        // A frozen clock with the real sleeper would fire at once and spin.
         let sleeper = CoordinatorRetrySleeper()
         let coordinator = CompetitionSyncCoordinator(
             profileID: profileID,
@@ -1944,8 +1940,6 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         await coordinator.wake()
         await coordinator.waitUntilIdle()
 
-        // Revision 2 would land first, and the server would then refuse
-        // revision 1 as a regression; the other match isn't held up.
         let sent = await probe.remoteRequests()
         let left = try await store.entries().map(\.semanticEventID)
         XCTAssertEqual(sent, [earlier, otherMatch])
@@ -1974,7 +1968,6 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         for request in [otherContent, refused, fine] {
             _ = try await store.enqueue(.scoreRevision(request), enqueuedAt: now)
         }
-        // An answer for different content than the upload sent.
         let mismatched = try CompetitionScoreRevisionResponse(
             disposition: .appended,
             rejectionCode: nil,
@@ -1996,7 +1989,6 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
             }),
             acceptedScorePersistence: CompetitionAcceptedScorePersistence {
                 _, request, response, receivedAt in
-                // The journal can't take this row, now or on any retry.
                 if request == refused {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
@@ -2053,8 +2045,6 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         await coordinator.wake()
         await coordinator.waitUntilIdle()
         let whileBackedOff = await probe.remoteCallCount()
-        // The server just answered another call: the backoff earned
-        // offline no longer applies.
         await coordinator.wake(ignoringBackoff: true)
         await coordinator.waitUntilIdle()
         let afterReconnect = await probe.remoteCallCount()
@@ -2084,7 +2074,6 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
             acceptedScorePersistence: CompetitionAcceptedScorePersistence { _, _, _, _ in },
             now: { now }
         )
-        // A wake lands while the first pass is failing.
         await store.failFirstRead { await coordinator.wake() }
 
         await coordinator.wake()
@@ -2102,7 +2091,6 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let request = try scoreRequest()
         let response = try scoreResponse(for: request)
-        // Finer than the outbox's millisecond dates keep.
         let clock = Date(timeIntervalSince1970: 1_786_536_010.987_654_3)
         let probe = CompetitionSyncCoordinatorProbe()
         let crashing = CompetitionSyncCoordinator(
@@ -2137,7 +2125,6 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         await relaunched.wake()
         await relaunched.waitUntilIdle()
 
-        // The journal receipt carries receivedAt, so a replay must match.
         let observations = await probe.persistenceObservations()
         XCTAssertEqual(observations.count, 2)
         XCTAssertEqual(observations.first?.receivedAt, observations.last?.receivedAt)
@@ -2323,7 +2310,6 @@ private actor CompetitionSyncCoordinatorProbe {
         persistedObservations
     }
 
-
     func attestationObservations() -> [AttestationObservation] {
         submittedAttestations
     }
@@ -2393,8 +2379,6 @@ private actor RemoveFailingOutboxStore: CompetitionOutboxStore {
     }
 }
 
-/// Its first read lets `hook` run, then fails, as a drain pass would on an
-/// outbox IO error.
 private actor WakeThenFailOnceOutboxStore: CompetitionOutboxStore {
     private let base: any CompetitionOutboxStore
     private var hook: (@Sendable () async -> Void)?
