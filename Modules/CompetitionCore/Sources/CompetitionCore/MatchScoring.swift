@@ -108,10 +108,16 @@ public struct MatchDayScore: Codable, Equatable, Sendable {
     public let ordinal: Int
     public let value: MatchDayValue
 
-    public init(seatID: UUID, ordinal: Int, value: MatchDayValue) throws {
+    public init(
+        seatID: UUID,
+        ordinal: Int,
+        value: MatchDayValue,
+        maximumCentipoints: Int = 60_000
+    ) throws {
         guard seatID != matchNilUUID else { throw MatchScoringError.invalidSeatID }
         guard (1...7).contains(ordinal) else { throw MatchScoringError.invalidDay }
-        if case let .centipoints(points) = value, !(0...60_000).contains(points) {
+        let cap = min(70_000, max(0, maximumCentipoints))
+        if case let .centipoints(points) = value, !(0...cap).contains(points) {
             throw MatchScoringError.invalidCentipoints
         }
         self.seatID = seatID
