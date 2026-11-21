@@ -384,7 +384,7 @@ struct CompetitionBadgeTag: View {
             .foregroundStyle(Theme.onYouFill)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(Theme.youFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(Theme.youFill, in: RoundedRectangle(cornerRadius: 6))
     }
 }
 
@@ -672,7 +672,7 @@ struct CompetitionOwnRecordsView: View {
                             }
                         }
                         .themePanel()
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 20))
                     }
                 }
             }
@@ -688,7 +688,7 @@ struct CompetitionOwnRecordsView: View {
 
     @ViewBuilder
     private func row(_ record: CompetitionOwnRecord) -> some View {
-        let identifier = "competition.ownRecords.\(record.label.lowercased().replacingOccurrences(of: " ", with: "-"))"
+        let identifier = "competition.ownRecords.\(record.label.lowercased().replacing(" ", with: "-"))"
         if let weekID = record.weekID {
             NavigationLink(value: CompetitionHomeRoute.competition(weekID)) {
                 content(record, opens: true)

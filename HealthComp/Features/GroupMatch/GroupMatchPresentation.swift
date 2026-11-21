@@ -255,10 +255,7 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
     }
 
     static func placeText(_ place: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en_US")
-        formatter.numberStyle = .ordinal
-        return formatter.string(from: place as NSNumber) ?? String(place)
+        competitionOrdinalText(place)
     }
 
     static func pointsText(_ centipoints: Int) -> String {

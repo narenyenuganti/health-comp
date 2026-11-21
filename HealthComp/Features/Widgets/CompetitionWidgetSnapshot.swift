@@ -208,12 +208,8 @@ extension CompetitionWidgetSnapshot.Match {
 
     func weekday(_ template: String, locale: Locale) -> String {
         guard let first = dayStarts.first else { return "" }
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = locale
-        formatter.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? .current
-        formatter.setLocalizedDateFormatFromTemplate(template)
-        return formatter.string(from: first)
+        let zone = TimeZone(identifier: timeZoneIdentifier) ?? .current
+        return competitionFormattedDate(first, template: template, locale: locale, timeZone: zone)
     }
 
     func status(at date: Date, compact: Bool = false, locale: Locale = .current) -> String {
@@ -371,10 +367,7 @@ extension CompetitionWidgetSnapshot.Match {
 
 extension CompetitionWidgetSnapshot.Group {
     func placeText(_ place: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en_US")
-        formatter.numberStyle = .ordinal
-        return formatter.string(from: place as NSNumber) ?? String(place)
+        competitionOrdinalText(place)
     }
 }
 

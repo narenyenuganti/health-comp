@@ -223,7 +223,9 @@ struct GroupMatchLiveScreen<Content: View>: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         if let replayIntro {
-                            Button(action: replayIntro) {
+                            Button {
+                                replayIntro()
+                            } label: {
                                 Label("Replay intro", systemImage: "arrow.counterclockwise")
                             }
                             .accessibilityIdentifier("competition.versus.replay")
@@ -241,14 +243,14 @@ struct GroupMatchLiveScreen<Content: View>: View {
                         CompetitionMoreLabel()
                     }
                     .accessibilityIdentifier("competition.more")
+                    .confirmationDialog("Leave the match?", isPresented: $confirmsLeave, titleVisibility: .visible) {
+                        Button("Leave Match", role: .destructive) { store.send(.commandTapped(.leave(match.id))) }
+                        Button("Keep Playing", role: .cancel) {}
+                    } message: {
+                        Text(leaveMessage)
+                    }
                 }
             }
-        }
-        .confirmationDialog("Leave the match?", isPresented: $confirmsLeave, titleVisibility: .visible) {
-            Button("Leave Match", role: .destructive) { store.send(.commandTapped(.leave(match.id))) }
-            Button("Keep Playing", role: .cancel) {}
-        } message: {
-            Text(leaveMessage)
         }
         .navigationDestination(item: $day) { ordinal in
             GroupMatchDayView(match: match, ordinal: ordinal, store: store)
@@ -285,8 +287,9 @@ struct GroupMatchStatusRow: View {
                 if isLive {
                     Circle().fill(Theme.ink).frame(width: 8, height: 8)
                 }
-                Text(isLive ? "Live" : status.title).foregroundStyle(Theme.ink)
-                    + Text(isLive ? " · \(status.title)" : "").foregroundStyle(Theme.secondary)
+                let lead = Text(isLive ? "Live" : status.title).foregroundStyle(Theme.ink)
+                let tail = Text(isLive ? " · \(status.title)" : "").foregroundStyle(Theme.secondary)
+                Text("\(lead)\(tail)")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let timing = status.timing {

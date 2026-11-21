@@ -155,7 +155,7 @@ struct MatchActivityBottomRows: View {
             opponentPoints: state.opponentPoints,
             opponentDisplayName: state.opponentName
         )
-        return state.phase == .pending ? lead + Text(" Not final yet.") : lead
+        return state.phase == .pending ? Text("\(lead) Not final yet.") : lead
     }
 }
 
@@ -235,15 +235,17 @@ struct MatchActivityIslandHeader: View {
     let attributes: MatchActivityAttributes
     let state: MatchActivityAttributes.ContentState
 
+    @Environment(\.locale) private var locale
+
     var body: some View {
-        let title = Text(state.title.uppercased(with: .current))
+        let title = Text(state.title.uppercased(with: locale))
             .tracking(1.2)
             .foregroundStyle(Theme.ink)
-        let countdown = Text(attributes.endsAt, style: .relative) + Text(" left")
+        let countdown = Text("\(Text(attributes.endsAt, style: .relative)) left")
         let shownCountdown = countdown.font(.footnote).foregroundStyle(Theme.secondary)
         Group {
             if state.phase == .live {
-                title + Text("  ") + shownCountdown
+                Text("\(title)  \(shownCountdown)")
             } else {
                 title
             }
@@ -252,7 +254,7 @@ struct MatchActivityIslandHeader: View {
         .multilineTextAlignment(.center)
         .lineLimit(1)
         .minimumScaleFactor(0.7)
-        .accessibilityLabel(state.phase == .live ? Text(state.title) + Text(", ") + countdown : Text(state.title))
+        .accessibilityLabel(state.phase == .live ? Text("\(state.title), \(countdown)") : Text(state.title))
     }
 }
 

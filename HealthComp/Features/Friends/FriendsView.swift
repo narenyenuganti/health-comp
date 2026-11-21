@@ -110,7 +110,7 @@ private struct FriendsRowButtonStyle: ButtonStyle {
             .frame(minHeight: 44)
             .background(
                 isProminent ? Theme.ink : Theme.control,
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 12)
             )
             .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
             .animation(Motion.press, value: configuration.isPressed)
@@ -307,10 +307,10 @@ struct FriendsView: View {
         .padding(.leading, 14)
         .padding(.trailing, 2)
         .frame(minHeight: 48)
-        .background(Theme.control, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Theme.control, in: RoundedRectangle(cornerRadius: 14))
         .overlay {
             if isFieldFocused {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 14)
                     .strokeBorder(Theme.ink, lineWidth: 2)
             }
         }
@@ -562,7 +562,7 @@ struct FriendsView: View {
             }
         }
         .themePanel()
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 
     @ViewBuilder
@@ -1013,7 +1013,7 @@ struct FriendProfileView: View {
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .themePanel()
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             [title, since, defenses > 0 ? competitionDefensesText(defenses) : nil]
@@ -1041,7 +1041,7 @@ struct FriendProfileView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .themePanel()
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("friends.person.prize")
     }

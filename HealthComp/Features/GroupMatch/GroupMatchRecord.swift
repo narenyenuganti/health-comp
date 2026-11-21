@@ -3,7 +3,7 @@ import SwiftUI
 
 struct GroupMatchRecord: View {
     let matches: [GroupMatchPresentation]
-    var now = Date()
+    var now = Date.now
 
     @Environment(\.locale) private var locale
 
@@ -35,7 +35,7 @@ struct GroupMatchRecord: View {
                     }
                 }
                 .themePanel()
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 20))
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("competition.group.record")
@@ -54,11 +54,11 @@ struct GroupMatchRecord: View {
             return "\(GroupMatchPresentation.placeText(place)) \(times)"
         }.joined(separator: ", ")
         let firsts = places.filter { $0 == 1 }.count
+        let firstsText = Text(String(firsts)).foregroundStyle(Theme.you)
         return recordRow(
             title: "Free-for-all",
             detail: finishes,
-            value: Text(String(firsts)).foregroundStyle(Theme.you)
-                + Text(" \(firsts == 1 ? "first" : "firsts") of \(places.count)"),
+            value: Text("\(firstsText) \(firsts == 1 ? "first" : "firsts") of \(places.count)"),
             accessibility: "Free-for-all, first in \(firsts) of \(places.count). \(finishes)",
             identifier: "competition.group.record.free-for-all"
         )
@@ -76,7 +76,10 @@ struct GroupMatchRecord: View {
             }
             records[seat.partnerKey, default: [0, 0, 0]][match.doublesOutcome.rawValue] += 1
         }
-        return partners.map { (names[$0]!, records[$0]!) }
+        return partners.compactMap { key in
+            guard let name = names[key], let record = records[key] else { return nil }
+            return (name, record)
+        }
     }
 
     private func doublesRow(_ matches: [GroupMatchPresentation]) -> some View {
@@ -87,8 +90,11 @@ struct GroupMatchRecord: View {
         let total = partners.reduce(into: [0, 0, 0]) { sum, partner in
             for index in 0..<3 { sum[index] += partner.record[index] }
         }
-        var value = Text(String(total[0])).foregroundStyle(Theme.you) + Text("–\(total[1])")
-        if total[2] > 0 { value = value + Text("–\(total[2])").foregroundStyle(Theme.secondary) }
+        let won = Text(String(total[0])).foregroundStyle(Theme.you)
+        let tied = Text("–\(total[2])").foregroundStyle(Theme.secondary)
+        let value = total[2] > 0
+            ? Text("\(won)–\(total[1])\(tied)")
+            : Text("\(won)–\(total[1])")
         return recordRow(
             title: "Doubles",
             detail: partners.map { "\(text($0.record)) with \($0.name)" }.joined(separator: ", "),

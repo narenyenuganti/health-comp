@@ -198,10 +198,10 @@ struct PermissionOnboardingView: View {
                 .frame(width: 36, height: 36)
                 .background(
                     Theme.ground,
-                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: 9)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: 9)
                         .strokeBorder(Theme.hairline)
                 )
             VStack(alignment: .leading, spacing: 2) {

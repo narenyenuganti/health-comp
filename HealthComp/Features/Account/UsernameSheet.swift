@@ -85,7 +85,7 @@ struct UsernameSheet: View {
             )
             if isAvailable {
                 Image(systemName: "checkmark")
-                    .fontWeight(.bold)
+                    .bold()
                     .accessibilityHidden(true)
                     .transition(Motion.appear)
             }
@@ -94,9 +94,9 @@ struct UsernameSheet: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .frame(minHeight: 56)
-        .background(Theme.control, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Theme.control, in: RoundedRectangle(cornerRadius: 14))
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 14)
                 .strokeBorder(Theme.ink, lineWidth: 2)
         }
     }
@@ -201,7 +201,7 @@ struct UsernameField: UIViewRepresentable {
 
         func focusWhenShown() {
             wantsFocus = true
-            DispatchQueue.main.async { self.focusIfShown() }
+            Task { @MainActor in self.focusIfShown() }
         }
 
         override func didMoveToWindow() {

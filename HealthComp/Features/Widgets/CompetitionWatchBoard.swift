@@ -269,10 +269,7 @@ extension CompetitionWidgetSnapshot.Match {
         case let .lost(weeks, defenses):
             return ("AND NEW", "\(name) took the belt", reign("Your", weeks, defenses))
         case let .defended(count):
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .ordinal
-            formatter.locale = Locale(identifier: "en_US")
-            return ("AND STILL", "\(formatter.string(from: count as NSNumber) ?? "\(count)") title defense", [])
+            return ("AND STILL", "\(competitionOrdinalText(count)) title defense", [])
         }
     }
 
@@ -321,19 +318,15 @@ extension CompetitionWidgetSnapshot.Match {
     }
 
     func weekRows(locale: Locale = .current) -> [(day: String, spoken: String, you: String?, them: String?)] {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = locale
-        formatter.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? .current
+        let zone = TimeZone(identifier: timeZoneIdentifier) ?? .current
         func points(_ values: [Double?], _ index: Int) -> String? {
             guard values.indices.contains(index), let value = values[index] else { return nil }
             return competitionPointsText(value, locale: locale)
         }
         return dayStarts.enumerated().map { index, start in
-            formatter.setLocalizedDateFormatFromTemplate("EEEEE")
-            let day = formatter.string(from: start)
-            formatter.setLocalizedDateFormatFromTemplate("EEEE")
-            return (day, formatter.string(from: start), points(userDayPoints, index), points(opponentDayPoints, index))
+            let day = competitionFormattedDate(start, template: "EEEEE", locale: locale, timeZone: zone)
+            let spoken = competitionFormattedDate(start, template: "EEEE", locale: locale, timeZone: zone)
+            return (day, spoken, points(userDayPoints, index), points(opponentDayPoints, index))
         }
     }
 }

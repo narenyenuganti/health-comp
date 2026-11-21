@@ -2,14 +2,14 @@ import SwiftUI
 import UIKit
 
 enum Theme {
-    static let move = Color(uiColor: UIColor(hex: 0xE4003A))
-    static let exercise = Color(uiColor: UIColor(hex: 0x009A4E))
-    static let stand = Color(uiColor: UIColor(hex: 0x0072BC))
+    static let move = Color(hex: 0xE4003A)
+    static let exercise = Color(hex: 0x009A4E)
+    static let stand = Color(hex: 0x0072BC)
     static let sleep = dynamic(light: 0x5856D6, dark: 0x7D7AFF)
 
     static let you = dynamic(light: 0x8F5C00, dark: 0xF2A100)
-    static let youFill = Color(uiColor: UIColor(hex: 0xF2A100))
-    static let onYouFill = Color(uiColor: UIColor(hex: 0x111111))
+    static let youFill = Color(hex: 0xF2A100)
+    static let onYouFill = Color(hex: 0x111111)
 
     static let inkUI = UIColor(light: 0x111111, dark: 0xF5F5F0)
     static let groundUI = UIColor(light: 0xFAFAF7, dark: 0x0F0F10)
@@ -48,6 +48,16 @@ enum Theme {
         bar.compactAppearance = appearance
     }
 #endif
+}
+
+extension Color {
+    init(hex: UInt32) {
+        self.init(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255
+        )
+    }
 }
 
 extension UIColor {
@@ -248,7 +258,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 54)
             .background(
                 Theme.ink,
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 14)
             )
             .pressFeel(configuration.isPressed, isEnabled: isEnabled, reduceMotion: reduceMotion)
     }
@@ -268,7 +278,7 @@ struct SecondaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 54)
             .background(
                 Theme.control,
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 14)
             )
             .pressFeel(configuration.isPressed, isEnabled: isEnabled, reduceMotion: reduceMotion)
     }
@@ -357,7 +367,7 @@ extension View {
     func themePanel(cornerRadius: CGFloat = 20) -> some View {
         background(
             Theme.panel,
-            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            in: RoundedRectangle(cornerRadius: cornerRadius)
         )
     }
 }

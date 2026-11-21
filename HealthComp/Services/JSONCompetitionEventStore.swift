@@ -368,19 +368,11 @@ public actor JSONCompetitionEventStore: CompetitionEventStore {
     }
 }
 
-private final class CompetitionEventStoreIOWorker: @unchecked Sendable {
-    private let queue = DispatchQueue(
-        label: "com.narenyenuganti.HealthComp.competition-event-store"
-    )
-
+private actor CompetitionEventStoreIOWorker {
     func perform<Value: Sendable>(
         _ operation: @escaping @Sendable () throws -> Value
     ) async throws -> Value {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                continuation.resume(with: Result(catching: operation))
-            }
-        }
+        try operation()
     }
 }
 

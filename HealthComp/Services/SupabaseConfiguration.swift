@@ -86,8 +86,8 @@ struct SupabaseConfiguration: Equatable, Sendable {
 
     private static func base64URLDecoded(_ value: String) -> Data? {
         var base64 = value
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
+            .replacing("-", with: "+")
+            .replacing("_", with: "/")
         let remainder = base64.count % 4
         if remainder != 0 {
             base64 += String(repeating: "=", count: 4 - remainder)

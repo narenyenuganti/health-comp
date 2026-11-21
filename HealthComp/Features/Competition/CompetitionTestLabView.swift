@@ -3,6 +3,7 @@
 import CompetitionCore
 import ComposableArchitecture
 import Foundation
+import Observation
 import SwiftUI
 
 enum CompetitionTestLabFixtureKind: String, CaseIterable, Equatable, Sendable {
@@ -658,7 +659,8 @@ struct CompetitionTestLabClientFactory {
 }
 
 @MainActor
-final class CompetitionTestLabSession: ObservableObject, Identifiable {
+@Observable
+final class CompetitionTestLabSession: Identifiable {
     let id = UUID()
     let configuration: CompetitionTestLabConfiguration
     let catalog: CompetitionTestLabFixtureCatalog
@@ -667,12 +669,12 @@ final class CompetitionTestLabSession: ObservableObject, Identifiable {
     let store: StoreOf<MainTabFeature>
     let journalRoot: URL
 
-    @Published private(set) var checkpointIndex = 0
-    @Published private(set) var isAdvancing = false
-    @Published private(set) var canAdvance = false
-    @Published private(set) var logicalDate: Date
-    @Published private(set) var statusMessage = "Accept or start the invitation."
-    private var readinessTask: Task<Void, Never>?
+    private(set) var checkpointIndex = 0
+    private(set) var isAdvancing = false
+    private(set) var canAdvance = false
+    private(set) var logicalDate: Date
+    private(set) var statusMessage = "Accept or start the invitation."
+    @ObservationIgnored private var readinessTask: Task<Void, Never>?
 
     init(
         configuration: CompetitionTestLabConfiguration,
@@ -891,17 +893,18 @@ final class CompetitionTestLabSession: ObservableObject, Identifiable {
 }
 
 @MainActor
-final class CompetitionTestLabController: ObservableObject {
-    @Published private(set) var session: CompetitionTestLabSession?
-    @Published private(set) var configurationError: String?
-    @Published var draftFixture: CompetitionTestLabFixtureKind
-    @Published var draftSeed: String
-    @Published var draftDifficulty: OpponentDifficulty
-    @Published var draftDirection: InvitationDirection
-    @Published var draftRunID: String
+@Observable
+final class CompetitionTestLabController {
+    private(set) var session: CompetitionTestLabSession?
+    private(set) var configurationError: String?
+    var draftFixture: CompetitionTestLabFixtureKind
+    var draftSeed: String
+    var draftDifficulty: OpponentDifficulty
+    var draftDirection: InvitationDirection
+    var draftRunID: String
 
-    private let initialConfiguration: CompetitionTestLabConfiguration
-    private let clientFactory: CompetitionTestLabClientFactory
+    @ObservationIgnored private let initialConfiguration: CompetitionTestLabConfiguration
+    @ObservationIgnored private let clientFactory: CompetitionTestLabClientFactory
 
     init(
         configuration: CompetitionTestLabConfiguration,
@@ -978,7 +981,9 @@ final class CompetitionTestLabController: ObservableObject {
 }
 
 struct CompetitionTestLabRootView: View {
-    @StateObject var controller: CompetitionTestLabController
+    @State private var storedController: CompetitionTestLabController
+
+    var controller: CompetitionTestLabController { storedController }
 
     private static let resetDismissedChallenges: Void = {
         if !ProcessInfo.processInfo.arguments.contains("--keep-dismissed-challenges") {
@@ -988,8 +993,8 @@ struct CompetitionTestLabRootView: View {
 
     init(configuration: CompetitionTestLabConfiguration) {
         _ = Self.resetDismissedChallenges
-        _controller = StateObject(
-            wrappedValue: CompetitionTestLabController(
+        _storedController = State(
+            initialValue: CompetitionTestLabController(
                 configuration: configuration,
                 clientFactory: .localFixture
             )
@@ -1015,8 +1020,8 @@ struct CompetitionTestLabRootView: View {
 }
 
 struct CompetitionTestLabView: View {
-    @ObservedObject var controller: CompetitionTestLabController
-    @ObservedObject var session: CompetitionTestLabSession
+    var controller: CompetitionTestLabController
+    var session: CompetitionTestLabSession
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsConfiguration = false
@@ -1117,12 +1122,14 @@ struct CompetitionTestLabView: View {
     }
 
     private var logicalTimeText: String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.dateFormat = "MMM d, HH:mm:ss"
-        return formatter.string(from: session.logicalDate) + " UTC"
+        var style = Date.FormatStyle(timeZone: .gmt)
+            .month(.abbreviated)
+            .day()
+            .hour(.twoDigits(amPM: .omitted))
+            .minute()
+            .second()
+        style.locale = Locale(identifier: "en_US_POSIX")
+        return "\(session.logicalDate.formatted(style)) UTC"
     }
 }
 
@@ -1147,7 +1154,7 @@ private struct CompetitionTestLabCheckpointButtonStyle: ButtonStyle {
 }
 
 private struct CompetitionTestLabConfigurationView: View {
-    @ObservedObject var controller: CompetitionTestLabController
+    @Bindable var controller: CompetitionTestLabController
 
     private var difficultyChoices: [OpponentDifficulty] {
         let bots: [OpponentDifficulty] = [.pacer, .chill, .erratic, .beast]

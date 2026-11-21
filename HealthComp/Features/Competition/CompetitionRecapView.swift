@@ -624,7 +624,7 @@ struct CompetitionRecapSheet: View {
     }
 
     private func preview(_ recap: CompetitionRecap) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 20)
         return Color.clear
             .aspectRatio(4 / 5, contentMode: .fit)
             .overlay {
@@ -632,7 +632,7 @@ struct CompetitionRecapSheet: View {
                     ZStack(alignment: .topLeading) {
                         if isSticker {
                             CompetitionRecapSticker(recap: recap)
-                                .background(CompetitionStickerGround())
+                                .background { CompetitionStickerGround() }
                                 .environment(\.colorScheme, lightInk ? .dark : .light)
                                 .transition(Motion.appear)
                                 .zIndex(1)
@@ -653,7 +653,7 @@ struct CompetitionRecapSheet: View {
             .animation(Motion.fade, value: hidesName)
             .animation(Motion.fade, value: lightInk)
             .clipShape(shape)
-            .overlay(shape.strokeBorder(Theme.hairline, lineWidth: 1))
+            .overlay { shape.strokeBorder(Theme.hairline, lineWidth: 1) }
             .frame(maxWidth: 320)
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .ignore)
@@ -1063,14 +1063,16 @@ func competitionClosedRings(_ day: LocalCompetitionDayPresentation) -> [Bool]? {
 private func competitionRecapValueText(_ value: CompetitionRecapPeriodCard.Value) -> Text {
     switch value {
     case let .text(text, side):
-        Text(text).foregroundStyle(side == .you ? Theme.you : side == .even ? Theme.secondary : Theme.ink)
+        return Text(text).foregroundStyle(side == .you ? Theme.you : side == .even ? Theme.secondary : Theme.ink)
     case let .record(won, lost, tied):
-        Text(String(won)).foregroundStyle(Theme.you)
-            + Text("–").fontWeight(.light).foregroundStyle(Theme.faint)
-            + Text(String(lost)).foregroundStyle(Theme.ink)
-            + (tied > 0
-                ? Text("–").fontWeight(.light).foregroundStyle(Theme.faint) + Text(String(tied)).foregroundStyle(Theme.secondary)
-                : Text(""))
+        let dash = Text("–").fontWeight(.light).foregroundStyle(Theme.faint)
+        let wonText = Text(String(won)).foregroundStyle(Theme.you)
+        let lostText = Text(String(lost)).foregroundStyle(Theme.ink)
+        if tied > 0 {
+            let tiedText = Text(String(tied)).foregroundStyle(Theme.secondary)
+            return Text("\(wonText)\(dash)\(lostText)\(dash)\(tiedText)")
+        }
+        return Text("\(wonText)\(dash)\(lostText)")
     }
 }
 
@@ -1240,7 +1242,7 @@ struct CompetitionRecapDeck: View {
                     }
                 }
                 .themePanel()
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 20))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1346,7 +1348,7 @@ struct CompetitionRecapRow: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-            .background(isPanel ? Theme.panel : .clear, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(isPanel ? Theme.panel : .clear, in: RoundedRectangle(cornerRadius: 20))
             .contentShape(Rectangle())
         }
         .accessibilityHint(period.month == nil ? "Opens your year" : "Opens your month")

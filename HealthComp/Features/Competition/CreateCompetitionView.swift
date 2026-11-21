@@ -514,7 +514,7 @@ struct CreateCompetitionView: View {
             SectionLabel(title).padding(.horizontal, 4)
             VStack(spacing: 0) { content() }
                 .themePanel()
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 20))
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(id)

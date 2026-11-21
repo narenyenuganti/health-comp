@@ -719,9 +719,9 @@ private struct MultiUserCompetitionClaimTestLabView: View {
     private func accept() {
         status = .claiming
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 80_000_000)
+            try? await Task.sleep(for: .milliseconds(80))
             status = .waitingForCompetition
-            try? await Task.sleep(nanoseconds: 80_000_000)
+            try? await Task.sleep(for: .milliseconds(80))
             outcome = .accepted
         }
     }
@@ -1205,9 +1205,9 @@ private actor FriendsTestLabServer {
             invite: try CompetitionInvite(
                 competitionID: UUID(uuidString: "D2000000-0000-4000-8000-0000000000c1")!,
                 token: Data(repeating: 0x53, count: 32).base64EncodedString()
-                    .replacingOccurrences(of: "+", with: "-")
-                    .replacingOccurrences(of: "/", with: "_")
-                    .replacingOccurrences(of: "=", with: "")
+                    .replacing("+", with: "-")
+                    .replacing("/", with: "_")
+                    .replacing("=", with: "")
             ),
             expectedPublicationRevision: 100
         )
@@ -3757,9 +3757,9 @@ enum MultiUserCompetitionTestLabFixtures {
     ) -> CompetitionInviteShareLink {
         let rawToken = Data(repeating: byte, count: 32)
             .base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
+            .replacing("+", with: "-")
+            .replacing("/", with: "_")
+            .replacing("=", with: "")
         let token = CompetitionInviteClaimToken(rawValue: rawToken)!
         if usesCustomScheme {
             return CompetitionInviteShareLink(fallbackToken: token)!
@@ -3962,7 +3962,7 @@ private struct LiveActivityPreviewView: View {
         tallying = CompetitionLiveActivityPlanner.content(sample.tallying, locale: locale, timeZone: timeZone)!
         let secondsLeft = defaults.double(forKey: "liveActivityPreviewSecondsLeft")
         var attributes = CompetitionLiveActivityPlanner.attributes(sample.live)!
-        attributes.endsAt = Date().addingTimeInterval(secondsLeft > 0 ? secondsLeft : (5 * 60 + 45) * 60)
+        attributes.endsAt = Date.now.addingTimeInterval(secondsLeft > 0 ? secondsLeft : (5 * 60 + 45) * 60)
         self.attributes = attributes
     }
 
@@ -4340,7 +4340,7 @@ private struct MultiUserCompetitionTransientRefreshTestLabView: View {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
         let calendar = try CompetitionCalendar(timeZoneIdentifier: "America/Los_Angeles")
-        let realNow = Date()
+        let realNow = Date.now
         let startInstant = realNow.addingTimeInterval(-3 * 86_400)
         var laCalendar = Calendar(identifier: .gregorian)
         laCalendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!

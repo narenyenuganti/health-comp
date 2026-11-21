@@ -229,7 +229,8 @@ func competitionOwnSleep(
 
 func competitionSleepDurationText(_ minutes: Double) -> String {
     let total = Int(minutes.rounded())
-    return "\(total / 60)h \(String(format: "%02d", total % 60))m"
+    let mins = (total % 60).formatted(.number.precision(.integerLength(2)))
+    return "\(total / 60)h \(mins)m"
 }
 
 func competitionSleepRow(
@@ -339,8 +340,9 @@ struct CompetitionNightDrawer: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            (Text(Int(points.rounded()).formatted()).foregroundStyle(Theme.ink)
-                + Text("/\(maximum)").foregroundStyle(Theme.secondary))
+            let score = Text(Int(points.rounded()).formatted()).foregroundStyle(Theme.ink)
+            let cap = Text("/\(maximum)").foregroundStyle(Theme.secondary)
+            Text("\(score)\(cap)")
                 .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
                 .fixedSize()
         }

@@ -107,7 +107,7 @@ struct GroupMatchVersusIntroView: View {
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     private var reduceMotion: Bool { systemReduceMotion || CompetitionVersusIntroGate.assumesReduceMotion }
     @ScaledMetric(relativeTo: .subheadline) private var labelLine: CGFloat = 20
-    @State private var start = Date()
+    @State private var start = Date.now
     @State private var isSkipped = false
     @State private var isShown = false
     @State private var hits = 0
@@ -145,7 +145,7 @@ struct GroupMatchVersusIntroView: View {
         }
         .sensoryFeedback(.impact(weight: .heavy), trigger: hits)
         .sensoryFeedback(.impact(weight: .light), trigger: stamps)
-        .onAppear { start = Date() }
+        .onAppear { start = Date.now }
         .task(id: isSkipped) { await play() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(content.announcement)
@@ -157,7 +157,7 @@ struct GroupMatchVersusIntroView: View {
     private var isHeld: Bool { CompetitionVersusIntroGate.holds && !isSkipped }
 
     private func sleep(until t: Double) async throws {
-        try await Task.sleep(for: .seconds(max(t - Date().timeIntervalSince(start), 0)))
+        try await Task.sleep(for: .seconds(max(t - Date.now.timeIntervalSince(start), 0)))
     }
 
     private func play() async {
@@ -178,7 +178,7 @@ struct GroupMatchVersusIntroView: View {
                 try await Task.sleep(for: .seconds(0.2))
             } else {
                 if !isSkipped {
-                    Sounds.play(.versus, in: VersusClock.contact - Date().timeIntervalSince(start))
+                    Sounds.play(.versus, in: VersusClock.contact - Date.now.timeIntervalSince(start))
                     try await sleep(until: VersusClock.contact)
                     hits += 1
                     try await sleep(until: VersusClock.stamp)
@@ -193,10 +193,10 @@ struct GroupMatchVersusIntroView: View {
     }
 
     private func skip() {
-        guard isHeld || !isSkipped && Date().timeIntervalSince(start) < VersusClock.split else {
+        guard isHeld || !isSkipped && Date.now.timeIntervalSince(start) < VersusClock.split else {
             return
         }
-        start = Date().addingTimeInterval(-VersusClock.split)
+        start = Date.now.addingTimeInterval(-VersusClock.split)
         isSkipped = true
     }
 
@@ -378,7 +378,7 @@ struct GroupMatchVersusIntroView: View {
                 .font(.score(size: size * 0.6))
                 .foregroundStyle(Theme.onInk)
                 .frame(width: size, height: size)
-                .background(Theme.ink, in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+                .background(Theme.ink, in: RoundedRectangle(cornerRadius: size * 0.28))
         } else {
             Text(initial)
                 .font(.score(size: letterSize))
@@ -400,13 +400,24 @@ struct GroupMatchVersusIntroView: View {
     }
 }
 
-private struct GroupMatchReplayIntroKey: EnvironmentKey {
-    static let defaultValue: (() -> Void)? = nil
+struct GroupMatchReplayIntroAction: Equatable {
+    let id: UUID
+    private let perform: () -> Void
+
+    init(id: UUID, perform: @escaping () -> Void) {
+        self.id = id
+        self.perform = perform
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func callAsFunction() {
+        perform()
+    }
 }
 
 extension EnvironmentValues {
-    var groupMatchReplayIntro: (() -> Void)? {
-        get { self[GroupMatchReplayIntroKey.self] }
-        set { self[GroupMatchReplayIntroKey.self] = newValue }
-    }
+    @Entry var groupMatchReplayIntro: GroupMatchReplayIntroAction?
 }

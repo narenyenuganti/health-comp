@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct ProfilePhoto: Equatable, @unchecked Sendable {
     let version: UUID?
@@ -27,15 +26,8 @@ struct ProfilePhotoImages: Equatable, Sendable {
     var own: ProfilePhoto? { photo(ownID) }
 }
 
-private struct ProfilePhotoImagesKey: EnvironmentKey {
-    static let defaultValue = ProfilePhotoImages()
-}
-
 extension EnvironmentValues {
-    var profilePhotos: ProfilePhotoImages {
-        get { self[ProfilePhotoImagesKey.self] }
-        set { self[ProfilePhotoImagesKey.self] = newValue }
-    }
+    @Entry var profilePhotos = ProfilePhotoImages()
 }
 
 extension LocalCompetitionPresentation {

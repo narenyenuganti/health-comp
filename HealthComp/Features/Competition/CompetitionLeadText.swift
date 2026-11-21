@@ -23,8 +23,8 @@ func competitionLeadText(
     )
     guard margin != 0 else { return Text("All square.") }
     let points = Text(competitionPointsText(abs(margin), locale: locale))
-        .fontWeight(.bold)
+        .bold()
     return margin > 0
-        ? Text("You lead by ") + points.foregroundStyle(Theme.you) + Text(".")
-        : Text("\(opponentDisplayName) leads by ") + points.foregroundStyle(Theme.ink) + Text(".")
+        ? Text("You lead by \(points.foregroundStyle(Theme.you)).")
+        : Text("\(opponentDisplayName) leads by \(points.foregroundStyle(Theme.ink)).")
 }

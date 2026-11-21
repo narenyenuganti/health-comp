@@ -24,7 +24,7 @@ struct CompetitionWeekChart: View {
                 }
                 .background {
                     if day.ordinal == currentDayOrdinal, dynamicTypeSize < .xxLarge {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: 8)
                             .fill(Theme.panel)
                             .padding(.horizontal, -6)
                     }
@@ -602,7 +602,7 @@ struct CompetitionLeadLineView: View {
                 }
                 Circle()
                     .fill(last > 0 ? Theme.youFill : last < 0 ? Theme.ink : Theme.outline)
-                    .overlay(Circle().stroke(Theme.ground, lineWidth: 2))
+                    .stroke(Theme.ground, lineWidth: 2)
                     .frame(width: 12, height: 12)
                     .scaleEffect(isDrawn ? 1 : 0)
                     .moving(arrival(Double(lastDay)), value: isDrawn)
@@ -703,7 +703,7 @@ private struct CompetitionLeadMomentBadge: View {
             .foregroundStyle(isYours ? Theme.ink : Theme.ground)
             .frame(width: 22, height: 22)
             .background(isYours ? Theme.youFill : Theme.ink, in: Circle())
-            .overlay(Circle().stroke(Theme.ground, lineWidth: 2))
+            .overlay { Circle().stroke(Theme.ground, lineWidth: 2) }
             .accessibilityHidden(true)
     }
 }
@@ -913,7 +913,7 @@ private struct DayTrack: View {
             .moving(Motion.settle, value: segments.map(\.points))
         }
         .frame(height: 10)
-        .background(SlantedBar().fill(Theme.track))
+        .background { SlantedBar().fill(Theme.track) }
     }
 }
 
@@ -1032,7 +1032,7 @@ func weekdayName(_ day: CompetitionDay, locale: Locale = .current) -> String {
 func competitionDayText(
     _ day: CompetitionDay,
     weekday: Bool = true,
-    now: Date = Date(),
+    now: Date = Date.now,
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> String {
@@ -1052,7 +1052,7 @@ func competitionWeekText(
     _ first: CompetitionDay,
     _ last: CompetitionDay,
     includesYear: Bool? = nil,
-    now: Date = Date(),
+    now: Date = Date.now,
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> String {

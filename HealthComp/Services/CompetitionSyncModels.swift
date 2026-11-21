@@ -3037,8 +3037,8 @@ private enum CompetitionWireValue {
             options: .regularExpression
         ) != nil else { return false }
         var normalized = value
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
+            .replacing("-", with: "+")
+            .replacing("_", with: "/")
         normalized += "="
         return Data(base64Encoded: normalized)?.count == 32
     }
@@ -4129,8 +4129,8 @@ private enum CompetitionWireValidator {
     private static func base64DecodedString(_ value: String) -> String? {
         guard !value.isEmpty else { return nil }
         var normalized = value
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
+            .replacing("-", with: "+")
+            .replacing("_", with: "/")
         let remainder = normalized.count % 4
         if remainder != 0 {
             normalized += String(repeating: "=", count: 4 - remainder)

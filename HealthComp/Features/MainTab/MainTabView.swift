@@ -25,6 +25,8 @@ struct MainTabView: View {
     @State private var isVersusPlaying = false
     @State private var replaysVersus = false
     @State private var recapPeriod: CompetitionRecapPeriod?
+    @State private var profileActionID = UUID()
+    @State private var replayIntroActionID = UUID()
 
     var body: some View {
         ZStack {
@@ -86,7 +88,7 @@ struct MainTabView: View {
                 liveStatus: store.inviteClaimStatus,
                 livePreview: store.inviteClaimPreview,
                 ownName: store.competition.ownProfile?.displayName ?? "",
-                now: store.inviteClaimPreviewEvaluatedAt ?? Date(),
+                now: store.inviteClaimPreviewEvaluatedAt ?? Date.now,
                 hasQueuedChallenge: store.queuedClaimRoute != nil,
                 declineFailed: store.claimDeclineFailed,
                 accept: { store.send(.acceptClaimTapped) },
@@ -334,9 +336,12 @@ struct MainTabView: View {
                 }
             }
         }
-        .environment(\.openCompetitionProfile) { route in
-            homeStack.wrappedValue = CompetitionHomeRoute.opening(route, on: homeStack.wrappedValue)
-        }
+        .environment(
+            \.openCompetitionProfile,
+            OpenCompetitionProfileAction(id: profileActionID) { route in
+                homeStack.wrappedValue = CompetitionHomeRoute.opening(route, on: homeStack.wrappedValue)
+            }
+        )
         .sheet(isPresented: notificationPromptPresented) {
             PermissionOnboardingView(
                 step: .notifications,
@@ -814,7 +819,7 @@ struct MainTabView: View {
                     && store.competition.publication.flatMap {
                         groupMatchVersusIntroContent(match, source: $0.source, isReplay: true)
                     } != nil
-                    ? { replaysVersus = true } : nil
+                    ? GroupMatchReplayIntroAction(id: replayIntroActionID) { replaysVersus = true } : nil
             )
         } else if let publication = store.competition.publication,
            let competition = publication.dashboard.competitions.first(
@@ -1107,7 +1112,7 @@ private struct DrawerInteractivePop: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: UIViewController, context: Context) {
         context.coordinator.isEnabled = isEnabled
-        DispatchQueue.main.async {
+        Task { @MainActor in
             guard let nav = controller.navigationController,
                   let pop = nav.interactivePopGestureRecognizer else { return }
             if pop.delegate !== context.coordinator {

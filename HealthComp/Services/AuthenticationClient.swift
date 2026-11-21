@@ -231,15 +231,15 @@ extension JSONDecoder {
 private extension Data {
     var base64URLEncodedString: String {
         base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
+            .replacing("+", with: "-")
+            .replacing("/", with: "_")
+            .replacing("=", with: "")
     }
 
     init?(base64URL: String) {
         var value = base64URL
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
+            .replacing("-", with: "+")
+            .replacing("_", with: "/")
         let remainder = value.count % 4
         if remainder != 0 {
             value += String(repeating: "=", count: 4 - remainder)

@@ -127,7 +127,7 @@ struct HealthCompApp: App {
             )!
             Task {
                 await CompetitionWidgetSnapshotClient.liveValue.write(
-                    .sample(now: Date(), url: url), []
+                    .sample(now: Date.now, url: url), []
                 )
             }
         }
@@ -138,7 +138,7 @@ struct HealthCompApp: App {
                 let background = UIApplication.shared.beginBackgroundTask()
                 let client = CompetitionWidgetSnapshotClient.liveValue
                 if let snapshot = CompetitionWidgetSnapshot.testLab(
-                    scenario, now: Date(), scheme: CompetitionRoute.customURLScheme
+                    scenario, now: Date.now, scheme: CompetitionRoute.customURLScheme
                 ) {
                     await client.write(snapshot, [])
                 } else {
@@ -464,7 +464,7 @@ enum LaunchWait {
 
     static func loaderAppeared() {
         loaders += 1
-        if began == nil { began = Date() }
+        if began == nil { began = Date.now }
     }
 
     static func loaderDisappeared() {
@@ -644,15 +644,8 @@ enum LaunchStage {
     case done
 }
 
-private struct LaunchStageKey: EnvironmentKey {
-    static let defaultValue = LaunchStage.done
-}
-
 extension EnvironmentValues {
-    var launchStage: LaunchStage {
-        get { self[LaunchStageKey.self] }
-        set { self[LaunchStageKey.self] = newValue }
-    }
+    @Entry var launchStage = LaunchStage.done
 }
 
 struct LaunchLanding: Equatable {
@@ -727,7 +720,7 @@ struct LaunchHandoff<Content: View>: View {
                 if reduceMotion {
                     withAnimation(Motion.fade) { loader = nil }
                 } else {
-                    loader = .handing(Date())
+                    loader = .handing(Date.now)
                 }
             }
         }

@@ -347,7 +347,7 @@ struct CompetitionSharingView: View {
             }
         }
         .themePanel()
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 
     private func rowButton(_ competition: LocalCompetitionPresentation) -> some View {
@@ -705,11 +705,11 @@ private struct CompetitionHeroCard: View {
     }
 
     private var scheduledHeadline: some View {
-        (Text("YOU")
-            .foregroundStyle(Theme.you)
-            + Text("  VS  ").foregroundStyle(Theme.tertiary)
-            + Text(competition.opponentDisplayName.uppercased(with: .current))
-            .foregroundStyle(Theme.ink))
+        let you = Text("YOU").foregroundStyle(Theme.you)
+        let vs = Text("  VS  ").foregroundStyle(Theme.tertiary)
+        let opponent = Text(competition.opponentDisplayName.uppercased(with: locale))
+            .foregroundStyle(Theme.ink)
+        return Text("\(you)\(vs)\(opponent)")
             .font(.title2.weight(.heavy).width(.condensed))
     }
 }
@@ -975,11 +975,12 @@ private struct CompetitionSharingRow: View {
 
     private var trailingScore: some View {
         let digits = sharingFractionDigits(competition)
-        return (Text(competitionPointsText(competition.userPoints, fractionDigits: digits, locale: locale))
+        let you = Text(competitionPointsText(competition.userPoints, fractionDigits: digits, locale: locale))
             .foregroundStyle(Theme.you)
-            + Text(" / ").foregroundStyle(Theme.faint)
-            + Text(competitionPointsText(competition.opponentPoints, fractionDigits: digits, locale: locale))
-            .foregroundStyle(Theme.ink))
+        let slash = Text(" / ").foregroundStyle(Theme.faint)
+        let them = Text(competitionPointsText(competition.opponentPoints, fractionDigits: digits, locale: locale))
+            .foregroundStyle(Theme.ink)
+        return Text("\(you)\(slash)\(them)")
             .font(.title3.weight(.heavy).width(.condensed).monospacedDigit())
     }
 
@@ -1010,10 +1011,10 @@ private struct CompetitionOutcomeChip: View {
             .foregroundStyle(foreground)
             .padding(4)
             .frame(minWidth: size, minHeight: size)
-            .background(fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(fill, in: RoundedRectangle(cornerRadius: 8))
             .overlay {
                 if outcome == .tie {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: 8)
                         .strokeBorder(Theme.outline, lineWidth: 1.5)
                 }
             }
@@ -1111,11 +1112,11 @@ private struct CompetitionBeltChip: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background(Theme.ground, in: chipShape)
-        .overlay(chipShape.strokeBorder(Theme.hairline))
+        .overlay { chipShape.strokeBorder(Theme.hairline) }
     }
 
     private var chipShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
+        RoundedRectangle(cornerRadius: 12)
     }
 }
 
@@ -1202,14 +1203,14 @@ private struct CompetitionArchiveSwipeRow<Row: View>: View {
     let isInFlight: Bool
     let label: String
     let archive: () -> Void
-    @ViewBuilder let row: () -> Row
+    @ViewBuilder let row: Row
 
     @ScaledMetric private var actionWidth: CGFloat = 96
 
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 0) {
-                row()
+                row
                     .containerRelativeFrame(.horizontal)
                 Button(action: archive) {
                     BusyLabel("Archive", isBusy: isInFlight)
@@ -1298,13 +1299,18 @@ struct CompetitionIssueLine: View {
 }
 
 private func competitionHistorySummary(_ records: [CompetitionOpponentRecord]) -> Text {
+    let shown = Array(records.prefix(2))
     var text = Text("")
-    for (index, record) in records.prefix(2).enumerated() {
-        if index > 0 { text = text + Text(" · ") }
-        text = text + Text(verbatim: "\(record.opponentDisplayName) ") + competitionRecordText(record)
+    for (index, record) in shown.enumerated() {
+        let entry = Text("\(Text(verbatim: "\(record.opponentDisplayName) "))\(competitionRecordText(record))")
+        if index == 0 {
+            text = entry
+        } else {
+            text = Text("\(text) · \(entry)")
+        }
     }
     if records.count > 2 {
-        text = text + Text(" · \(records.count - 2) more")
+        text = Text("\(text) · \(records.count - 2) more")
     }
     return text
 }
@@ -1314,13 +1320,13 @@ func competitionRecordText(_ record: CompetitionOpponentRecord) -> Text {
 }
 
 func competitionRecordText(wins: Int, losses: Int, ties: Int) -> Text {
-    var text = Text(String(wins)).foregroundStyle(Theme.you).bold()
-        + Text("–")
-        + Text(String(losses)).foregroundStyle(Theme.ink)
+    let winsText = Text(String(wins)).foregroundStyle(Theme.you).bold()
+    let lossesText = Text(String(losses)).foregroundStyle(Theme.ink)
     if ties > 0 {
-        text = text + Text("–") + Text(String(ties)).foregroundStyle(Theme.secondary)
+        let tiesText = Text(String(ties)).foregroundStyle(Theme.secondary)
+        return Text("\(winsText)–\(lossesText)–\(tiesText)")
     }
-    return text
+    return Text("\(winsText)–\(lossesText)")
 }
 
 private struct CompetitionRecordRow: View {
@@ -1484,7 +1490,7 @@ struct CompetitionHistoryView: View {
                 }
             }
             .themePanel()
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.rivalry")
@@ -1512,7 +1518,7 @@ struct CompetitionHistoryView: View {
                 }
             }
             .themePanel()
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.recaps")
@@ -1554,7 +1560,7 @@ struct CompetitionHistoryView: View {
                     }
                 }
                 .themePanel()
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 20))
             }
         }
     }
@@ -1630,7 +1636,7 @@ struct CompetitionHistoryView: View {
             .foregroundStyle(Theme.ink)
             .padding(.horizontal, 12)
             .frame(minHeight: 32)
-            .background(Theme.control, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .background(Theme.control, in: RoundedRectangle(cornerRadius: 9))
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
@@ -1934,7 +1940,7 @@ struct CompetitionPersonView: View {
                 }
             }
             .themePanel()
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.person.now")
@@ -2074,7 +2080,7 @@ struct CompetitionPersonView: View {
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .themePanel()
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             ([title, since, defenses > 0 ? competitionDefensesText(defenses) : nil].compactMap { $0 }
@@ -2213,7 +2219,7 @@ struct CompetitionPersonView: View {
                 }
             }
             .themePanel()
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
             .moving(Motion.settle, value: showsAllWeeks)
         }
     }
@@ -2588,7 +2594,7 @@ func competitionStatusText(
     schedule: CompetitionSchedule?,
     opponentDisplayName name: String,
     style: CompetitionStatusStyle,
-    now: Date = Date(),
+    now: Date = Date.now,
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> CompetitionStatusText {
@@ -3327,10 +3333,7 @@ func competitionTaleOfTheTape(
 }
 
 func competitionTitleDefenseText(_ defenses: Int) -> String {
-    let formatter = NumberFormatter()
-    formatter.locale = Locale(identifier: "en_US")
-    formatter.numberStyle = .ordinal
-    return "\(formatter.string(from: defenses as NSNumber) ?? String(defenses)) title defense"
+    "\(competitionOrdinalText(defenses)) title defense"
 }
 
 func competitionBeltResultText(

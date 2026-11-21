@@ -9,7 +9,7 @@ enum WatchMatchPage: String, Hashable, CaseIterable {
 }
 
 struct WatchRootView: View {
-    @ObservedObject var model: WatchSnapshotModel
+    var model: WatchSnapshotModel
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var drawn: CompetitionWidgetSnapshot?
@@ -42,7 +42,7 @@ struct WatchRootView: View {
             if scenePhase == .active { drawn = next }
         }
         .onChange(of: drawn) {
-            pruneSelection(at: Date())
+            pruneSelection(at: Date.now)
             openTappedAlert()
         }
         .onChange(of: model.tappedAlert, initial: true) { openTappedAlert() }
@@ -109,7 +109,7 @@ struct WatchRootView: View {
 
     private func openTappedAlert() {
         guard let id = model.tappedAlert else { return }
-        let pages = drawn?.pages(at: Date()) ?? []
+        let pages = drawn?.pages(at: Date.now) ?? []
         guard pages.contains(where: { $0.id == id }) else { return }
         model.tappedAlert = nil
         selectedMatchID = id
@@ -119,7 +119,7 @@ struct WatchRootView: View {
 }
 
 private struct WatchMatchesListView: View {
-    @ObservedObject var model: WatchSnapshotModel
+    var model: WatchSnapshotModel
     let pages: [CompetitionWidgetSnapshot.Match]
     let date: Date
     let selectedID: UUID?
@@ -163,11 +163,11 @@ private struct WatchMatchesListView: View {
                         .padding(.horizontal, 11)
                         .padding(.vertical, 9)
                         .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: 14)
                                 .fill(Theme.panel)
                                 .overlay {
                                     if match.id == selectedID {
-                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        RoundedRectangle(cornerRadius: 14)
                                             .strokeBorder(Theme.youFill.opacity(0.45), lineWidth: 1)
                                     }
                                 }
@@ -185,7 +185,7 @@ private struct WatchMatchesListView: View {
         .navigationTitle("Matches")
         .containerBackground(
             LinearGradient(
-                colors: [Color(uiColor: UIColor(hex: 0x1D1D20)), Color.black],
+                colors: [Color(hex: 0x1D1D20), Color.black],
                 startPoint: .top,
                 endPoint: .bottom
             ),
@@ -196,7 +196,7 @@ private struct WatchMatchesListView: View {
 }
 
 private struct WatchMatchPagerView: View {
-    @ObservedObject var model: WatchSnapshotModel
+    var model: WatchSnapshotModel
     let match: CompetitionWidgetSnapshot.Match
     let date: Date
     let matchCount: Int
@@ -279,7 +279,7 @@ private struct WatchMatchPagerView: View {
 }
 
 private struct WatchOverviewPage: View {
-    @ObservedObject var model: WatchSnapshotModel
+    var model: WatchSnapshotModel
     let match: CompetitionWidgetSnapshot.Match
     let date: Date
     let isCurrent: Bool
@@ -319,8 +319,8 @@ private struct WatchOverviewPage: View {
 
     private var washColor: Color {
         if isLeading { return Theme.youFill.opacity(0.24) }
-        if isTrailing { return Color(uiColor: UIColor(hex: 0x3A3D46)).opacity(0.45) }
-        return Color(uiColor: UIColor(hex: 0x2C2C30)).opacity(0.4)
+        if isTrailing { return Color(hex: 0x3A3D46).opacity(0.45) }
+        return Color(hex: 0x2C2C30).opacity(0.4)
     }
 
     var body: some View {
@@ -339,7 +339,7 @@ private struct WatchOverviewPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .containerBackground(
             LinearGradient(
-                colors: [washColor, Color(uiColor: UIColor(hex: 0x0B0B0D))],
+                colors: [washColor, Color(hex: 0x0B0B0D)],
                 startPoint: .topLeading,
                 endPoint: .bottom
             ),
@@ -528,7 +528,7 @@ private struct WatchOverviewPage: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(Theme.panel.opacity(0.92))
             )
             .privacySensitive()
@@ -542,7 +542,7 @@ private struct WatchOverviewPage: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, isCompact ? 6 : 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12)
                         .fill(Theme.panel.opacity(0.92))
                 )
                 .privacySensitive()
@@ -594,7 +594,7 @@ private struct WatchOverviewPage: View {
             .padding(.horizontal, 10)
             .padding(.vertical, isCompact ? 6 : 8)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(Theme.panel.opacity(0.92))
             )
             .privacySensitive()
@@ -712,10 +712,10 @@ private struct WatchTodayRingsPage: View {
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        RoundedRectangle(cornerRadius: 11)
                             .fill(Theme.youFill.opacity(0.16))
                             .overlay {
-                                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                RoundedRectangle(cornerRadius: 11)
                                     .strokeBorder(Theme.youFill.opacity(0.45), lineWidth: 1)
                             }
                     )
@@ -763,7 +763,7 @@ private struct WatchTodayRingsPage: View {
                     .padding(.horizontal, 9)
                     .padding(.vertical, isCompact ? 6 : 7)
                     .background(
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        RoundedRectangle(cornerRadius: 13)
                             .fill(Theme.panel.opacity(0.92))
                     )
                 }
@@ -777,7 +777,7 @@ private struct WatchTodayRingsPage: View {
             LinearGradient(
                 colors: [
                     (isTrailing ? Theme.move : Theme.exercise).opacity(0.22),
-                    Color(uiColor: UIColor(hex: 0x0B0B0D)),
+                    Color(hex: 0x0B0B0D),
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottom
@@ -853,7 +853,7 @@ private struct WatchWeekChartPage: View {
                         .padding(.horizontal, 1.5)
                         .background {
                             if day.isToday {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                RoundedRectangle(cornerRadius: 6)
                                     .fill(Color.white.opacity(0.10))
                             }
                         }
@@ -863,7 +863,7 @@ private struct WatchWeekChartPage: View {
                 .padding(.top, 4)
                 .padding(.bottom, 2)
                 .background(
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    RoundedRectangle(cornerRadius: 13)
                         .fill(Theme.panel.opacity(0.92))
                 )
                 .privacySensitive()
@@ -908,7 +908,7 @@ private struct WatchWeekChartPage: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12)
                         .fill(Theme.panel.opacity(0.92))
                 )
             }
@@ -919,7 +919,7 @@ private struct WatchWeekChartPage: View {
         .scrollIndicators(.hidden)
         .containerBackground(
             LinearGradient(
-                colors: [Theme.stand.opacity(0.22), Color(uiColor: UIColor(hex: 0x0B0B0D))],
+                colors: [Theme.stand.opacity(0.22), Color(hex: 0x0B0B0D)],
                 startPoint: .topLeading,
                 endPoint: .bottom
             ),
@@ -930,7 +930,7 @@ private struct WatchWeekChartPage: View {
 
     private func barColumn(value: Double?, maxVal: Double, height: CGFloat, color: Color) -> some View {
         let ratio = value.map { min(1, max(0.08, $0 / maxVal)) } ?? 0
-        return RoundedRectangle(cornerRadius: 2, style: .continuous)
+        return RoundedRectangle(cornerRadius: 2)
             .fill(value == nil ? Theme.outline.opacity(0.35) : color)
             .frame(maxWidth: .infinity)
             .frame(height: value == nil ? 4 : height * ratio)
@@ -953,7 +953,7 @@ private struct WatchWeekChartPage: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 10)
                 .fill(Theme.panel.opacity(0.92))
         )
     }
@@ -1048,7 +1048,7 @@ private struct WatchRivalryPage: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .background(
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        RoundedRectangle(cornerRadius: 13)
                             .fill(Theme.panel.opacity(0.92))
                     )
                     .privacySensitive()
@@ -1084,10 +1084,10 @@ private struct WatchRivalryPage: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
                     .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: 12)
                             .fill(Theme.beltWell)
                             .overlay {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                RoundedRectangle(cornerRadius: 12)
                                     .strokeBorder(
                                         Theme.youFill.opacity(belt.holder == .you ? 0.35 : 0.15),
                                         lineWidth: 1
@@ -1119,7 +1119,7 @@ private struct WatchRivalryPage: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: 10)
                             .fill(Theme.panel.opacity(0.88))
                     )
                     .privacySensitive()
@@ -1132,7 +1132,7 @@ private struct WatchRivalryPage: View {
         .scrollIndicators(.hidden)
         .containerBackground(
             LinearGradient(
-                colors: [Theme.sleep.opacity(0.22), Color(uiColor: UIColor(hex: 0x0B0B0D))],
+                colors: [Theme.sleep.opacity(0.22), Color(hex: 0x0B0B0D)],
                 startPoint: .topLeading,
                 endPoint: .bottom
             ),
@@ -1208,7 +1208,7 @@ private struct WatchGroupOverviewPage: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4.5)
                         .background(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            RoundedRectangle(cornerRadius: 9)
                                 .fill(row.isYou ? Theme.youFill.opacity(0.14) : Theme.panel.opacity(0.88))
                         )
                     }
@@ -1231,7 +1231,7 @@ private struct WatchGroupOverviewPage: View {
         .scrollIndicators(.hidden)
         .containerBackground(
             LinearGradient(
-                colors: [Color(uiColor: UIColor(hex: 0x3A3D46)).opacity(0.4), Color(uiColor: UIColor(hex: 0x0B0B0D))],
+                colors: [Color(hex: 0x3A3D46).opacity(0.4), Color(hex: 0x0B0B0D)],
                 startPoint: .topLeading,
                 endPoint: .bottom
             ),
@@ -1275,7 +1275,7 @@ private struct WatchScheduledPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .containerBackground(
             LinearGradient(
-                colors: [Color(uiColor: UIColor(hex: 0x2C2C30)).opacity(0.4), Color(uiColor: UIColor(hex: 0x0B0B0D))],
+                colors: [Color(hex: 0x2C2C30).opacity(0.4), Color(hex: 0x0B0B0D)],
                 startPoint: .topLeading,
                 endPoint: .bottom
             ),
@@ -1375,7 +1375,7 @@ private struct WatchBeltPlate: View {
     private static let bars: [[CGPoint]] = (MarkPolygon.bars + [MarkPolygon.block])
         .map { $0.map { CGPoint(x: $0.0, y: $0.1) } }
 
-    private func color(_ hex: UInt32) -> Color { Color(uiColor: UIColor(hex: hex)) }
+    private func color(_ hex: UInt32) -> Color { Color(hex: hex) }
 
     var body: some View {
         let strap = color(gold ? 0x241A0E : 0x1E1F22)
@@ -1432,7 +1432,7 @@ private struct WatchNothingView: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: 10)
                         .fill(Theme.panel)
                 )
             }
@@ -1443,7 +1443,7 @@ private struct WatchNothingView: View {
         .padding(.top, 8)
         .containerBackground(
             LinearGradient(
-                colors: [Color(uiColor: UIColor(hex: 0x1D1D20)), Color.black],
+                colors: [Color(hex: 0x1D1D20), Color.black],
                 startPoint: .topLeading,
                 endPoint: .bottom
             ),

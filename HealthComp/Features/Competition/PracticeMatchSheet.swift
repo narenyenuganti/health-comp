@@ -238,7 +238,7 @@ struct PracticeShadowRivalPicker: View {
                 }
             }
             .themePanel()
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
         }
         .sensoryFeedback(.selection, trigger: activeID)
         .accessibilityElement(children: .contain)

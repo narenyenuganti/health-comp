@@ -5,7 +5,7 @@ struct ClaimCompetitionView: View {
     let liveStatus: MainTabFeature.InviteClaimStatus
     var livePreview: CompetitionInvitePreview? = nil
     var ownName = ""
-    var now: Date = Date()
+    var now: Date = Date.now
     var hasQueuedChallenge = false
     var declineFailed = false
     let accept: () -> Void
@@ -21,6 +21,7 @@ struct ClaimCompetitionView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
+    @ScaledMetric(relativeTo: .largeTitle) private var symbolSize: Double = 40
 
     private var status: MainTabFeature.InviteClaimStatus {
         liveStatus == .idle ? lastStatus : liveStatus
@@ -248,7 +249,7 @@ struct ClaimCompetitionView: View {
 
     private func symbol(_ name: String) -> some View {
         Image(systemName: name)
-            .font(.system(size: 40, weight: .semibold))
+            .font(.system(size: symbolSize, weight: .semibold))
             .foregroundStyle(Theme.ink)
     }
 

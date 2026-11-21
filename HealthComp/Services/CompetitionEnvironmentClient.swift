@@ -229,14 +229,14 @@ struct CompetitionEnvironmentClient: Sendable {
     ) -> Self {
         let source = HealthKitProvider(healthStore: healthStore)
         let epochID = Self.productionEpochID(
-            wallDate: Date(),
+            wallDate: Date.now,
             systemUptime: ProcessInfo.processInfo.systemUptime
         )
         return Self(
             kind: .production,
             source: source,
             context: {
-                let wallDate = Date()
+                let wallDate = Date.now
                 return CompetitionEnvironmentContext(
                     instant: EnvironmentInstant(
                         wallDate: wallDate,
