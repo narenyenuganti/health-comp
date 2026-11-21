@@ -248,6 +248,7 @@ struct CompetitionInvitePreview: Equatable, Sendable {
     let sender: AuthenticatedProfile
     let timeZoneIdentifier: String
     let expiresAt: Date
+    var metrics: CompetitionMetrics = .threeRings
 }
 
 struct CompetitionChallengeList: Equatable, Sendable {

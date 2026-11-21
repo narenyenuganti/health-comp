@@ -505,12 +505,16 @@ struct MainTabFeature {
                     return .none
                 }
                 state.claimDeclineFailed = false
+                let needsSleep = state.inviteClaimPreview?.metrics.includesSleep == true
+                let sleepEffect: Effect<Action> = needsSleep
+                    ? .run { _ in try? await competitionClient.requestSleepAuthorization() }
+                    : .none
                 if state.competition.publication == nil {
                     state.acceptsClaimOnStart = true
                     state.inviteClaimStatus = .idle
-                    return .none
+                    return sleepEffect
                 }
-                return .send(.processPendingClaim)
+                return .merge(sleepEffect, .send(.processPendingClaim))
 
             case .notNowClaimTapped:
                 guard [.loadingPreview, .ready, .retryable]

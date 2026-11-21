@@ -362,6 +362,12 @@ struct CompetitionFeature {
             case let .group(.delegate(.published(publication))):
                 return .send(.publication(publication))
 
+            case let .group(.commandTapped(.accept(id))):
+                let includesSleep = state.publication?.dashboard.groupMatches
+                    .first { $0.id == id }?.metrics.includesSleep == true
+                guard includesSleep else { return .none }
+                return .run { _ in try? await competitionClient.requestSleepAuthorization() }
+
             case .friendSettings, .friends, .group:
                 return .none
 
