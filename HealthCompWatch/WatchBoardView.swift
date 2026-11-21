@@ -250,7 +250,7 @@ private struct WatchMatchPagerView: View {
             }
 
             if showsWeek {
-                WatchWeekChartPage(match: match, date: date, isGroup: match.group != nil)
+                WatchWeekChartPage(match: match, date: date)
                     .tag(WatchMatchPage.week)
             }
 
@@ -348,7 +348,7 @@ private struct WatchOverviewPage: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             [match.accessibilityLabel(at: date, redacted: false, standings: true), match.chase(at: date)?.spoken,
-             spokenCard, match.beltAccessibilityText]
+             spokenCard, match.beltAccessibilityText, match.customMetricsAccessibilityText]
                 .compactMap { $0 }.joined(separator: " ")
         )
         .accessibilityIdentifier("watch.match")
@@ -375,6 +375,9 @@ private struct WatchOverviewPage: View {
                     .contentTransition(.opacity)
                     .animation(Motion.fade, value: status)
                 Spacer(minLength: 4)
+                if let customMetrics = match.customMetrics, !customMetrics.isEmpty {
+                    WatchMetricPips(metrics: customMetrics)
+                }
                 if let belt = match.belt {
                     HStack(spacing: 4) {
                         WatchBeltPlate(gold: belt.holder == .you)
@@ -792,7 +795,6 @@ private struct WatchTodayRingsPage: View {
 private struct WatchWeekChartPage: View {
     let match: CompetitionWidgetSnapshot.Match
     let date: Date
-    let isGroup: Bool
 
     @ScaledMetric(relativeTo: .body) private var statSize: CGFloat = 19
     @ScaledMetric(relativeTo: .body) private var pointsSize: CGFloat = 15
@@ -811,8 +813,9 @@ private struct WatchWeekChartPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: isCompact ? 5 : 7) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(isGroup ? "WEEK VS 1ST" : "WEEK ROUNDS")
+                    Text(match.weekHeaderTitle(at: date))
                         .themeLabel(tracking: 0.9)
+                        .textCase(.uppercase)
                         .foregroundStyle(Theme.secondary)
                         .lineLimit(1)
                     Spacer()
@@ -1070,13 +1073,14 @@ private struct WatchRivalryPage: View {
                             let parts = [
                                 match.beltDefensesText,
                                 match.rivalry?.reignWeeks.map { "\($0) \($0 == 1 ? "wk" : "wks")" },
-                            ].compactMap { $0 }.joined(separator: " · ")
+                            ].compactMap { $0 }.joined(separator: isCompact ? "\n" : " · ")
                             if !parts.isEmpty {
                                 Text(parts)
                                     .font(.caption2)
                                     .foregroundStyle(Theme.secondary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.65)
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.75)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                         Spacer(minLength: 0)
@@ -1173,6 +1177,10 @@ private struct WatchGroupOverviewPage: View {
                         .textCase(.uppercase)
                         .foregroundStyle(Theme.secondary)
                         .lineLimit(1)
+                    Spacer(minLength: 4)
+                    if let customMetrics = match.customMetrics, !customMetrics.isEmpty {
+                        WatchMetricPips(metrics: customMetrics)
+                    }
                 }
                 .padding(.top, 6)
 
@@ -1238,7 +1246,10 @@ private struct WatchGroupOverviewPage: View {
             for: .tabView
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(match.accessibilityLabel(at: date, redacted: false, standings: true))
+        .accessibilityLabel(
+            [match.accessibilityLabel(at: date, redacted: false, standings: true), match.customMetricsAccessibilityText]
+                .compactMap { $0 }.joined(separator: " ")
+        )
         .accessibilityIdentifier("watch.match")
     }
 }
@@ -1282,7 +1293,10 @@ private struct WatchScheduledPage: View {
             for: .tabView
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(match.accessibilityLabel(at: date, redacted: false, standings: true))
+        .accessibilityLabel(
+            [match.accessibilityLabel(at: date, redacted: false, standings: true), match.customMetricsAccessibilityText]
+                .compactMap { $0 }.joined(separator: " ")
+        )
         .accessibilityIdentifier("watch.match")
     }
 }
@@ -1366,6 +1380,30 @@ private struct WatchBeltCard: View {
             }
         }
         .padding(.top, 3)
+    }
+}
+
+private struct WatchMetricPips: View {
+    let metrics: [CompetitionWidgetSnapshot.TodayRings.RingKind]
+
+    private func color(_ kind: CompetitionWidgetSnapshot.TodayRings.RingKind) -> Color {
+        switch kind {
+        case .move: Theme.move
+        case .exercise: Theme.exercise
+        case .stand: Theme.stand
+        case .sleep: Theme.sleep
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(metrics.enumerated()), id: \.offset) { _, kind in
+                SlantedBar()
+                    .fill(color(kind))
+                    .frame(width: 4, height: 9)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

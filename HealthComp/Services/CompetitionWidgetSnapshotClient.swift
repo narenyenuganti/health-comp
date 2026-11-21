@@ -239,6 +239,20 @@ extension CompetitionWidgetSnapshot.TodayRings {
     }
 }
 
+extension CompetitionWidgetSnapshot.TodayRings.RingKind {
+    static func customMetrics(for metrics: CompetitionMetrics) -> [Self]? {
+        guard !metrics.isDefaultRings else { return nil }
+        return metrics.orderedMetrics.map { metric in
+            switch metric {
+            case .move: .move
+            case .exercise: .exercise
+            case .stand: .stand
+            case .sleep: .sleep
+            }
+        }
+    }
+}
+
 extension CompetitionWidgetSnapshot.Match {
     init?(group m: GroupMatchPresentation) {
         switch m.lifecycle {
@@ -304,7 +318,8 @@ extension CompetitionWidgetSnapshot.Match {
                           isYou: $0.subject == you)
                 },
                 lead: lead
-            )
+            ),
+            customMetrics: CompetitionWidgetSnapshot.TodayRings.RingKind.customMetrics(for: m.metrics)
         )
     }
 
@@ -354,7 +369,8 @@ extension CompetitionWidgetSnapshot.Match {
                     suggestion: $0.points == nil ? nil : $0.suggestion
                 )
             },
-            todayRings: CompetitionWidgetSnapshot.TodayRings(presentation: p)
+            todayRings: CompetitionWidgetSnapshot.TodayRings(presentation: p),
+            customMetrics: CompetitionWidgetSnapshot.TodayRings.RingKind.customMetrics(for: p.metrics)
         )
     }
 }

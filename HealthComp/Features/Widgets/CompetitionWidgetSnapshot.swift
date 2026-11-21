@@ -27,6 +27,7 @@ struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
         var group: Group?
         var todayRings: TodayRings? = nil
         var rivalry: Rivalry? = nil
+        var customMetrics: [TodayRings.RingKind]? = nil
     }
 
     struct TodayRings: Codable, Equatable, Sendable {
@@ -545,7 +546,8 @@ extension CompetitionWidgetSnapshot {
             youDays: [Double?] = [], themDays: [Double?] = [],
             updated: Bool = true, updatedAgo: TimeInterval = 11 * 60,
             final: Final.Outcome? = nil, leavesInDays: Int = 3, belt: Belt? = nil,
-            chase: Chase? = nil, todayRings: TodayRings? = nil, rivalry: Rivalry? = nil
+            chase: Chase? = nil, todayRings: TodayRings? = nil, rivalry: Rivalry? = nil,
+            customMetrics: [TodayRings.RingKind]? = nil
         ) -> Match {
             let first = day(1 - currentDay)
             let id = UUID(uuidString: String(format: "00000000-0000-0000-0000-%012ld", index))!
@@ -571,7 +573,8 @@ extension CompetitionWidgetSnapshot {
                 belt: belt,
                 chase: chase,
                 todayRings: todayRings,
-                rivalry: rivalry
+                rivalry: rivalry,
+                customMetrics: customMetrics
             )
         }
         let week: [Double?] = [250, 230, 262, 250, 212, 260, 300]
@@ -707,6 +710,14 @@ extension CompetitionWidgetSnapshot {
         case "beltDefended":
             matches = [match(5, "Sam", currentDay: 9, you: 1_840, them: 1_726, youDays: week, themDays: theirs,
                              final: .win, belt: Belt(holder: .you, defenses: 3, card: .defended(3)))]
+        case "sleepMatch":
+            let sleepRings = TodayRings(dayOrdinal: 5, rows: liveRings.rows + [
+                .init(kind: .sleep, title: "Sleep", detail: "7h 48m", progress: 0.92, points: 92),
+            ])
+            matches = [match(5, "Sam", currentDay: 5, you: 1_564, them: 1_490, youDays: [330, 310, 352, 340, 304],
+                             themDays: [305, 330, 350, 272, 233],
+                             todayRings: sleepRings, rivalry: samRivalry,
+                             customMetrics: [.move, .exercise, .stand, .sleep])]
         default: return nil
         }
         return Self(matches: matches, hasIncomingChallenge: hasIncomingChallenge)

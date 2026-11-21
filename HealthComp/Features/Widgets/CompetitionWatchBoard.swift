@@ -245,6 +245,16 @@ extension CompetitionWidgetSnapshot.Match {
         )
     }
 
+    func weekHeaderTitle(at date: Date) -> String {
+        guard let group, !group.isDoubles else { return "Week rounds" }
+        return group.yourPlace == 1 ? "Week vs 2nd" : "Week vs 1st"
+    }
+
+    var customMetricsAccessibilityText: String? {
+        guard let customMetrics, !customMetrics.isEmpty else { return nil }
+        return "Metrics: \(customMetrics.map(\.displayName).joined(separator: ", "))."
+    }
+
     var beltDefensesText: String? {
         guard let defenses = belt?.defenses, defenses > 0 else { return nil }
         return defenses == 1 ? "1 defense" : "\(defenses) defenses"
