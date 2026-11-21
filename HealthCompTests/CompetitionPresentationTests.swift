@@ -2550,7 +2550,12 @@ final class CompetitionPresentationTests: XCTestCase {
                 opponentUpdatedAt: nil
             ))).chase
         }
-        XCTAssertEqual(try chase(user: takes.userPoints), .init(day: 5, points: 39))
+        let expectedSuggestion = competitionWhatItTakes(takes)?.suggestion
+        XCTAssertNotNil(expectedSuggestion)
+        XCTAssertEqual(
+            try chase(user: takes.userPoints),
+            .init(day: 5, points: 39, suggestion: expectedSuggestion)
+        )
         XCTAssertEqual(try chase(user: 500), .init(day: 5, points: nil))
         XCTAssertNil(try chase(user: 1_200))
     }
