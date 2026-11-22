@@ -168,11 +168,16 @@ final class BeltCeremonyUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        XCTAssertTrue(
-            wait(for: NSPredicate(format: "exists == false"), on: ceremony, timeout: seconds),
-            file: file,
-            line: line
-        )
+        let ended = ceremony.waitForNonExistence(timeout: seconds)
+        if !ended {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.lifetime = .keepAlways
+            add(hierarchy)
+            let screenshot = XCTAttachment(screenshot: app.screenshot())
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+        }
+        XCTAssertTrue(ended, file: file, line: line)
         XCTAssertTrue(element("competition.result").waitForExistence(timeout: 3), file: file, line: line)
     }
 
@@ -187,13 +192,6 @@ final class BeltCeremonyUITests: XCTestCase {
             if condition() { return true }
         } while Date() < deadline
         return false
-    }
-
-    private func wait(for predicate: NSPredicate, on element: XCUIElement, timeout: TimeInterval) -> Bool {
-        XCTWaiter.wait(
-            for: [XCTNSPredicateExpectation(predicate: predicate, object: element)],
-            timeout: timeout
-        ) == .completed
     }
 
     private func scrollTo(_ target: XCUIElement) {
