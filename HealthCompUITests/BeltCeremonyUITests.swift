@@ -168,11 +168,16 @@ final class BeltCeremonyUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        XCTAssertTrue(
-            wait(for: NSPredicate(format: "exists == false"), on: ceremony, timeout: seconds),
-            file: file,
-            line: line
-        )
+        let ended = ceremony.waitForNonExistence(timeout: seconds)
+        if !ended {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.lifetime = .keepAlways
+            add(hierarchy)
+            let screenshot = XCTAttachment(screenshot: app.screenshot())
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+        }
+        XCTAssertTrue(ended, file: file, line: line)
         XCTAssertTrue(element("competition.result").waitForExistence(timeout: 3), file: file, line: line)
     }
 
@@ -189,18 +194,26 @@ final class BeltCeremonyUITests: XCTestCase {
         return false
     }
 
-    private func wait(for predicate: NSPredicate, on element: XCUIElement, timeout: TimeInterval) -> Bool {
-        XCTWaiter.wait(
-            for: [XCTNSPredicateExpectation(predicate: predicate, object: element)],
-            timeout: timeout
-        ) == .completed
-    }
-
     private func scrollTo(_ target: XCUIElement) {
-        for _ in 0..<12 where !(target.exists && target.isHittable) {
-            app.swipeUp()
+        for _ in 0..<12 {
+            var visible = app.windows.firstMatch.frame.insetBy(dx: 0, dy: 12)
+            let navigation = app.navigationBars.firstMatch
+            if navigation.exists {
+                visible.origin.y = navigation.frame.maxY
+                visible.size.height = app.windows.firstMatch.frame.maxY - visible.minY - 12
+            }
+            let challenge = element("competition.person.challenge")
+            if challenge.exists, challenge.isHittable {
+                visible.size.height = min(visible.maxY, challenge.frame.minY) - visible.minY
+            }
+            if target.exists, target.isHittable, visible.contains(target.frame) { return }
+            if target.exists, target.frame.midY < visible.midY {
+                app.swipeDown()
+            } else {
+                app.swipeUp()
+            }
         }
-        XCTAssertTrue(target.isHittable)
+        XCTFail("Could not fully reveal \(target)")
     }
 
     private func element(_ identifier: String) -> XCUIElement {
