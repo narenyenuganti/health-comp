@@ -1045,6 +1045,7 @@ private struct AccountNotificationsPage: View {
                     }
                 } header: {
                     SectionLabel("MUTED")
+                        .fixedSize(horizontal: false, vertical: true)
                 } footer: {
                     Text("Muting someone silences all your matches with them.")
                         .foregroundStyle(Theme.secondary)
@@ -1091,6 +1092,7 @@ private struct AccountNotificationsPage: View {
             }
         } header: {
             SectionLabel(title)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .listRowBackground(Theme.panel)
     }
