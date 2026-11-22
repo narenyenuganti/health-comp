@@ -415,7 +415,7 @@ private struct CompetitionBeltCeremonyPlayer: View {
 
     private func skip() {
         Sounds.stop()
-        leave(animated: false)
+        leave()
     }
 
     private func leave(animated: Bool = true) {
