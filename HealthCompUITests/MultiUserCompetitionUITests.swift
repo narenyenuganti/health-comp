@@ -1481,7 +1481,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["FRIENDS"].exists)
 
         let liveActivity = app.switches["account.notifications.choice.live-activity"].firstMatch
-        scrollToElement(liveActivity)
+        scrollToElement(liveActivity, towardEarlierContent: true)
         XCTAssertFalse(liveActivity.isEnabled)
         XCTAssertTrue(app.staticTexts["Live Activities are off for HealthComp in iOS Settings."].exists)
         let liveActivitySettings = app.buttons["account.notifications.live-activity.settings"]
@@ -1494,7 +1494,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
 
         let leadChanges = app.switches["account.notifications.choice.lead-change"].firstMatch
-        scrollToElement(leadChanges)
+        scrollToElement(leadChanges, towardEarlierContent: true)
         let before = leadChanges.value as? String
         flip(leadChanges)
         XCTAssertNotEqual(leadChanges.value as? String, before)
@@ -2191,7 +2191,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         }
     }
 
-    private func scrollToElement(_ element: XCUIElement) {
+    private func scrollToElement(_ element: XCUIElement, towardEarlierContent: Bool = false) {
         for _ in 0..<24 {
             if element.exists, element.isHittable,
                app.frame.contains(element.frame) { return }
@@ -2199,9 +2199,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
             let scrollView = app.scrollViews.firstMatch
             let surface: XCUIElement = collectionView.exists
                 ? collectionView : (scrollView.exists ? scrollView : app)
-            let movesTowardEarlierContent = element.exists
-                && element.frame != .zero
-                && element.frame.midY < surface.frame.midY
+            let movesTowardEarlierContent = element.exists && element.frame != .zero
+                ? element.frame.midY < surface.frame.midY : towardEarlierContent
             let start = surface.coordinate(
                 withNormalizedOffset: CGVector(
                     dx: 0.5,
