@@ -28,13 +28,14 @@
     <nav aria-label="Home"><a href="/">HealthComp home</a></nav>
     <article aria-labelledby="privacy-title">
       <h1 id="privacy-title">HealthComp privacy</h1>
-      <p>HealthComp supports private, seven-day Activity competitions: one-on-one matches, and
-        group matches of three or four players in which a bot can fill a seat.
+      <p>HealthComp supports private, seven-day fitness competitions using one to four selected
+        metrics: Move, Exercise, Stand, and optional Sleep. You can play one-on-one matches
+        or group matches of three or four players in which a bot can fill a seat.
         The initial private beta is invitation-only for a small group of adults in the
         United States.</p>
 
       <p><strong>Operator:</strong> Naren Yenuganti.<br>
-        <strong>Effective date:</strong> November 16, 2026.<br>
+        <strong>Effective date:</strong> November 21, 2026.<br>
         <strong>Questions or privacy requests:</strong> <!--email_off--><a href="mailto:yrnaren1@gmail.com">yrnaren1@gmail.com</a><!--/email_off-->.</p>
 
       <h2>Information used by the app</h2>
@@ -67,11 +68,11 @@
         <li><strong>Optional Sleep beta:</strong> with your permission, HealthComp reads sleep
           samples from Apple Health and uses your selected source to calculate nightly
           points on your iPhone. Raw sleep samples, sleep times, durations, and the
-          breakdown used to calculate your points stay on your iPhone. For a Rings + Sleep
-          match, only your computed nightly points, the match day, and update information
+          breakdown used to calculate your points stay on your iPhone. For a match that includes
+          Sleep, only your computed nightly points, the match day, and update information
           are synchronized with your account.</li>
         <li><strong>Derived competition data:</strong> our server stores rounded Activity percentages,
-          Move/Stand/Roll modes, availability, daily points, competition dates/time zone,
+          the metrics selected for a match, Move/Stand/Roll modes, availability, daily points, competition dates/time zone,
           revision information, results, awards, and the preset reactions you send (👏 🔥 😤 🫡)
           and when you sent them (in a group match, also whom you sent them to), linked to
           participant accounts. A bot in a group match is set from the players' average daily
@@ -79,8 +80,10 @@
           Keeping raw Health data on-device does not mean no fitness information is
           collected by the service.</li>
         <li><strong>On your Apple Watch:</strong> if you install the Watch app, your iPhone sends
-          match names, points, dates, time zones, and results, including who holds the belt,
-          straight to your paired Watch. Health values are never sent to it.</li>
+          match names, selected metrics, points, dates, time zones, results and belt information
+          straight to your paired Watch. The snapshot also includes derived ring percentages,
+          score-based chase suggestions and rivalry summaries for its match screens and
+          complications. Raw HealthKit samples and raw goal values stay on your iPhone.</li>
         <li><strong>Installation and security information:</strong> installation identifiers, notification
           tokens, which kinds of notification you turned off on that device, and
           app-integrity verification records support notification delivery,
@@ -100,7 +103,7 @@
       <h2>Sharing and service providers</h2>
       <p>Everyone in a match with you (one other person, or up to three in a group match) can
         see your display name and shared competition information,
-        including daily points, availability, dates, results, the reactions you send, rounded
+        including the selected metrics, daily points, availability, dates, results, the reactions you send, rounded
         Move/Exercise/Stand-or-Roll percentages, Activity modes, and when your iPhone
         last updated each daily score. These are derived
         fitness values, not raw HealthKit samples or workout records. Before a group match
@@ -111,7 +114,7 @@
         week, which days each person won and up to two highlights, and the person sharing
         can hide the other person's name.</p>
 
-      <p>In a Rings + Sleep match, your opponent can also see your computed points for
+      <p>When a match includes Sleep, the other players can also see your computed points for
         each night and when they were updated. They do not receive your raw sleep samples,
         sleep times, durations, or the local breakdown of your sleep score.</p>
 
