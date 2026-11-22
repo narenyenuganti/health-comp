@@ -1,4 +1,4 @@
--- Callable catalogue for build 1.0.7 (7).
+-- Callable catalogue for build 1.0.8 (8).
 begin;
 
 set local role postgres;
@@ -53,24 +53,25 @@ select is_empty($released$
     ('leave_group_match', 'jsonb', '{"competition_id uuid"}'::text[], '{"competition_id uuid"}'::text[]),
     ('list_blocked_profiles', 'jsonb', '{}'::text[], '{}'::text[]),
     ('list_challenges', 'jsonb', '{}'::text[], '{}'::text[]),
+    ('list_competition_metrics', 'jsonb', '{}'::text[], '{}'::text[]),
     ('list_competition_reactions', 'jsonb', '{}'::text[], '{}'::text[]),
     ('list_current_notification_mutes', 'jsonb', '{}'::text[], '{}'::text[]),
     ('list_friends', 'jsonb', '{}'::text[], '{}'::text[]),
     ('list_group_matches', 'jsonb', '{}'::text[], '{}'::text[]),
     ('list_profile_photos', 'jsonb', '{"profile_ids uuid[]"}'::text[], '{"profile_ids uuid[]"}'::text[]),
     ('list_sleep_scoring', 'jsonb', '{}'::text[], '{}'::text[]),
-    ('nudge_competition_participant', 'jsonb', '{"competition_id uuid"}'::text[], '{"competition_id uuid"}'::text[]),
     ('nudge_competition_participant', 'jsonb', '{"competition_id uuid","recipient_profile_id uuid"}'::text[], '{"competition_id uuid","recipient_profile_id uuid"}'::text[]),
+    ('nudge_competition_participant', 'jsonb', '{"competition_id uuid"}'::text[], '{"competition_id uuid"}'::text[]),
     ('own_profile_photo', 'jsonb', '{}'::text[], '{}'::text[]),
     ('preview_competition_invite', 'jsonb', '{"token_digest bytea"}'::text[], '{"token_digest bytea"}'::text[]),
     ('preview_group_match', 'jsonb', '{"competition_id uuid"}'::text[], '{"competition_id uuid"}'::text[]),
-    ('register_current_device_installation', 'jsonb', '{"installation_id uuid","apns_token text","environment text"}'::text[], '{"installation_id uuid","apns_token text","environment text"}'::text[]),
-    ('register_current_device_installation', 'jsonb', '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean"}'::text[], '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean"}'::text[]),
-    ('register_current_device_installation', 'jsonb', '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean"}'::text[], '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean"}'::text[]),
-    ('register_current_device_installation', 'jsonb', '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean","muted_push_kinds text[]"}'::text[], '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean","muted_push_kinds text[]"}'::text[]),
     ('register_current_device_installation', 'jsonb', '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean","muted_push_kinds text[]","supports_group_matches boolean"}'::text[], '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean","muted_push_kinds text[]","supports_group_matches boolean"}'::text[]),
-    ('register_current_device_installation', 'jsonb', '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean","supports_friends boolean","muted_push_kinds text[]"}'::text[], '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean","supports_friends boolean","muted_push_kinds text[]"}'::text[]),
+    ('register_current_device_installation', 'jsonb', '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean","muted_push_kinds text[]"}'::text[], '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean","muted_push_kinds text[]"}'::text[]),
     ('register_current_device_installation', 'jsonb', '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean","supports_friends boolean","muted_push_kinds text[]","supports_group_matches boolean"}'::text[], '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean","supports_friends boolean","muted_push_kinds text[]","supports_group_matches boolean"}'::text[]),
+    ('register_current_device_installation', 'jsonb', '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean","supports_friends boolean","muted_push_kinds text[]"}'::text[], '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean","supports_friends boolean","muted_push_kinds text[]"}'::text[]),
+    ('register_current_device_installation', 'jsonb', '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean"}'::text[], '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean","supports_reactions boolean"}'::text[]),
+    ('register_current_device_installation', 'jsonb', '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean"}'::text[], '{"installation_id uuid","apns_token text","environment text","supports_challenges boolean"}'::text[]),
+    ('register_current_device_installation', 'jsonb', '{"installation_id uuid","apns_token text","environment text"}'::text[], '{"installation_id uuid","apns_token text","environment text"}'::text[]),
     ('remove_current_device_installation', 'jsonb', '{"installation_id uuid"}'::text[], '{"installation_id uuid"}'::text[]),
     ('remove_friend', 'jsonb', '{"profile_id uuid"}'::text[], '{"profile_id uuid"}'::text[]),
     ('report_profile', 'jsonb', '{"profile_id uuid"}'::text[], '{"profile_id uuid"}'::text[]),
@@ -82,8 +83,9 @@ select is_empty($released$
     ('search_people', 'jsonb', '{"query text"}'::text[], '{"query text"}'::text[]),
     ('send_friend_request', 'jsonb', '{"profile_id uuid"}'::text[], '{"profile_id uuid"}'::text[]),
     ('set_career_sharing', 'jsonb', '{"enabled boolean"}'::text[], '{"enabled boolean"}'::text[]),
-    ('set_competition_reaction', 'jsonb', '{"competition_id uuid","day_ordinal integer","reaction text"}'::text[], '{"competition_id uuid","day_ordinal integer","reaction text"}'::text[]),
+    ('set_competition_metrics', 'jsonb', '{"competition_id uuid","move boolean","exercise boolean","stand boolean","sleep boolean"}'::text[], '{"competition_id uuid","move boolean","exercise boolean","stand boolean","sleep boolean"}'::text[]),
     ('set_competition_reaction', 'jsonb', '{"competition_id uuid","day_ordinal integer","reaction text","target_profile_id uuid"}'::text[], '{"competition_id uuid","day_ordinal integer","reaction text","target_profile_id uuid"}'::text[]),
+    ('set_competition_reaction', 'jsonb', '{"competition_id uuid","day_ordinal integer","reaction text"}'::text[], '{"competition_id uuid","day_ordinal integer","reaction text"}'::text[]),
     ('set_current_notification_mute', 'jsonb', '{"opponent_profile_id uuid","is_muted boolean"}'::text[], '{"opponent_profile_id uuid","is_muted boolean"}'::text[]),
     ('set_profile_photo', 'jsonb', '{"photo_version uuid"}'::text[], '{"photo_version uuid"}'::text[]),
     ('set_username', 'jsonb', '{"username text"}'::text[], '{"username text"}'::text[]),
@@ -107,7 +109,7 @@ select is_empty($released$
         and array(select split_part(x, ' ', 1) from unnest(c.required) x)
           <@ array(select split_part(x, ' ', 1) from unnest(r.args) x)) <> 1
 $released$,
-  'builds up to 1.0.7 (7) can still call every function they shipped with; if not, keep the old function and add the change as optional arguments or a new overload');
+  'builds up to 1.0.8 (8) can still call every function they shipped with; if not, keep the old function and add the change as optional arguments or a new overload');
 
 select * from finish();
 rollback;
