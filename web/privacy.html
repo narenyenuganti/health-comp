@@ -62,13 +62,15 @@
           on your iPhone to set the pacer; practice data is never sent. HealthComp
           requests related Activity/workout read permissions to notice changes and
           wheelchair-use information to select Stand/Roll behavior.
-          It does not request permission to write Health data. Raw HealthKit data stays
-          on your iPhone; the score submission does not upload raw workout samples,
-          routes, or raw goal values.</li>
+          It does not request permission to write Health data. Raw HealthKit sample records
+          and workout routes stay on your iPhone; score submissions do not upload those
+          samples, routes, or goal values. If you use the Watch app, the paired-device
+          summaries described below are also sent to your Watch.</li>
         <li><strong>Optional Sleep beta:</strong> with your permission, HealthComp reads sleep
           samples from Apple Health and uses your selected source to calculate nightly
-          points on your iPhone. Raw sleep samples, sleep times, durations, and the
-          breakdown used to calculate your points stay on your iPhone. For a match that includes
+          points on your iPhone. Raw sleep samples, individual sleep times, and the
+          breakdown used to calculate your points stay on your iPhone. Your paired Watch
+          can also display the calculated sleep duration for the current match day. For a match that includes
           Sleep, only your computed nightly points, the match day, and update information
           are synchronized with your account.</li>
         <li><strong>Derived competition data:</strong> our server stores rounded Activity percentages,
@@ -81,9 +83,11 @@
           collected by the service.</li>
         <li><strong>On your Apple Watch:</strong> if you install the Watch app, your iPhone sends
           match names, selected metrics, points, dates, time zones, results and belt information
-          straight to your paired Watch. The snapshot also includes derived ring percentages,
-          score-based chase suggestions and rivalry summaries for its match screens and
-          complications. Raw HealthKit samples and raw goal values stay on your iPhone.</li>
+          straight to your paired Watch. The snapshot also includes today's calculated
+          Activity amounts and goals, ring percentages, and Sleep duration when enabled,
+          plus score-based chase suggestions and rivalry summaries. These summaries are
+          stored on your Watch for its match screens and complications. Raw HealthKit
+          sample records stay on your iPhone.</li>
         <li><strong>Installation and security information:</strong> installation identifiers, notification
           tokens, which kinds of notification you turned off on that device, and
           app-integrity verification records support notification delivery,
