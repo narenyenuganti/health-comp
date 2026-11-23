@@ -272,9 +272,11 @@ struct MainTabView: View {
                     )
                 }
             }
-            .sheet(isPresented: $isTodayRingsPresented) {
+            .sheet(isPresented: $isTodayRingsPresented, onDismiss: { store.send(.todayActivityLoaded(nil)) }) {
                 CompetitionTodayRingsSheet(
-                    competitions: store.competition.publication?.dashboard.competitions ?? []
+                    competitions: store.competition.publication?.dashboard.competitions ?? [],
+                    activity: store.todayActivity,
+                    loadActivity: { await store.send(.todayActivityRequested).finish() }
                 )
             }
             .navigationDestination(for: CompetitionHomeRoute.self) { route in

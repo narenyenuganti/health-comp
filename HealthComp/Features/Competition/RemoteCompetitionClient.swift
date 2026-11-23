@@ -237,6 +237,7 @@ extension CompetitionClient {
             isProfilePhotoReported: { await coordinator.isProfilePhotoReported($0) },
             groupMatchCommand: { try await coordinator.groupMatchCommand($0) }
         )
+        client.readTodayActivity = { try await environment.readTodayActivity() }
         client.enableSleep = { id in try await coordinator.enableSleep(id) }
         client.setCompetitionMetrics = { id, metrics in
             try await coordinator.setCompetitionMetrics(id, metrics)

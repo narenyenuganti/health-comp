@@ -7,6 +7,7 @@ struct CompetitionRingRow: Equatable, Sendable {
     let detail: String
     let spokenDetail: String
     let points: Double?
+    var goalFraction: Double? = nil
 }
 
 struct CompetitionRingPanel: Equatable, Sendable {
@@ -53,50 +54,7 @@ func competitionRingPanel(
         }
     }
 
-    func number(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(0)).locale(locale))
-    }
-    func row(
-        _ metric: CompetitionMetric,
-        _ index: Int,
-        _ title: String,
-        _ reading: ActivityRingReading,
-        _ unit: String,
-        _ spokenUnit: String
-    ) -> CompetitionRingRow {
-        guard let value = reading.value, let goal = reading.goal, goal > 0 else {
-            return CompetitionRingRow(
-                metric: metric, title: title, detail: "No data", spokenDetail: "no data", points: pointsByIndex[index]
-            )
-        }
-        return CompetitionRingRow(
-            metric: metric,
-            title: title,
-            detail: "\(number(value))/\(number(goal)) \(unit)",
-            spokenDetail: "\(number(value)) of \(number(goal)) \(spokenUnit)",
-            points: pointsByIndex[index]
-        )
-    }
-
-    let minutes = snapshot.moveMode == .moveMinutes
-    let standTitle = switch snapshot.standMode {
-    case .standHours: "Stand"
-    case .rollHours: "Roll"
-    case .unknown: "Stand or Roll"
-    }
-    var rows: [CompetitionRingRow] = []
-    if metrics.contains(.move) {
-        rows.append(row(
-            .move, 0, minutes ? "Move Time" : "Move", snapshot.move,
-            minutes ? "min" : "kcal", minutes ? "minutes" : "kilocalories"
-        ))
-    }
-    if metrics.contains(.exercise) {
-        rows.append(row(.exercise, 1, "Exercise", snapshot.exercise, "min", "minutes"))
-    }
-    if metrics.contains(.stand) {
-        rows.append(row(.stand, 2, standTitle, snapshot.standOrRoll, "hr", "hours"))
-    }
+    var rows = activityRingRows(snapshot, metrics: metrics, points: pointsByIndex, locale: locale)
     if includesSleep {
         rows.append(competitionSleepRow(day, locale: locale))
     }
@@ -125,6 +83,66 @@ func competitionRingPanel(
         note: note,
         accessibilityLabel: spoken
     )
+}
+
+private func activityRingRows(
+    _ snapshot: ActivitySnapshot,
+    metrics: CompetitionMetrics,
+    points: [Int: Double] = [:],
+    locale: Locale
+) -> [CompetitionRingRow] {
+    func number(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0)).locale(locale))
+    }
+    func row(
+        _ metric: CompetitionMetric,
+        _ index: Int,
+        _ title: String,
+        _ reading: ActivityRingReading,
+        _ unit: String,
+        _ spokenUnit: String
+    ) -> CompetitionRingRow {
+        guard let value = reading.value else {
+            return CompetitionRingRow(
+                metric: metric, title: title, detail: "No data", spokenDetail: "no data", points: points[index]
+            )
+        }
+        guard let goal = reading.goal, goal > 0 else {
+            return CompetitionRingRow(
+                metric: metric, title: title, detail: "\(number(value)) \(unit)",
+                spokenDetail: "\(number(value)) \(spokenUnit)", points: points[index]
+            )
+        }
+        return CompetitionRingRow(
+            metric: metric,
+            title: title,
+            detail: "\(number(value))/\(number(goal)) \(unit)",
+            spokenDetail: "\(number(value)) of \(number(goal)) \(spokenUnit)",
+            points: points[index],
+            goalFraction: value / goal
+        )
+    }
+
+    let minutes = snapshot.moveMode == .moveMinutes
+    let standTitle = switch snapshot.standMode {
+    case .standHours: "Stand"
+    case .rollHours: "Roll"
+    case .unknown: "Stand or Roll"
+    }
+    var rows: [CompetitionRingRow] = []
+    if metrics.contains(.move) {
+        rows.append(row(
+            .move, 0, minutes ? "Move Time" : "Move", snapshot.move,
+            minutes ? "min" : "kcal", minutes ? "minutes" : "kilocalories"
+        ))
+    }
+    if metrics.contains(.exercise) {
+        rows.append(row(.exercise, 1, "Exercise", snapshot.exercise, "min", "minutes"))
+    }
+    if metrics.contains(.stand) {
+        rows.append(row(.stand, 2, standTitle, snapshot.standOrRoll, "hr", "hours"))
+    }
+    return rows
 }
 
 struct ActivityRingsView: View {
@@ -379,13 +397,13 @@ func competitionTodayRings(
 
 struct CompetitionTodayRingsSheet: View {
     let competitions: [LocalCompetitionPresentation]
+    let activity: MainTabFeature.TodayActivity?
+    let loadActivity: () async -> Void
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
     @State private var height: CGFloat = 240
     @State private var isShown = false
-
-    private let colors = [Theme.move, Theme.exercise, Theme.stand]
 
     var body: some View {
         let today = competitionTodayRings(competitions, locale: locale, timeZone: timeZone)
@@ -405,10 +423,8 @@ struct CompetitionTodayRingsSheet: View {
                 if let today {
                     rings(today)
                 } else {
-                    Text("No match is scoring today. Your rings show here from Day 1.")
-                        .foregroundStyle(Theme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("home.todayRings.empty")
+                    personalActivity
+                        .task { await loadActivity() }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -423,6 +439,47 @@ struct CompetitionTodayRingsSheet: View {
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.ground)
         .onAppear { isShown = true }
+    }
+
+    @ViewBuilder
+    private var personalActivity: some View {
+        switch activity {
+        case .reading(let snapshot):
+            let rows = activityRingRows(snapshot, metrics: .threeRings, locale: locale)
+            VStack(alignment: .leading, spacing: 18) {
+                ForEach(rows, id: \.metric) { row in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(row.title)
+                                .themeLabel()
+                                .textCase(.uppercase)
+                            Spacer(minLength: 8)
+                            Text(row.detail)
+                                .font(.headline.weight(.semibold).monospacedDigit())
+                        }
+                        if let fraction = row.goalFraction {
+                            TodayRingBar(fraction: fraction, color: row.metric.color)
+                                .frame(height: 8)
+                        }
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(row.title), \(row.spokenDetail)")
+                }
+                if snapshot.isPaused == true {
+                    Text("Activity tracking paused")
+                        .font(.caption.bold())
+                }
+            }
+            .foregroundStyle(Theme.ink)
+        case .empty:
+            Text("No activity rings are available from Apple Health today.")
+                .foregroundStyle(Theme.secondary)
+        case .unavailable:
+            Text("Couldn’t read today’s rings from Apple Health. Try again in a moment.")
+                .foregroundStyle(Theme.secondary)
+        case nil:
+            ProgressView("Reading today’s rings…")
+        }
     }
 
     @ViewBuilder
@@ -445,9 +502,9 @@ struct CompetitionTodayRingsSheet: View {
                             .themeLabel()
                             .textCase(.uppercase)
                             .foregroundStyle(Theme.ink)
-                        TodayRingBar(closes: closes, color: colors[index])
+                        TodayRingBar(fraction: closes / 2, color: row.metric.color)
                             .frame(height: 14)
-                            .moving(Motion.grow(index, of: 3), value: closes)
+                            .moving(Motion.grow(index, of: today.panel.rows.count), value: closes)
                         Text(competitionPointsText(row.points, locale: locale))
                             .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
                             .foregroundStyle(Theme.ink)
@@ -492,26 +549,26 @@ struct CompetitionTodayRingsSheet: View {
 }
 
 private struct TodayRingBar: View {
-    let closes: Double
+    let fraction: Double
     let color: Color
 
     var body: some View {
-        TodayRingSegments(closes: 2)
+        TodayRingSegments(fraction: 1)
             .fill(Theme.track)
-            .overlay { TodayRingSegments(closes: closes).fill(color) }
+            .overlay { TodayRingSegments(fraction: fraction).fill(color) }
     }
 }
 
 private struct TodayRingSegments: Shape {
-    var closes: Double
+    var fraction: Double
 
     var animatableData: Double {
-        get { closes }
-        set { closes = newValue }
+        get { fraction }
+        set { fraction = newValue }
     }
 
     func path(in rect: CGRect) -> Path {
-        let fill = min(1, max(0, closes / 2))
+        let fill = min(1, max(0, fraction))
         guard fill > 0 else { return Path() }
         return SlantedBar().path(in: CGRect(x: rect.minX, y: rect.minY, width: rect.width * fill, height: rect.height))
     }

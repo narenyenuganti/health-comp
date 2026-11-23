@@ -543,7 +543,7 @@ extension CompetitionClient {
             idGenerator: idGenerator,
             initialPublicationRevision: initialPublicationRevision
         )
-        return Self(
+        var client = Self(
             start: {
                 let stream = hub.stream()
                 Task { await coordinator.start() }
@@ -587,6 +587,8 @@ extension CompetitionClient {
             waitUntil: { date in try await environment.wait(until: date) },
             stop: { await coordinator.stop() }
         )
+        client.readTodayActivity = { try await environment.readTodayActivity() }
+        return client
     }
     #endif
 
