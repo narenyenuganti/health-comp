@@ -46,6 +46,7 @@ struct HomeTourView: View {
     @State private var match: LocalCompetitionPresentation
     @State private var isLogoUpdating = false
     @State private var isRingsPresented = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(name: String, finish: @escaping () -> Void) {
         self.name = name
@@ -79,7 +80,7 @@ struct HomeTourView: View {
                 .padding(.vertical, 16)
             }
             .onChange(of: step) { _, step in
-                withAnimation(Motion.settle) { proxy.scrollTo(step, anchor: .center) }
+                withAnimation(reduceMotion ? nil : Motion.fade) { proxy.scrollTo(step, anchor: .center) }
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) { bar }
