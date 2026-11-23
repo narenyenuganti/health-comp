@@ -54,6 +54,7 @@ struct AppFeature {
         var isAuthenticationMonitoring: Bool
         var pendingChallengeSequence: UInt64?
         var newAccountClaimLinksThrough: UInt64?
+        var isNewAccount = false
 
         var hasPendingChallenge: Bool { pendingChallengeSequence != nil }
 
@@ -374,6 +375,8 @@ struct AppFeature {
                     )
                     mainTab.claimLinksBeforeAccountThrough =
                         state.newAccountClaimLinksThrough ?? 0
+                    mainTab.showsTour = state.isNewAccount
+                    state.isNewAccount = false
                     state.mainTab = mainTab
                     state.pendingChallengeSequence = nil
                     state.newAccountClaimLinksThrough = nil
@@ -496,6 +499,7 @@ struct AppFeature {
 
             case let .account(.delegate(.displayNameSubmitted(name))):
                 guard state.phase == .settingUpProfile else { return .none }
+                state.isNewAccount = true
                 if let sequence = state.pendingChallengeSequence {
                     state.newAccountClaimLinksThrough = max(
                         state.newAccountClaimLinksThrough ?? 0,
@@ -1190,6 +1194,7 @@ struct AppFeature {
         state.pendingTeardown = nil
         state.mainTab = nil
         state.newAccountClaimLinksThrough = nil
+        state.isNewAccount = false
         state.account = AccountFeature.State(mode: .signedOut)
         state.account.isBrowserSignInAvailable = authenticationClient.signInWithAppleInBrowser != nil
         state.account.isBrowserDeletionAvailable = authenticationClient.deleteAccountInBrowser != nil

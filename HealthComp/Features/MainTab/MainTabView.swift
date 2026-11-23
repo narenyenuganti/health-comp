@@ -21,6 +21,7 @@ struct MainTabView: View {
     @State private var isPracticePresented = false
     @State private var isLogoUpdating = false
     @State private var isTodayRingsPresented = false
+    @State private var isTourPresented = false
     @State private var isLaunchSlow = false
     @State private var isVersusPlaying = false
     @State private var replaysVersus = false
@@ -66,7 +67,7 @@ struct MainTabView: View {
                 }
             }
         }
-        .onChange(of: isChallengePresented || isNewMatchPresented || isPracticePresented || isVersusPlaying || recapPeriod != nil) { _, isOpen in
+        .onChange(of: isChallengePresented || isNewMatchPresented || isPracticePresented || isVersusPlaying || recapPeriod != nil || isTourPresented) { _, isOpen in
             store.send(.challengeSheetVisibilityChanged(isOpen))
         }
         .onReceive(
@@ -351,6 +352,14 @@ struct MainTabView: View {
                 notNowTapped: { store.send(.notificationPromptNotNowTapped) }
             )
             .presentationBackground(Theme.ground)
+        }
+        .fullScreenCover(isPresented: $isTourPresented, onDismiss: { store.send(.tourFinished) }) {
+            HomeTourView(name: store.competition.ownProfile?.displayName ?? "") {
+                isTourPresented = false
+            }
+        }
+        .onChange(of: isTourDue, initial: true) { _, isDue in
+            if isDue { isTourPresented = true }
         }
         .competitionRecapDeck($recapPeriod, publication: store.competition.publication) {
             homeStack.wrappedValue = $0
@@ -732,6 +741,12 @@ struct MainTabView: View {
                 }
             }
         }
+    }
+
+    private var isTourDue: Bool {
+        store.showsTour && store.competition.publication != nil
+            && store.inviteClaimStatus == .idle && store.challengeFromLink == nil
+            && store.notificationPrompt != .presented
     }
 
     private var isToolbarShown: Bool {

@@ -89,6 +89,7 @@ struct MainTabFeature {
         var claimDeclineFailed = false
         var challengeFromLink: ChallengeFromLink?
         var friendsRouteCount = 0
+        var showsTour = false
 
         init(
             competition: CompetitionFeature.State = CompetitionFeature.State(),
@@ -163,6 +164,7 @@ struct MainTabFeature {
         case historyPersonChanged(String?)
         case personPlaceChanged(CompetitionPersonPlace)
         case accountPresentationChanged(Bool)
+        case tourFinished
         case pendingRouteTimedOut(UInt64)
         case onboardingChecked([PermissionOnboardingStep])
         case onboardingContinueTapped
@@ -386,6 +388,10 @@ struct MainTabFeature {
 
             case let .personPlaceChanged(place):
                 state.personPlace = place
+                return .none
+
+            case .tourFinished:
+                state.showsTour = false
                 return .none
 
             case let .accountPresentationChanged(isPresented):
