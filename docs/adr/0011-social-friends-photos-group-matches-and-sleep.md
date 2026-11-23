@@ -12,7 +12,9 @@ Account privacy settings, usernames, friends search, profile photos, badges/reco
 
 ### 1. Account Settings, Username Filtering, and Friends Concurrency
 - `AccountFeature.swift`, `AccountSettingsView.swift`, `AccountView.swift`:
-  - Display-name validation counts `unicodeScalars.count` (`1...64`) to match PostgreSQL `char_length`.
+  - The username is the only name a player chooses. `profiles.display_name` stays the wire field every surface reads (matches, widgets, watch, pushes, older builds), and `AppFeature.followUsername` writes the username into it whenever friend settings arrive with a username that differs. Players without a username keep their old display name: a username makes a player searchable, so none is claimed for them.
+  - Sign-up calls `sign_up_with_username`, which creates the profile holding the username or creates nothing, so a taken username is reported on the sign-up screen. The server must have that migration before a build with this sign-up ships. `bootstrap_current_profile` stays for launch and for older builds.
+  - Account groups rows by subject: the username under the photo, the challenge link's everyday actions, Your Data (Health, Sleep, Privacy) and Preferences (Notifications, Appearance, Sounds). Privacy holds everything about who can reach you: search, challenge policy, Reset Challenge Link and the blocked list.
   - `AccountView` retains `LastDrawn` so the root crossfade off Welcome/Setup never draws signed-in state; Privacy Policy uses a `48 pt` minimum target (not `44 pt`) because centered content on fractional origins can round below `44 pt`.
   - `AccountSettingsView` puts `44 pt` frames *inside* button labels so hit areas stay valid, attaches Sign Out alert to its button rather than the `List` (preventing collision with the Delete Account alert), keeps QR codes black-on-white in both modes, crossfades appearance changes via UIKit snapshot (`Motion.fade`) because dynamic colors do not interpolate through SwiftUI transactions, and splits `listWithHaptics` into plain `Bool` bindings so Xcode 16 type-checks within budget.
 - `UsernameSheet.swift`:

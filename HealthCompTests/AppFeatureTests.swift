@@ -233,7 +233,7 @@ final class AppFeatureTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.account(.displayNameChanged("Taylor")))
+        await store.send(.account(.displayNameChanged("taylor")))
         await store.send(.account(.submitDisplayNameButtonTapped))
         await store.finish()
         await store.skipReceivedActions(strict: false)
@@ -242,7 +242,7 @@ final class AppFeatureTests: XCTestCase {
         await store.finish()
         await store.skipReceivedActions(strict: false)
         XCTAssertEqual(store.state.phase, .settingUpProfile)
-        XCTAssertEqual(store.state.account.displayName, "Taylor")
+        XCTAssertEqual(store.state.account.displayName, "taylor")
 
         await store.send(.account(.signOutButtonTapped))
         await store.finish()
@@ -1045,15 +1045,14 @@ final class AppFeatureTests: XCTestCase {
             $0.phase = .settingUpProfile
             $0.account = AccountFeature.State(mode: .settingUpProfile)
         }
-        await store.send(.account(.displayNameChanged("  Taylor  "))) {
-            $0.account.displayName = "  Taylor  "
+        await store.send(.account(.displayNameChanged("taylor"))) {
+            $0.account.displayName = "taylor"
         }
         await store.send(.account(.submitDisplayNameButtonTapped)) {
-            $0.account.displayName = "Taylor"
             $0.account.isRequestInFlight = true
         }
         await store.receive(
-            .account(.delegate(.displayNameSubmitted("Taylor")))
+            .account(.delegate(.displayNameSubmitted("taylor")))
         )
         await store.receive(
             .bootstrapProfileResponse(epoch: 1, .success(profile))
@@ -1077,7 +1076,7 @@ final class AppFeatureTests: XCTestCase {
                 competition: CompetitionFeature.State(ownProfile: profile)
             )
         }
-        XCTAssertEqual(names.calls, ["nil", "Taylor"])
+        XCTAssertEqual(names.calls, ["nil", "taylor"])
     }
 
     @MainActor
@@ -1171,14 +1170,9 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testAuthenticatedDisplayNameUpdateReplacesPresentationOnly()
-        async
-    {
+    func testDisplayNameFollowsTheUsername() async {
         let profile = profile
-        let updated = AuthenticatedProfile(
-            id: profile.id,
-            displayName: "Taylor Prime"
-        )
+        let updated = AuthenticatedProfile(id: profile.id, displayName: "taylor_prime")
         var competitionClient = CompetitionClient.testValue
         competitionClient.reconcileAll = { _ in
             CompetitionPublication(
@@ -1199,25 +1193,21 @@ final class AppFeatureTests: XCTestCase {
         } withDependencies: {
             $0.authenticationClient = .test(
                 updateProfile: { name in
-                    XCTAssertEqual(name, "Taylor Prime")
+                    XCTAssertEqual(name, "taylor_prime")
                     return updated
                 }
             )
             $0.competitionClient = competitionClient
         }
-
-        await store.send(.account(.editDisplayNameButtonTapped)) {
-            $0.account.isEditingDisplayName = true
-        }
-        await store.send(.account(.displayNameChanged("Taylor Prime"))) {
-            $0.account.displayName = "Taylor Prime"
-        }
-        await store.send(.account(.saveDisplayNameButtonTapped)) {
-            $0.account.isRequestInFlight = true
-        }
-        await store.receive(
-            .account(.delegate(.displayNameUpdateRequested("Taylor Prime")))
+        let settings = FriendSettings(
+            username: "taylor_prime",
+            showInSearch: true,
+            challengePolicy: .friendsAndLink
         )
+
+        await store.send(.mainTab(.competition(.friendSettings(.loaded(settings))))) {
+            $0.mainTab?.competition.friendSettings.saved = settings
+        }
         await store.receive(
             .updateProfileResponse(epoch: 8, .success(updated))
         ) {
@@ -1225,13 +1215,29 @@ final class AppFeatureTests: XCTestCase {
             $0.mainTab?.competition.ownProfile = updated
         }
         await store.receive(
-            .account(.profileUpdateFinished("Taylor Prime"))
+            .account(.profileUpdateFinished("taylor_prime"))
         ) {
-            $0.account.committedDisplayName = "Taylor Prime"
-            $0.account.isEditingDisplayName = false
-            $0.account.isRequestInFlight = false
+            $0.account.displayName = "taylor_prime"
+            $0.account.committedDisplayName = "taylor_prime"
         }
+        await store.send(.mainTab(.competition(.friendSettings(.loaded(settings)))))
         await store.finish()
+    }
+
+    @MainActor
+    func testTakenSignUpUsernameStaysOnThePicker() async {
+        var account = AccountFeature.State(mode: .settingUpProfile, displayName: "taylor")
+        account.isRequestInFlight = true
+        let store = TestStore(
+            initialState: AppFeature.State(phase: .settingUpProfile, account: account, authEpoch: 1)
+        ) {
+            AppFeature()
+        }
+
+        await store.send(.bootstrapProfileResponse(epoch: 1, .failure(.usernameUnavailable))) {
+            $0.account.isRequestInFlight = false
+            $0.account.message = .usernameTaken
+        }
     }
 
     @MainActor
@@ -1248,7 +1254,6 @@ final class AppFeatureTests: XCTestCase {
                 profile: profile,
                 epoch: 8
             )
-            initial.account.isEditingDisplayName = true
             initial.account.isRequestInFlight = true
             let store = TestStore(initialState: initial) {
                 AppFeature()

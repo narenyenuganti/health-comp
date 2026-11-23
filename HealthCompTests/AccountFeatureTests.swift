@@ -59,17 +59,8 @@ final class AccountFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testDisplayNameValidationStaysLocalAndRejectsReservedOrUnsafeInput() async {
-        let cases: [(String, AccountFeature.Message)] = [
-            ("", .invalidDisplayName),
-            ("   ", .invalidDisplayName),
-            ("Former competitor", .reservedDisplayName),
-            (" Former competitor ", .reservedDisplayName),
-            ("A\nB", .invalidDisplayName),
-            (String(repeating: "a", count: 65), .invalidDisplayName),
-            (String(repeating: "👨‍👩‍👧‍👦", count: 10), .invalidDisplayName),
-        ]
-        for (value, message) in cases {
+    func testSignUpUsernameValidationStaysLocal() async {
+        for value in ["", "ab", "Taylor", "a b", "Former competitor", String(repeating: "a", count: 21)] {
             var state = AccountFeature.State(mode: .settingUpProfile)
             state.displayName = value
             let store = TestStore(initialState: state) {
@@ -77,25 +68,12 @@ final class AccountFeatureTests: XCTestCase {
             }
 
             await store.send(.submitDisplayNameButtonTapped) {
-                $0.message = message
+                $0.message = .invalidDisplayName
             }
         }
-
-        var editing = AccountFeature.State(
-            mode: .authenticated,
-            displayName: "Taylor"
-        )
-        editing.isEditingDisplayName = true
-        editing.displayName = " Former competitor "
-        let store = TestStore(initialState: editing) {
-            AccountFeature()
-        }
-        await store.send(.saveDisplayNameButtonTapped) {
-            $0.message = .reservedDisplayName
-        }
         XCTAssertEqual(
-            AccountFeature.Message.reservedDisplayName.text,
-            "That name is reserved. Try another."
+            AccountFeature.Message.invalidDisplayName.text,
+            "Use 3 to 20 letters, numbers or underscores."
         )
     }
 
@@ -283,50 +261,30 @@ final class AccountFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testValidDisplayNameIsTrimmedBeforeDelegation() async {
+    func testValidSignUpUsernameIsDelegated() async {
         var state = AccountFeature.State(mode: .settingUpProfile)
-        state.displayName = "  Taylor  "
+        state.displayName = "taylor_9"
         let store = TestStore(initialState: state) {
             AccountFeature()
         }
 
         await store.send(.submitDisplayNameButtonTapped) {
-            $0.displayName = "Taylor"
             $0.isRequestInFlight = true
-            $0.message = nil
         }
-        await store.receive(.delegate(.displayNameSubmitted("Taylor")))
+        await store.receive(.delegate(.displayNameSubmitted("taylor_9")))
     }
 
     @MainActor
-    func testAuthenticatedDisplayNameEditValidatesAndDelegatesUpdate() async {
+    func testProfileUpdateReplacesTheShownName() async {
         let store = TestStore(
-            initialState: AccountFeature.State(
-                mode: .authenticated,
-                displayName: "Taylor"
-            )
+            initialState: AccountFeature.State(mode: .authenticated, displayName: "Taylor")
         ) {
             AccountFeature()
         }
 
-        await store.send(.editDisplayNameButtonTapped) {
-            $0.isEditingDisplayName = true
-        }
-        await store.send(.displayNameChanged("  Taylor Prime  ")) {
-            $0.displayName = "  Taylor Prime  "
-        }
-        await store.send(.saveDisplayNameButtonTapped) {
-            $0.displayName = "Taylor Prime"
-            $0.isRequestInFlight = true
-        }
-        await store.receive(
-            .delegate(.displayNameUpdateRequested("Taylor Prime"))
-        )
-        await store.send(.profileUpdateFinished("Taylor Prime")) {
-            $0.isRequestInFlight = false
-            $0.isEditingDisplayName = false
-            $0.displayName = "Taylor Prime"
-            $0.committedDisplayName = "Taylor Prime"
+        await store.send(.profileUpdateFinished("taylor")) {
+            $0.displayName = "taylor"
+            $0.committedDisplayName = "taylor"
         }
     }
 

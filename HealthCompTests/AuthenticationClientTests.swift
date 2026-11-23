@@ -444,6 +444,20 @@ final class AuthenticationClientTests: XCTestCase {
         )
         XCTAssertEqual(
             SupabaseAuthenticationClient.classifyBootstrapFailure(
+                code: "22023",
+                message: "invalid_username"
+            ),
+            .invalidDisplayName
+        )
+        XCTAssertEqual(
+            SupabaseAuthenticationClient.classifyBootstrapFailure(
+                code: "P0001",
+                message: "username_unavailable"
+            ),
+            .usernameUnavailable
+        )
+        XCTAssertEqual(
+            SupabaseAuthenticationClient.classifyBootstrapFailure(
                 code: "42501",
                 message: "authentication_required"
             ),
