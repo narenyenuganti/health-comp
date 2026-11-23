@@ -556,7 +556,7 @@ struct CompetitionSharingView: View {
     }
 }
 
-private struct CompetitionHeroCard: View {
+struct CompetitionHeroCard: View {
     let competition: LocalCompetitionPresentation
     let source: CompetitionPublicationSource
     var isCompact = false

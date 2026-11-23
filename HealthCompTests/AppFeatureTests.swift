@@ -1053,7 +1053,9 @@ final class AppFeatureTests: XCTestCase {
         }
         await store.receive(
             .account(.delegate(.displayNameSubmitted("taylor")))
-        )
+        ) {
+            $0.isNewAccount = true
+        }
         await store.receive(
             .bootstrapProfileResponse(epoch: 1, .success(profile))
         ) {
@@ -1072,9 +1074,12 @@ final class AppFeatureTests: XCTestCase {
                 mode: .authenticated,
                 displayName: profile.displayName
             )
-            $0.mainTab = MainTabFeature.State(
+            var mainTab = MainTabFeature.State(
                 competition: CompetitionFeature.State(ownProfile: profile)
             )
+            mainTab.showsTour = true
+            $0.mainTab = mainTab
+            $0.isNewAccount = false
         }
         XCTAssertEqual(names.calls, ["nil", "taylor"])
     }

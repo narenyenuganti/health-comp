@@ -257,6 +257,7 @@ jobs:
             GroupMatchHistoryUITests/testRecordShowsEachKindOfMatch
             SleepBetaUITests/testCreateSheetOffersRingsAndSleep
             SleepBetaUITests/testSettingsPrimesBeforeHealthAndPicksASource
+            HomeTourUITests/testNewAccountTourWalksEveryStopAndReplaysFromAccount
           )
           if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
             ui_tests+=(

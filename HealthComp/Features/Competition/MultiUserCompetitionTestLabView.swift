@@ -1014,6 +1014,7 @@ private struct MultiUserCompetitionFriendsTestLabView: View {
             UserDefaults.standard.removeObject(forKey: FriendsView.usernamePromptKey(Fixtures.ownProfileID))
         }
         var state = MainTabFeature.State()
+        state.showsTour = UserDefaults.standard.bool(forKey: "tourLab")
         state.competition.ownProfile = AuthenticatedProfile(
             id: Fixtures.ownProfileID,
             displayName: "Beta Alice"

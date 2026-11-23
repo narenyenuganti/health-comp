@@ -147,6 +147,7 @@ struct AccountSettingsView: View {
     @State private var pickedPhoto: PhotosPickerItem?
     @State private var cropRequest: AccountPhotoCropRequest?
     @Environment(\.profilePhotos) private var photos
+    @State private var isTourPresented = false
 
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
@@ -180,6 +181,9 @@ struct AccountSettingsView: View {
             }
             .sheet(item: $challengeCodeItem) { item in
                 ChallengeLinkCodeView(url: item.url) { challengeCodeItem = nil }
+            }
+            .fullScreenCover(isPresented: $isTourPresented) {
+                HomeTourView(name: store.displayName) { isTourPresented = false }
             }
             .overlay {
                 AccountProgressOverlay(store: store)
@@ -576,6 +580,11 @@ struct AccountSettingsView: View {
                 }
             }
             .accessibilityIdentifier("account.sounds")
+
+            Button { isTourPresented = true } label: {
+                Label("Take the Tour", systemImage: "hand.tap")
+            }
+            .accessibilityIdentifier("account.tour")
 
 #if HEALTHCOMP_STAGING
             NavigationLink {
