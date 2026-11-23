@@ -407,6 +407,9 @@ final class ChallengeFriendUITests: XCTestCase {
 
         back()
         openAccount()
+        let privacy = element("account.privacy")
+        scrollTo(privacy)
+        privacy.tap()
         let unblock = app.buttons["Unblock Kai Ito"]
         scrollTo(unblock)
         XCTAssertEqual(unblock.identifier, "account.blocked.unblock")
@@ -441,6 +444,9 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(maya.waitForNonExistence(timeout: 5))
         back()
         openAccount()
+        let privacy = element("account.privacy")
+        scrollTo(privacy)
+        privacy.tap()
         let unblock = app.buttons["Unblock Maya Chen"]
         scrollTo(unblock)
         XCTAssertTrue(unblock.exists)

@@ -16,7 +16,6 @@ struct AccountFeature {
         var mode: Mode
         var displayName: String
         var committedDisplayName: String
-        var isEditingDisplayName = false
         var isRequestInFlight = false
         var isDeleteConfirmationPresented = false
         var isDeletingAccount = false
@@ -34,7 +33,7 @@ struct AccountFeature {
     enum Message: Equatable, Sendable {
         case invalidCredential
         case invalidDisplayName
-        case reservedDisplayName
+        case usernameTaken
         case reauthenticationRequired
         case deleteFailed
         case accountDeleted
@@ -53,9 +52,9 @@ struct AccountFeature {
             case .invalidCredential:
                 "Apple sign-in could not be verified. Please try again."
             case .invalidDisplayName:
-                "Choose a name from 1 to 64 characters without line breaks."
-            case .reservedDisplayName:
-                "That name is reserved. Try another."
+                "Use 3 to 20 letters, numbers or underscores."
+            case .usernameTaken:
+                "Taken. Try another."
             case .reauthenticationRequired:
                 "Confirm with Sign in with Apple to delete your account."
             case .deleteFailed:
@@ -91,7 +90,7 @@ struct AccountFeature {
             case .signOutFinishFailed: "Couldn’t finish signing out"
             case .deletedCleanupFailed: "Account deleted"
             case .sessionEndedCleanupFailed: "Your session ended"
-            case .invalidDisplayName, .reservedDisplayName,
+            case .invalidDisplayName, .usernameTaken,
                  .reauthenticationRequired, .deleteFailed, .accountDeleted,
                  .sessionEnded:
                 nil
@@ -108,7 +107,6 @@ struct AccountFeature {
             case signInWithAppleRequested
             case signInWithAppleInBrowserRequested
             case displayNameSubmitted(String)
-            case displayNameUpdateRequested(String)
             case retryRequested
             case signOutRequested
             case deleteAccountRequested
@@ -121,9 +119,6 @@ struct AccountFeature {
         case browserDeleteConfirmationAccepted
         case signInButtonTapped
         case submitDisplayNameButtonTapped
-        case editDisplayNameButtonTapped
-        case cancelDisplayNameButtonTapped
-        case saveDisplayNameButtonTapped
         case profileUpdateFinished(String)
         case retryButtonTapped
         case signOutButtonTapped
@@ -174,60 +169,16 @@ struct AccountFeature {
 
             case .submitDisplayNameButtonTapped:
                 guard !state.isRequestInFlight else { return .none }
-                if let problem = displayNameProblem(state.displayName) {
-                    state.message = problem
+                guard FriendSettings.isValidUsername(state.displayName) else {
+                    state.message = .invalidDisplayName
                     return .none
                 }
-                let displayName = trimmedDisplayName(state.displayName)
-                state.displayName = displayName
                 beginRequest(state: &state)
-                return .send(.delegate(.displayNameSubmitted(displayName)))
-
-            case .editDisplayNameButtonTapped:
-                guard state.mode == .authenticated,
-                      !state.isRequestInFlight
-                else {
-                    return .none
-                }
-                state.isEditingDisplayName = true
-                state.message = nil
-                return .none
-
-            case .cancelDisplayNameButtonTapped:
-                guard state.mode == .authenticated,
-                      !state.isRequestInFlight
-                else {
-                    return .none
-                }
-                state.displayName = state.committedDisplayName
-                state.isEditingDisplayName = false
-                state.message = nil
-                return .none
-
-            case .saveDisplayNameButtonTapped:
-                guard state.mode == .authenticated,
-                      state.isEditingDisplayName,
-                      !state.isRequestInFlight
-                else {
-                    return .none
-                }
-                if let problem = displayNameProblem(state.displayName) {
-                    state.message = problem
-                    return .none
-                }
-                let displayName = trimmedDisplayName(state.displayName)
-                state.displayName = displayName
-                beginRequest(state: &state)
-                return .send(
-                    .delegate(.displayNameUpdateRequested(displayName))
-                )
+                return .send(.delegate(.displayNameSubmitted(state.displayName)))
 
             case let .profileUpdateFinished(displayName):
                 state.displayName = displayName
                 state.committedDisplayName = displayName
-                state.isEditingDisplayName = false
-                state.isRequestInFlight = false
-                state.message = nil
                 return .none
 
             case .retryButtonTapped:
@@ -299,27 +250,8 @@ struct AccountFeature {
 
     private func beginDeletion(state: inout State) {
         state.isDeleteConfirmationPresented = false
-        state.displayName = state.committedDisplayName
-        state.isEditingDisplayName = false
         state.isDeletingAccount = true
         beginRequest(state: &state)
-    }
-
-    private func trimmedDisplayName(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func displayNameProblem(_ value: String) -> Message? {
-        let value = trimmedDisplayName(value)
-        if value == "Former competitor" { return .reservedDisplayName }
-        guard (1...64).contains(value.unicodeScalars.count),
-              !value.unicodeScalars.contains(where: {
-                CharacterSet.controlCharacters.contains($0)
-              })
-        else {
-            return .invalidDisplayName
-        }
-        return nil
     }
 
     private func deletionMessage(
@@ -342,6 +274,8 @@ struct AccountFeature {
             .sessionEnded
         case .invalidDisplayName:
             .invalidDisplayName
+        case .usernameUnavailable:
+            .usernameTaken
         case .reauthenticationRequired:
             .reauthenticationRequired
         case .refreshRetryable, .nonceGenerationFailed,

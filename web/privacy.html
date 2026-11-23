@@ -35,20 +35,23 @@
         United States.</p>
 
       <p><strong>Operator:</strong> Naren Yenuganti.<br>
-        <strong>Effective date:</strong> November 21, 2026.<br>
+        <strong>Effective date:</strong> November 22, 2026.<br>
         <strong>Questions or privacy requests:</strong> <!--email_off--><a href="mailto:yrnaren1@gmail.com">yrnaren1@gmail.com</a><!--/email_off-->.</p>
 
       <h2>Information used by the app</h2>
       <ul>
-        <li><strong>Your account:</strong> an account identifier and the display name you choose connect
-          you to your competitions. Sign in with Apple and Supabase Auth handle sign-in.
+        <li><strong>Your account:</strong> an account identifier and the username you choose connect
+          you to your competitions. Your username is the name other people see for you. If
+          you joined before usernames were part of sign-up and have not chosen one, the
+          display name you chose then is used as your name instead. Sign in with Apple and Supabase Auth handle sign-in.
           Auth account and provider identity records can also contain an email address
           supplied by Apple, including a private-relay address, and sign-in metadata.
           Your Apple email-sharing choice affects the information Apple provides.</li>
-        <li><strong>Username, search and friends:</strong> you can choose a username. Show Me in
+        <li><strong>Username, search and friends:</strong> you choose a username when you sign
+          up and can change it in account settings. Show Me in
           Search is on until you turn it off in account settings. While you have a username and
-          it is on, people signed in to HealthComp can find you by username or display name and
-          see your display name, username and profile photo. The server stores your friends, the
+          it is on, people signed in to HealthComp can find you by your name and
+          see your name and profile photo. The server stores your friends, the
           friend requests you send and receive, your choice of who can challenge you, and a
           count of your recent searches to limit them. If you report someone's account, the
           server records who reported whom and when.</li>
@@ -106,12 +109,12 @@
 
       <h2>Sharing and service providers</h2>
       <p>Everyone in a match with you (one other person, or up to three in a group match) can
-        see your display name and shared competition information,
+        see your name and shared competition information,
         including the selected metrics, daily points, availability, dates, results, the reactions you send, rounded
         Move/Exercise/Stand-or-Roll percentages, Activity modes, and when your iPhone
         last updated each daily score. These are derived
         fitness values, not raw HealthKit samples or workout records. Before a group match
-        starts, the people invited to it see each other's display names. A private invitation
+        starts, the people invited to it see each other's names. A private invitation
         link grants its recipient a chance to join; share it only with your intended
         competitor, not in a public issue or support message. Either person can share an
         image of a finished match's result from the app. It shows both final scores, the
@@ -141,7 +144,7 @@
         alerts contain generic text, but routing includes a competition identifier and
         uses an installation's push token. This is not identifier-free traffic. The app
         also generates local notifications on your iPhone that can include competitor
-        display names, points, results, and schedule reminders. Two result alerts can show
+        names, points, results, and schedule reminders. Two result alerts can show
         the other person's profile photo from your iPhone's copy; iOS may then suggest that
         person in the share sheet or Siri, and may let their alerts through a Focus you
         allow them in. Your system notification settings control previews.
@@ -200,7 +203,7 @@
         cleared. A paired Apple
         Watch clears its copy the next time it connects as your active Watch.
         Completed shared results remain for the other participants as <strong>Former
-        competitor</strong>. The service removes the account linkage and replaces display names
+        competitor</strong>. The service removes the account linkage and replaces names
         in the protected competition history. Revoked installations lose their push
         tokens; related integrity keys/challenges are purged by the cleanup hooks.</p>
 

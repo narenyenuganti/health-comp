@@ -4,11 +4,12 @@ final class FriendsAccountUITests: XCTestCase {
     private var app: XCUIApplication!
 
     private static let saveError = "Couldn’t save. Check your connection and try again."
-    private static let footer = "Off: only people with your link can add you. Search shows your name, photo and username, never your rings."
+    private static let footer = "Off: only people with your link can add you. Search shows your username and photo, never your rings."
+    private static let edit = "account.settings.username.edit"
     private static let everyone = "account.privacy.challenge.friends_and_link"
     private static let friendsOnly = "account.privacy.challenge.friends_only"
     private static let readsClippedToTheAudit: Set<String> = [
-        "USERNAME", "FINDING YOU", "WHO CAN CHALLENGE YOU", footer,
+        "FINDING YOU", "WHO CAN CHALLENGE YOU", footer,
         "Raw Health data stays on this iPhone",
         "The other person gets your daily points, rounded Activity percentages and modes",
     ]
@@ -25,14 +26,11 @@ final class FriendsAccountUITests: XCTestCase {
     }
 
     func testChooseAUsername() {
-        openPrivacy()
-        XCTAssertTrue(app.staticTexts["USERNAME"].exists)
-        XCTAssertTrue(app.staticTexts["FINDING YOU"].exists)
-        XCTAssertTrue(app.staticTexts["WHO CAN CHALLENGE YOU"].exists)
-        XCTAssertTrue(app.staticTexts[Self.footer].exists)
-        openSheet("account.privacy.username.choose")
+        openAccount()
+        XCTAssertEqual(app.buttons[Self.edit].label, "Choose a Username")
+        openSheet(Self.edit)
         XCTAssertTrue(app.staticTexts["Pick a username"].exists)
-        XCTAssertTrue(app.staticTexts["Friends find you by it."].exists)
+        XCTAssertTrue(app.staticTexts["The people you play see it. Friends find you by it."].exists)
         XCTAssertFalse(continueButton.isEnabled)
 
         field.typeText("Be-ta Alice!")
@@ -46,13 +44,23 @@ final class FriendsAccountUITests: XCTestCase {
         continueButton.tap()
 
         XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
-        XCTAssertTrue(element("account.privacy.username").waitForExistence(timeout: 3), shown)
-        XCTAssertEqual(element("account.privacy.username").label, "@betaalice")
+        XCTAssertTrue(element("account.settings.username").waitForExistence(timeout: 3), shown)
+        XCTAssertEqual(element("account.settings.username").label, "@betaalice")
+        XCTAssertEqual(app.buttons[Self.edit].label, "Change Username")
+    }
+
+    func testPrivacyHoldsSearchAndChallengeSettingsOnly() {
+        openPrivacy()
+        XCTAssertTrue(app.staticTexts["FINDING YOU"].exists)
+        XCTAssertTrue(app.staticTexts["WHO CAN CHALLENGE YOU"].exists)
+        XCTAssertTrue(app.staticTexts[Self.footer].exists)
+        XCTAssertFalse(app.staticTexts["USERNAME"].exists)
+        XCTAssertTrue(app.buttons["account.challenge-link.reset"].exists)
     }
 
     func testTakenUsernameKeepsTheSheetOpen() {
-        openPrivacy()
-        openSheet("account.privacy.username.choose")
+        openAccount()
+        openSheet(Self.edit)
         enter("taken_name")
         waitForStatus("Taken")
         XCTAssertFalse(continueButton.isEnabled)
@@ -75,27 +83,27 @@ final class FriendsAccountUITests: XCTestCase {
         XCTAssertEqual(app.alerts.count, 0)
         continueButton.tap()
         XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
-        XCTAssertEqual(element("account.privacy.username").label, "@offline_name")
+        XCTAssertEqual(element("account.settings.username").label, "@offline_name")
     }
 
     func testNotNowLeavesTheUsernameUnset() {
-        openPrivacy()
-        openSheet("account.privacy.username.choose")
+        openAccount()
+        openSheet(Self.edit)
         enter("betaalice")
         app.buttons["account.username.not-now"].tap()
         XCTAssertTrue(field.waitForNonExistence(timeout: 3), shown)
-        XCTAssertTrue(app.buttons["account.privacy.username.choose"].exists)
+        XCTAssertEqual(app.buttons[Self.edit].label, "Choose a Username")
     }
 
     func testEditAUsername() {
-        openPrivacy()
-        openSheet("account.privacy.username.choose")
+        openAccount()
+        openSheet(Self.edit)
         enter("betaalice")
         waitForStatus("Available")
         continueButton.tap()
         XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
 
-        openSheet("account.privacy.username.edit")
+        openSheet(Self.edit)
         XCTAssertEqual(field.value as? String, "betaalice")
         XCTAssertFalse(status.exists)
         XCTAssertTrue(continueButton.isEnabled)
@@ -103,7 +111,7 @@ final class FriendsAccountUITests: XCTestCase {
         waitForStatus("Available")
         continueButton.tap()
         XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
-        XCTAssertEqual(element("account.privacy.username").label, "@alice_b")
+        XCTAssertEqual(element("account.settings.username").label, "@alice_b")
     }
 
     func testFailedSearchSaveRollsBackThenRetries() {
@@ -152,7 +160,8 @@ final class FriendsAccountUITests: XCTestCase {
                 ])
                 shot("privacy-\(suffix)")
                 try audit("privacy \(suffix)")
-                openSheet("account.privacy.username.choose")
+                app.navigationBars["Privacy"].buttons.firstMatch.tap()
+                openSheet(Self.edit)
                 enter("betaalice")
                 waitForStatus("Available")
                 shot("username-available-\(suffix)")
@@ -165,17 +174,17 @@ final class FriendsAccountUITests: XCTestCase {
     }
 
     func testContinueAndNotNowAreReachableWithTheKeyboardUpAtLargestTextSize() {
-        openPrivacy(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
-        openSheet("account.privacy.username.choose")
+        openAccount(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        openSheet(Self.edit)
         enter("betaalice")
         waitForStatus("Available")
         scrollAboveTheKeyboard(continueButton)
         shot("username-continue-reached-ax5")
         continueButton.tap()
         XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
-        XCTAssertEqual(element("account.privacy.username").label, "@betaalice")
+        XCTAssertEqual(element("account.settings.username").label, "@betaalice")
 
-        openSheet("account.privacy.username.edit")
+        openSheet(Self.edit)
         enter("not_saved")
         waitForStatus("Available")
         let notNow = app.buttons["account.username.not-now"]
@@ -183,7 +192,7 @@ final class FriendsAccountUITests: XCTestCase {
         shot("username-not-now-reached-ax5")
         notNow.tap()
         XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
-        XCTAssertEqual(element("account.privacy.username").label, "@betaalice")
+        XCTAssertEqual(element("account.settings.username").label, "@betaalice")
     }
 
     private var field: XCUIElement { app.textFields["account.username.field"] }
@@ -195,6 +204,18 @@ final class FriendsAccountUITests: XCTestCase {
     }
 
     private func openPrivacy(arguments: [String] = []) {
+        openAccount(arguments: arguments)
+        let privacy = app.buttons["account.privacy"]
+        scrollTo(privacy)
+        privacy.tap()
+        XCTAssertTrue(app.navigationBars["Privacy"].waitForExistence(timeout: 3), shown)
+        XCTAssertTrue(
+            app.switches["account.privacy.show-in-search"].firstMatch.waitForExistence(timeout: 5),
+            "The rows appear once the server answers. \(shown)"
+        )
+    }
+
+    private func openAccount(arguments: [String] = []) {
         if app.state != .notRunning { app.terminate() }
         app = XCUIApplication()
         app.launchEnvironment["TZ"] = "America/Los_Angeles"
@@ -209,13 +230,9 @@ final class FriendsAccountUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 10), shown)
         app.buttons["app.account"].tap()
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3), shown)
-        let privacy = app.buttons["account.privacy"]
-        scrollTo(privacy)
-        privacy.tap()
-        XCTAssertTrue(app.navigationBars["Privacy"].waitForExistence(timeout: 3), shown)
         XCTAssertTrue(
-            app.buttons["account.privacy.username.choose"].waitForExistence(timeout: 5),
-            "The rows appear once the server answers. \(shown)"
+            app.buttons[Self.edit].waitForExistence(timeout: 5),
+            "The username appears once the server answers. \(shown)"
         )
     }
 

@@ -95,46 +95,21 @@ struct AccountView: View {
     }
 
     private var displayNameField: some View {
-        HStack(spacing: 12) {
-            Group {
-                if let initial = displayNameInitial {
-                    Text(initial)
-                        .font(.headline.width(.condensed))
-                        .foregroundStyle(Theme.you)
-                } else {
-                    Image(systemName: "person.fill")
-                        .foregroundStyle(Theme.secondary)
-                }
-            }
-            .frame(width: 34, height: 34)
-            .background(Theme.control, in: Circle())
-            .accessibilityHidden(true)
-
-            TextField(
-                "Display name",
-                text: Binding(
-                    get: { state.displayName },
-                    set: { store.send(.displayNameChanged($0)) }
-                )
+        HStack(spacing: 2) {
+            Text(verbatim: "@")
+                .foregroundStyle(Theme.secondary)
+                .accessibilityHidden(true)
+            UsernameField(
+                initialText: FriendSettings.sanitizedUsername(state.displayName),
+                isEnabled: !state.isRequestInFlight,
+                focusRequest: 1,
+                changed: { store.send(.displayNameChanged($0)) },
+                submitted: { store.send(.submitDisplayNameButtonTapped) }
             )
-            .textContentType(.nickname)
-            .textInputAutocapitalization(.words)
-            .autocorrectionDisabled()
-            .submitLabel(.continue)
-            .foregroundStyle(Theme.ink)
-            .onSubmit {
-                store.send(.submitDisplayNameButtonTapped)
-            }
-            .accessibilityIdentifier("account.display-name")
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 56)
         .themePanel(cornerRadius: 14)
-    }
-
-    private var displayNameInitial: String? {
-        state.displayName.trimmingCharacters(in: .whitespaces).first
-            .map { String($0).uppercased() }
     }
 
     private var actions: some View {
@@ -228,7 +203,7 @@ struct AccountView: View {
         case .signedOut:
             state.isRequestInFlight ? "Signing in…"
                 : hasPendingChallenge ? "You have a challenge" : "Welcome to HealthComp"
-        case .settingUpProfile: "Choose your display name"
+        case .settingUpProfile: "Pick a username"
         case .launchFailure: state.message?.failureTitle ?? "Couldn’t connect"
         case .profileConflict: "This iPhone has history for another account"
         case .authenticated: "Account"
@@ -240,7 +215,7 @@ struct AccountView: View {
         case .signedOut:
             hasPendingChallenge ? "Sign in with the account it was sent to." : nil
         case .settingUpProfile:
-            "The people you play will see this name. You can change it later."
+            "The people you play see it. You can change it later."
         case .launchFailure:
             state.message?.text ?? "Check your connection and try again."
         case .profileConflict:

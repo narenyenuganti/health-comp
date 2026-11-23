@@ -61,7 +61,7 @@ final class BlockChallengerUITests: XCTestCase {
             XCTAssertEqual(cards(id).count, 1, id)
         }
 
-        openAccount()
+        openBlockedList()
         let unblock = app.buttons["Unblock Alex"]
         scrollToElement(unblock)
         XCTAssertEqual(unblock.identifier, "account.blocked.unblock")
@@ -130,9 +130,8 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         XCTAssertTrue(cards(Self.longNameID).firstMatch.waitForNonExistence(timeout: 3))
 
-        openAccount()
-        scrollToElement(element("account.challenge-link.reset"))
-        scrollToElement(element("account.health"))
+        openBlockedList()
+        scrollToElement(element("account.privacy-policy"))
         assertNoBlockedSection()
     }
 
@@ -178,7 +177,7 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertTrue(decline.waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         XCTAssertTrue(cards(Self.narenID).firstMatch.waitForNonExistence(timeout: 3))
-        openAccount()
+        openBlockedList()
         let unblock = app.buttons["Unblock Naren"]
         scrollToElement(unblock)
         XCTAssertEqual(app.buttons.matching(identifier: "account.blocked.unblock").count, 1)
@@ -187,7 +186,7 @@ final class BlockChallengerUITests: XCTestCase {
     func testUnblockDisablesWhileSavingExplainsAFailureAndClearsTheSectionAtTheEnd() {
         launch(.blockedAccount)
         XCTAssertEqual(cards(Self.longNameID).count, 0)
-        openAccount()
+        openBlockedList()
         let longUnblock = app.buttons["Unblock \(Self.longName)"]
         let morganUnblock = app.buttons["Unblock Morgan"]
         scrollToElement(morganUnblock)
@@ -227,21 +226,21 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["BLOCKED"].waitForNonExistence(timeout: 5))
         assertNoBlockedSection()
 
-        closeAccount()
-        openAccount()
-        scrollToElement(element("account.notifications"))
+        closeBlockedList()
+        openBlockedList()
+        scrollToElement(element("account.privacy-policy"))
         assertNoBlockedSection()
     }
 
     func testUnblockErrorClearsWhenAccountOpensAgain() {
         launch(.blockedAccount)
-        openAccount()
+        openBlockedList()
         let longUnblock = app.buttons["Unblock \(Self.longName)"]
         scrollToElement(longUnblock)
         longUnblock.tap()
         XCTAssertTrue(element("account.blocked.error").waitForExistence(timeout: 5))
-        closeAccount()
-        openAccount()
+        closeBlockedList()
+        openBlockedList()
         scrollToElement(longUnblock)
         XCTAssertTrue(app.buttons["Unblock Morgan"].exists)
         XCTAssertFalse(element("account.blocked.error").exists)
@@ -305,7 +304,7 @@ final class BlockChallengerUITests: XCTestCase {
                 shot("decline-dialog-long-name-\(suffix)")
 
                 launch(.blockedAccount, arguments: arguments)
-                openAccount()
+                openBlockedList()
                 let longUnblock = app.buttons["Unblock \(Self.longName)"]
                 scrollToElement(longUnblock)
                 shot("account-blocked-\(suffix)")
@@ -385,14 +384,20 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
     }
 
-    private func openAccount() {
+    private func openBlockedList() {
         let account = app.buttons["app.account"]
         XCTAssertTrue(account.waitForExistence(timeout: 3))
         account.tap()
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
+        let privacy = element("account.privacy")
+        scrollToElement(privacy)
+        privacy.tap()
+        XCTAssertTrue(app.navigationBars["Privacy"].waitForExistence(timeout: 3))
     }
 
-    private func closeAccount() {
+    private func closeBlockedList() {
+        app.navigationBars["Privacy"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
         app.navigationBars["Account"].buttons["Done"].tap()
         XCTAssertTrue(app.navigationBars["Account"].waitForNonExistence(timeout: 3))
     }
