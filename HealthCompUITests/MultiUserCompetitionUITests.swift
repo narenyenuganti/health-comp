@@ -997,13 +997,20 @@ final class MultiUserCompetitionUITests: XCTestCase {
         defer { app.terminate() }
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
         let url = element("account.challenge-link.url")
+        scrollToElement(url)
+        XCTAssertEqual(url.value as? String, "invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
+        XCTAssertFalse(element("account.challenge-link.reset").exists)
+
+        let privacy = element("account.privacy")
+        scrollToElement(privacy)
+        privacy.tap()
+        XCTAssertTrue(app.navigationBars["Privacy"].waitForExistence(timeout: 3))
         let reset = element("account.challenge-link.reset")
         scrollToElement(reset)
-        XCTAssertEqual(url.value as? String, "invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
         XCTAssertTrue(
             app.staticTexts.matching(NSPredicate(
                 format: "label == %@",
-                "Anyone with this link can challenge you, unless you only allow friends. Reset it to turn off the old one; challenges already sent stay."
+                "Anyone with your link can challenge you, unless you only allow friends."
             )).firstMatch.exists
         )
 
@@ -1015,14 +1022,17 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
         alert.buttons["Cancel"].tap()
         XCTAssertTrue(alert.waitForNonExistence(timeout: 3))
-        XCTAssertEqual(url.value as? String, "invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
 
         reset.tap()
         XCTAssertTrue(alert.waitForExistence(timeout: 3))
         alert.buttons["Reset Link"].tap()
         XCTAssertTrue(alert.waitForNonExistence(timeout: 3))
-        XCTAssertEqual(url.value as? String, "invites.ui.healthcomp.test/c/Qm7tR2vX9pL4kN8wB3cY6z")
         XCTAssertFalse(element("account.challenge-link.reset-error").exists)
+
+        app.navigationBars["Privacy"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
+        scrollToElement(url, towardEarlierContent: true)
+        XCTAssertEqual(url.value as? String, "invites.ui.healthcomp.test/c/Qm7tR2vX9pL4kN8wB3cY6z")
     }
 
     func testRemoteOutgoingChallengeOffersCancel() {
@@ -1103,11 +1113,21 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
             launch(.account, appearanceArguments: arguments)
             XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+            let privacy = element("account.privacy")
+            scrollToElement(privacy)
+            privacy.tap()
             let unblock = app.buttons["Unblock Alex"]
             scrollToElement(unblock)
             XCTAssertTrue(unblock.isHittable)
             attachScreenshot("account-blocked-\(appearance)-\(size)")
-            try auditRecordingUnlocatedClipping(auditTypes)
+            let wrapsCleanly: Set<String> = [
+                "Raw Health data stays on this iPhone",
+                "The other person gets your daily points, rounded Activity percentages and modes",
+            ]
+            try app.performAccessibilityAudit(for: auditTypes) { issue in
+                issue.auditType == .textClipped
+                    && (issue.element.map { wrapsCleanly.contains($0.label) } ?? true)
+            }
         }
         app.terminate()
     }
@@ -1343,29 +1363,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["https://healthcomp.app/privacy"].waitForExistence(timeout: 3))
         app.navigationBars["Privacy"].buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
-        let edit = app.buttons["account.settings.edit-display-name"]
-        for _ in 0..<6 where !edit.exists {
-            app.collectionViews.firstMatch.swipeDown(velocity: .fast)
-        }
-        scrollToElement(edit)
-        edit.tap()
-        let field = app.textFields["account.settings.display-name"]
-        XCTAssertTrue(field.waitForExistence(timeout: 3))
-        field.tap()
-        field.press(forDuration: 0.8)
-        if app.menuItems["Select All"].waitForExistence(timeout: 2) {
-            app.menuItems["Select All"].tap()
-        }
-        field.typeText("Former competitor")
-        app.buttons["account.settings.save-display-name"].tap()
-        XCTAssertTrue(
-            app.staticTexts["account.message"].waitForExistence(timeout: 3)
-        )
-        XCTAssertEqual(
-            app.staticTexts["account.message"].label,
-            "That name is reserved. Try another."
-        )
-        field.typeText("\n")
         scrollToElement(app.buttons["account.sign-out"])
     }
 

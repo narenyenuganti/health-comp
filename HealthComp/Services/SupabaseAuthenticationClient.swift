@@ -396,8 +396,10 @@ enum SupabaseAuthenticationClient {
         switch (code, message) {
         case ("P0001", "display_name_required"):
             .displayNameRequired
-        case ("22023", "invalid_display_name"):
+        case ("22023", "invalid_display_name"), ("22023", "invalid_username"):
             .invalidDisplayName
+        case ("P0001", "username_unavailable"):
+            .usernameUnavailable
         case ("42501", "authentication_required"),
              ("42501", "active_profile_required"):
             .terminalSession
@@ -453,6 +455,12 @@ private extension SupabaseAuthenticationOperations {
                     enum CodingKeys: String, CodingKey {
                         case suggestedDisplayName = "suggested_display_name"
                     }
+                }
+                if let username = suggestedDisplayName {
+                    return try await clientBox.client()
+                        .rpc("sign_up_with_username", params: ["username": username])
+                        .execute()
+                        .value
                 }
                 return try await clientBox.client()
                     .rpc(

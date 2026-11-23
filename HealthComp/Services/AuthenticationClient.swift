@@ -84,6 +84,7 @@ enum AuthenticationClientFailure: Error, Equatable, Sendable {
     case terminalSession
     case displayNameRequired
     case invalidDisplayName
+    case usernameUnavailable
     case reauthenticationRequired
     case operationFailed
 }

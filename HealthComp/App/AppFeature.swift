@@ -349,6 +349,12 @@ struct AppFeature {
                     state.account.message = .invalidDisplayName
                     return .none
 
+                case .failure(.usernameUnavailable):
+                    state.phase = .settingUpProfile
+                    state.account.isRequestInFlight = false
+                    state.account.message = .usernameTaken
+                    return .none
+
                 case let .failure(failure):
                     return handleLaunchFailure(failure, state: &state)
                 }
@@ -508,13 +514,9 @@ struct AppFeature {
                 }
                 return bootstrapProfile(name, epoch: state.authEpoch)
 
-            case let .account(.delegate(.displayNameUpdateRequested(name))):
-                guard state.phase == .authenticated,
-                      state.profile != nil
-                else {
-                    return .none
-                }
-                return updateProfile(name, epoch: state.authEpoch)
+            case let .mainTab(.competition(.friendSettings(.loaded(settings?)))),
+                 let .mainTab(.competition(.friendSettings(.usernameSaveFinished(.success(settings))))):
+                return followUsername(settings, state: &state)
 
             case let .updateProfileResponse(epoch, response):
                 guard epoch == state.authEpoch,
@@ -541,8 +543,6 @@ struct AppFeature {
                     )
 
                 case .success:
-                    state.account.isRequestInFlight = false
-                    state.account.message = .tryAgain
                     return .none
 
                 case let .failure(failure):
@@ -558,8 +558,6 @@ struct AppFeature {
                             profileID: currentProfile.id
                         )
                     }
-                    state.account.isRequestInFlight = false
-                    state.account.message = accountMessage(for: failure)
                     return .none
                 }
 
@@ -857,6 +855,19 @@ struct AppFeature {
             id: CancelID.authenticationOperation,
             cancelInFlight: true
         )
+    }
+
+    private func followUsername(
+        _ settings: FriendSettings,
+        state: inout State
+    ) -> Effect<Action> {
+        guard state.phase == .authenticated,
+              let profile = state.profile,
+              let username = settings.username,
+              username != profile.displayName,
+              !state.account.isRequestInFlight
+        else { return .none }
+        return updateProfile(username, epoch: state.authEpoch)
     }
 
     private func updateProfile(
@@ -1166,6 +1177,11 @@ struct AppFeature {
             state.account = AccountFeature.State(mode: .settingUpProfile)
             state.account.message = .invalidDisplayName
 
+        case .usernameUnavailable:
+            state.phase = .settingUpProfile
+            state.account.isRequestInFlight = false
+            state.account.message = .usernameTaken
+
         case .cancelled:
             becomeSignedOut(state: &state, message: nil)
 
@@ -1229,6 +1245,8 @@ struct AppFeature {
             .sessionEnded
         case .invalidDisplayName:
             .invalidDisplayName
+        case .usernameUnavailable:
+            .usernameTaken
         case .reauthenticationRequired:
             .reauthenticationRequired
         case .refreshRetryable, .nonceGenerationFailed,

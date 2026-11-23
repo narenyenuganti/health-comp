@@ -21,7 +21,7 @@ struct UsernameSheet: View {
                     .font(.largeTitle.weight(.heavy).width(.condensed))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                Text("Friends find you by it.")
+                Text("The people you play see it. Friends find you by it.")
                     .foregroundStyle(Theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 field.padding(.top, 10)

@@ -56,6 +56,7 @@ struct MainTabView: View {
             if store.competition.publication?.source == .remoteParticipants {
                 store.send(.competition(.blockedPeopleRequested))
                 store.send(.competition(.friends(.requested)))
+                store.send(.competition(.friendSettings(.requested)))
             }
         }
         .onChange(of: scenePhase) { _, newValue in

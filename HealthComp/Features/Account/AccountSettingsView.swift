@@ -147,7 +147,6 @@ struct AccountSettingsView: View {
     @State private var pickedPhoto: PhotosPickerItem?
     @State private var cropRequest: AccountPhotoCropRequest?
     @Environment(\.profilePhotos) private var photos
-    @State private var isResetLinkConfirmationPresented = false
     @State private var isTourPresented = false
 
     @AppStorage(AppAppearance.storageKey)
@@ -156,19 +155,15 @@ struct AccountSettingsView: View {
     @AppStorage(SleepBeta.sourceKey) private var sleepSource = SleepSourcePreference.automatic.rawValue
     @State private var challengeCodeItem: ChallengeCodeSheetItem?
     @State private var hasLoaded = false
-    @FocusState private var isNameFocused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .headline) private var blockedInitialSize: CGFloat = 34
     @ScaledMetric(relativeTo: .caption2) private var editBadgeIconSize: Double = 11
 
     private var listShape: [AnyHashable] {
         [
             AnyHashable(challengeLink?.url),
             AnyHashable(challengeLink?.failed),
-            AnyHashable(challengeLink?.resetFailed),
-            AnyHashable(blockedPeople?.people?.map(\.id)),
-            AnyHashable(blockedPeople?.unblockFailed),
-            AnyHashable(store.isEditingDisplayName),
+            AnyHashable(username),
+            AnyHashable(friendSettings?.state.shown != nil),
             AnyHashable(store.message?.text),
             AnyHashable(health != nil),
             AnyHashable(photoMessage),
@@ -178,8 +173,11 @@ struct AccountSettingsView: View {
     var body: some View {
         scrollingList
             .task(id: challengeLink != nil) { load() }
-            .onChange(of: store.isEditingDisplayName) { _, isEditing in
-                isNameFocused = isEditing
+            .sheet(isPresented: Binding(
+                get: { friendSettings?.state.sheet != nil },
+                set: { if !$0 { friendSettings?.send(.usernameSheetClosed) } }
+            )) {
+                if let friendSettings { UsernameSheet(friends: friendSettings) }
             }
             .sheet(item: $challengeCodeItem) { item in
                 ChallengeLinkCodeView(url: item.url) { challengeCodeItem = nil }
@@ -209,10 +207,8 @@ struct AccountSettingsView: View {
             if challengeLink != nil {
                 challengeLinkSection
             }
-            settingsSection
-            if let blocked = blockedPeople, let people = blocked.people, !people.isEmpty {
-                blockedSection(blocked, people)
-            }
+            dataSection
+            deviceSection
             footerSection
         }
         .moving(Motion.settle, value: listShape)
@@ -255,102 +251,39 @@ struct AccountSettingsView: View {
         challengeLink?.load()
         blockedPeople?.load()
         profilePhoto?.load()
+        friendSettings?.send(.requested)
     }
+
+    private var username: String? { friendSettings?.state.shown?.username }
 
     private var profileHeader: some View {
         Section {
             VStack(spacing: 12) {
                 avatarControl
-                ZStack {
-                    if store.isEditingDisplayName {
-                        nameEditor
-                            .transition(Motion.appear)
-                            .zIndex(1)
-                    } else {
-                        nameDisplay
-                            .transition(Motion.appear)
+                VStack(spacing: 0) {
+                    Text(verbatim: username.map { "@\($0)" } ?? store.displayName)
+                        .font(.title.weight(.bold).width(.condensed))
+                        .foregroundStyle(Theme.you)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("account.settings.username")
+                        .contentTransition(.opacity)
+                    if let friendSettings, friendSettings.state.shown != nil {
+                        Button(username == nil ? "Choose a Username" : "Change Username") {
+                            friendSettings.send(.usernameSheetOpened)
+                        }
+                        .buttonStyle(QuietButtonStyle(color: username == nil ? Theme.ink : Theme.secondary))
+                        .disabled(friendSettings.state.isSaving)
+                        .accessibilityIdentifier("account.settings.username.edit")
                     }
+                    headerMessages
                 }
             }
             .frame(maxWidth: .infinity)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 4, trailing: 0))
-        }
-    }
-
-    private var nameDisplay: some View {
-        VStack(spacing: 0) {
-            Text(store.displayName)
-                .font(.title.weight(.bold).width(.condensed))
-                .foregroundStyle(Theme.you)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel("Display name, \(store.displayName)")
-                .accessibilityAddTraits(.isHeader)
-            Button("Edit Name") {
-                store.send(.editDisplayNameButtonTapped)
-            }
-            .buttonStyle(QuietButtonStyle())
-            .accessibilityLabel("Edit Display Name")
-            .accessibilityIdentifier("account.settings.edit-display-name")
-            headerMessages
-        }
-    }
-
-    private var nameEditor: some View {
-        VStack(spacing: 12) {
-            TextField(
-                "Display name",
-                text: Binding(
-                    get: { store.displayName },
-                    set: { store.send(.displayNameChanged($0)) }
-                )
-            )
-            .textContentType(.nickname)
-            .textInputAutocapitalization(.words)
-            .autocorrectionDisabled()
-            .submitLabel(.done)
-            .multilineTextAlignment(.center)
-            .font(.title3.weight(.semibold))
-            .foregroundStyle(Theme.ink)
-            .focused($isNameFocused)
-            .onSubmit {
-                store.send(.saveDisplayNameButtonTapped)
-            }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 56)
-            .themePanel(cornerRadius: 14)
-            .accessibilityIdentifier("account.settings.display-name")
-
-            Text("People you play, friends and anyone who finds you in search see this name.")
-                .font(.subheadline)
-                .foregroundStyle(Theme.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            headerMessages
-
-            let layout = dynamicTypeSize.isAccessibilitySize
-                ? AnyLayout(VStackLayout(spacing: 8))
-                : AnyLayout(HStackLayout(spacing: 12))
-            layout {
-                Button("Cancel", role: .cancel) {
-                    store.send(.cancelDisplayNameButtonTapped)
-                }
-                .buttonStyle(SecondaryButtonStyle())
-
-                Button {
-                    store.send(.saveDisplayNameButtonTapped)
-                } label: {
-                    BusyLabel("Save", isBusy: store.isRequestInFlight)
-                }
-                .buttonStyle(PrimaryButtonStyle())
-                .accessibilityValue(store.isRequestInFlight ? "Saving" : "")
-                .accessibilityIdentifier(
-                    "account.settings.save-display-name"
-                )
-            }
-            .disabled(store.isRequestInFlight)
         }
     }
 
@@ -536,37 +469,8 @@ struct AccountSettingsView: View {
                     } else {
                         HStack(spacing: 8) { buttons }
                     }
-                    Button { isResetLinkConfirmationPresented = true } label: {
-                        Text("Reset Link")
-                    }
-                        .buttonStyle(QuietButtonStyle(color: Theme.ink))
-                        .disabled(isResetting)
-                        .accessibilityValue(isResetting ? "Resetting" : "")
-                        .accessibilityIdentifier("account.challenge-link.reset")
-                        .alert(
-                            "Reset your challenge link?",
-                            isPresented: $isResetLinkConfirmationPresented
-                        ) {
-                            Button("Reset Link", role: .destructive) { challengeLink?.reset() }
-                                .accessibilityIdentifier("account.challenge-link.reset.confirm")
-                            Button("Cancel", role: .cancel) {}
-                        } message: {
-                            Text("Your old link stops working. Challenges already sent stay.")
-                        }
-                    Text("Anyone with this link can challenge you, unless you only allow friends. Reset it to turn off the old one; challenges already sent stay.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, 4)
-                if challengeLink?.resetFailed == true {
-                    Text("Couldn’t reset your link. Try again.")
-                        .font(.callout)
-                        .foregroundStyle(Theme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("account.challenge-link.reset-error")
-                        .listRowSeparator(.hidden, edges: .top)
-                }
             } else if challengeLink?.failed == true {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Couldn’t load your link.")
@@ -588,76 +492,13 @@ struct AccountSettingsView: View {
         .listRowBackground(Theme.panel)
     }
 
-    private func blockedSection(
-        _ blocked: AccountBlockedPeople,
-        _ people: [AuthenticatedProfile]
-    ) -> some View {
-        Section {
-            ForEach(people, id: \.id) { person in
-                blockedRow(person, blocked)
-                if blocked.unblockFailed == person.id {
-                    Text("Couldn’t unblock. Check your connection and try again.")
-                        .font(.callout)
-                        .foregroundStyle(Theme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("account.blocked.error")
-                        .listRowSeparator(.hidden, edges: .top)
-                }
-            }
-        } header: {
-            SectionLabel("BLOCKED")
-        } footer: {
-            Text("Blocked people can’t challenge you or find you in search. They aren’t notified.")
-                .foregroundStyle(Theme.secondary)
-        }
-        .listRowBackground(Theme.panel)
-    }
-
-    private func blockedRow(
-        _ person: AuthenticatedProfile,
-        _ blocked: AccountBlockedPeople
-    ) -> some View {
-        let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
-        let isUnblocking = blocked.unblocking.contains(person.id)
-        let layout = isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 12))
-        return layout {
-            HStack(spacing: 12) {
-                if !isAccessibilitySize {
-                    PersonAvatar(
-                        name: person.displayName,
-                        size: blockedInitialSize,
-                        initialFont: .headline.width(.condensed)
-                    )
-                }
-                Text(person.displayName)
-                    .foregroundStyle(Theme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Button { blocked.unblock(person.id) } label: {
-                Text("Unblock")
-                    .foregroundStyle(isUnblocking ? Theme.secondary : Theme.ink)
-                    .animation(Motion.fade, value: isUnblocking)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .disabled(isUnblocking)
-            .accessibilityLabel("Unblock \(person.displayName)")
-            .accessibilityValue(isUnblocking ? "Unblocking" : "")
-            .accessibilityIdentifier("account.blocked.unblock")
-        }
-    }
-
     static func displayText(_ url: URL) -> String {
         let text = url.absoluteString
         guard let range = text.range(of: "://") else { return text }
         return String(text[range.upperBound...])
     }
 
-    private var settingsSection: some View {
+    private var dataSection: some View {
         Section {
             if let health {
                 NavigationLink {
@@ -676,6 +517,35 @@ struct AccountSettingsView: View {
                 .accessibilityIdentifier("account.health")
             }
 
+            NavigationLink {
+                AccountSleepBetaPage(requestSleepAccess: requestSleepAccess)
+            } label: {
+                LabeledContent {
+                    Text((SleepSourcePreference(rawValue: sleepSource) ?? .automatic).title)
+                } label: {
+                    Label("Sleep", systemImage: "bed.double")
+                }
+            }
+            .accessibilityIdentifier("account.sleep")
+
+            NavigationLink {
+                AccountPrivacyPage(
+                    friends: friendSettings,
+                    challengeLink: challengeLink,
+                    blockedPeople: blockedPeople
+                )
+            } label: {
+                Label("Privacy", systemImage: "lock")
+            }
+            .accessibilityIdentifier("account.privacy")
+        } header: {
+            SectionLabel("YOUR DATA")
+        }
+        .listRowBackground(Theme.panel)
+    }
+
+    private var deviceSection: some View {
+        Section {
             if let notifications {
                 NavigationLink {
                     AccountNotificationsPage(settings: notifications)
@@ -711,24 +581,6 @@ struct AccountSettingsView: View {
             }
             .accessibilityIdentifier("account.sounds")
 
-            NavigationLink {
-                AccountSleepBetaPage(requestSleepAccess: requestSleepAccess)
-            } label: {
-                LabeledContent {
-                    Text((SleepSourcePreference(rawValue: sleepSource) ?? .automatic).title)
-                } label: {
-                    Label("Sleep", systemImage: "bed.double")
-                }
-            }
-            .accessibilityIdentifier("account.sleep")
-
-            NavigationLink {
-                AccountPrivacyPage(friends: friendSettings)
-            } label: {
-                Label("Privacy", systemImage: "lock")
-            }
-            .accessibilityIdentifier("account.privacy")
-
             Button { isTourPresented = true } label: {
                 Label("Take the Tour", systemImage: "hand.tap")
             }
@@ -742,6 +594,8 @@ struct AccountSettingsView: View {
             }
             .accessibilityIdentifier("account.staging-diagnostics")
 #endif
+        } header: {
+            SectionLabel("PREFERENCES")
         }
         .listRowBackground(Theme.panel)
     }
@@ -1176,14 +1030,23 @@ private struct NotificationChoiceToggle: View {
 
 private struct AccountPrivacyPage: View {
     let friends: AccountFriendSettings?
+    let challengeLink: AccountChallengeLink?
+    let blockedPeople: AccountBlockedPeople?
+    @State private var isResetLinkConfirmationPresented = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .headline) private var blockedInitialSize: CGFloat = 34
 
     var body: some View {
         List {
             if let friends, let shown = friends.state.shown {
-                usernameSection(friends, shown)
                 searchSection(friends, shown)
                 challengeSection(friends, shown)
+            }
+            if let challengeLink, challengeLink.url != nil {
+                resetLinkSection(challengeLink)
+            }
+            if let blocked = blockedPeople, let people = blocked.people, !people.isEmpty {
+                blockedSection(blocked, people)
             }
             Section {
                 Label(
@@ -1209,53 +1072,108 @@ private struct AccountPrivacyPage: View {
         .onChange(of: friends?.state.failedField) { _, new in
             if new != nil { AccessibilityNotification.Announcement(Self.saveErrorText).post() }
         }
-        .task(id: friends != nil) { friends?.send(.requested) }
-        .sheet(isPresented: Binding(
-            get: { friends?.state.sheet != nil },
-            set: { if !$0 { friends?.send(.usernameSheetClosed) } }
-        )) {
-            if let friends { UsernameSheet(friends: friends) }
-        }
+        .moving(Motion.settle, value: blockedPeople?.people?.map(\.id))
+        .moving(Motion.settle, value: blockedPeople?.unblockFailed)
+        .moving(Motion.settle, value: challengeLink?.resetFailed)
     }
 
-    private func usernameSection(
-        _ friends: AccountFriendSettings,
-        _ shown: FriendSettings
-    ) -> some View {
+    private func resetLinkSection(_ link: AccountChallengeLink) -> some View {
         Section {
-            if let username = shown.username {
-                let layout = dynamicTypeSize.isAccessibilitySize
-                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-                    : AnyLayout(HStackLayout(spacing: 12))
-                layout {
-                    Text(verbatim: "@\(username)")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("account.privacy.username")
-                    Button { friends.send(.usernameSheetOpened) } label: {
-                        Text("Edit")
-                            .frame(minHeight: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(friends.state.isSaving)
-                    .accessibilityLabel("Edit Username")
-                    .accessibilityIdentifier("account.privacy.username.edit")
-                }
-            } else {
-                Button { friends.send(.usernameSheetOpened) } label: {
-                    Text("Choose a Username")
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .accountAction()
-                .disabled(friends.state.isSaving)
-                .accessibilityIdentifier("account.privacy.username.choose")
+            Button { isResetLinkConfirmationPresented = true } label: {
+                Text("Reset Challenge Link")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
             }
-        } header: {
-            SectionLabel("USERNAME")
+            .accountAction()
+            .disabled(link.isResetting)
+            .accessibilityValue(link.isResetting ? "Resetting" : "")
+            .accessibilityIdentifier("account.challenge-link.reset")
+            .alert(
+                "Reset your challenge link?",
+                isPresented: $isResetLinkConfirmationPresented
+            ) {
+                Button("Reset Link", role: .destructive) { link.reset() }
+                    .accessibilityIdentifier("account.challenge-link.reset.confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your old link stops working. Challenges already sent stay.")
+            }
+            if link.resetFailed {
+                Text("Couldn’t reset your link. Try again.")
+                    .font(.callout)
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("account.challenge-link.reset-error")
+                    .listRowSeparator(.hidden, edges: .top)
+            }
+        } footer: {
+            Text("Anyone with your link can challenge you, unless you only allow friends.")
+                .foregroundStyle(Theme.secondary)
         }
         .listRowBackground(Theme.panel)
+    }
+
+    private func blockedSection(
+        _ blocked: AccountBlockedPeople,
+        _ people: [AuthenticatedProfile]
+    ) -> some View {
+        Section {
+            ForEach(people, id: \.id) { person in
+                blockedRow(person, blocked)
+                if blocked.unblockFailed == person.id {
+                    Text("Couldn’t unblock. Check your connection and try again.")
+                        .font(.callout)
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("account.blocked.error")
+                        .listRowSeparator(.hidden, edges: .top)
+                }
+            }
+        } header: {
+            SectionLabel("BLOCKED")
+        } footer: {
+            Text("Blocked people can’t challenge you or find you in search. They aren’t notified.")
+                .foregroundStyle(Theme.secondary)
+        }
+        .listRowBackground(Theme.panel)
+    }
+
+    private func blockedRow(
+        _ person: AuthenticatedProfile,
+        _ blocked: AccountBlockedPeople
+    ) -> some View {
+        let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
+        let isUnblocking = blocked.unblocking.contains(person.id)
+        let layout = isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
+            HStack(spacing: 12) {
+                if !isAccessibilitySize {
+                    PersonAvatar(
+                        name: person.displayName,
+                        size: blockedInitialSize,
+                        initialFont: .headline.width(.condensed)
+                    )
+                }
+                Text(person.displayName)
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button { blocked.unblock(person.id) } label: {
+                Text("Unblock")
+                    .foregroundStyle(isUnblocking ? Theme.secondary : Theme.ink)
+                    .animation(Motion.fade, value: isUnblocking)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .disabled(isUnblocking)
+            .accessibilityLabel("Unblock \(person.displayName)")
+            .accessibilityValue(isUnblocking ? "Unblocking" : "")
+            .accessibilityIdentifier("account.blocked.unblock")
+        }
     }
 
     private func searchSection(
@@ -1274,7 +1192,7 @@ private struct AccountPrivacyPage: View {
         } header: {
             SectionLabel("FINDING YOU")
         } footer: {
-            Text("Off: only people with your link can add you. Search shows your name, photo and username, never your rings.")
+            Text("Off: only people with your link can add you. Search shows your username and photo, never your rings.")
                 .foregroundStyle(Theme.secondary)
         }
         .listRowBackground(Theme.panel)
@@ -1328,7 +1246,7 @@ private struct AccountProgressOverlay: View {
     let store: StoreOf<AccountFeature>
 
     var body: some View {
-        if store.isRequestInFlight, !store.isEditingDisplayName {
+        if store.isRequestInFlight {
             ProgressView()
                 .tint(Theme.ink)
                 .accessibilityLabel(
