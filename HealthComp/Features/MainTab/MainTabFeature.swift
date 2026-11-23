@@ -79,6 +79,7 @@ struct MainTabFeature {
         var acceptsClaimOnStart = false
         var historyPersonIdentity: String?
         var personPlace = CompetitionPersonPlace()
+        var todayActivity: TodayActivity?
         var healthAccess: HealthAccessStatus?
         var notificationPrompt: NotificationPromptPhase = .unscheduled
         var isChallengeSheetOpen = false
@@ -119,6 +120,12 @@ struct MainTabFeature {
             self.isAccountPresented = isAccountPresented
             self.heldRouteSequence = heldRouteSequence
         }
+    }
+
+    enum TodayActivity: Equatable, Sendable {
+        case reading(ActivitySnapshot)
+        case empty
+        case unavailable
     }
 
     enum SceneState: Equatable, Sendable {
@@ -167,6 +174,8 @@ struct MainTabFeature {
         case onboardingChecked([PermissionOnboardingStep])
         case onboardingContinueTapped
         case onboardingStepCompleted
+        case todayActivityRequested
+        case todayActivityLoaded(TodayActivity?)
         case refreshHealthAccess
         case healthAccessLoaded(HealthAccessStatus)
         case connectHealthTapped
@@ -747,6 +756,21 @@ struct MainTabFeature {
                 if state.notificationPrompt == .presented {
                     state.notificationPrompt = .finished
                 }
+                return .none
+
+            case .todayActivityRequested:
+                state.todayActivity = nil
+                return .run { send in
+                    do {
+                        let snapshot = try await competitionClient.readTodayActivity()
+                        await send(.todayActivityLoaded(snapshot.map(TodayActivity.reading) ?? .empty))
+                    } catch {
+                        await send(.todayActivityLoaded(.unavailable))
+                    }
+                }
+
+            case let .todayActivityLoaded(activity):
+                state.todayActivity = activity
                 return .none
 
             case .refreshHealthAccess:
