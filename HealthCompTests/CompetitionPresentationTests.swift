@@ -569,6 +569,23 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
+    func testRingReadingWithoutAGoalStillShowsTheActivityAmount() throws {
+        let snapshot = try ActivitySnapshot(
+            moveMode: .moveMinutes,
+            standMode: .rollHours,
+            move: ActivityRingReading(value: 18, goal: nil),
+            exercise: ActivityRingReading(value: 0, goal: 30),
+            standOrRoll: ActivityRingReading(value: nil, goal: 12),
+            pauseState: .paused
+        )
+        let panel = try XCTUnwrap(competitionRingPanel(
+            ringDay(accepted: nil, latest: snapshot, points: nil), locale: Locale(identifier: "en_US")
+        ))
+        XCTAssertEqual(panel.rows.map(\.title), ["Move Time", "Exercise", "Roll"])
+        XCTAssertEqual(panel.rows.map(\.detail), ["18 min", "0/30 min", "No data"])
+        XCTAssertEqual(panel.rows.map(\.goalFraction), [nil, 0, nil])
+    }
+
     func testRingPanelSplitsACappedDayAndSaysSo() throws {
         let snapshot = try rings(1_100, 60, 24)
         let panel = try XCTUnwrap(competitionRingPanel(

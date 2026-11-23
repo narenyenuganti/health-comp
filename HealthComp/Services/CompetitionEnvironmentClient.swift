@@ -22,6 +22,11 @@ struct CompetitionActivityWindow: Hashable, Sendable {
     let calendar: CompetitionCalendar
     let days: [CompetitionDay]
 
+    fileprivate init(calendar: CompetitionCalendar, dayContaining date: Date) throws {
+        self.calendar = calendar
+        self.days = [try calendar.day(containing: date)]
+    }
+
     init(calendar: CompetitionCalendar, startDay: CompetitionDay) throws {
         let days = try calendar.sevenDayWindow(startingOn: startDay)
         guard days.count == 7 else { throw ValidationError.invalidDayWindow }
@@ -302,6 +307,15 @@ struct CompetitionEnvironmentClient: Sendable {
         _ window: CompetitionActivityWindow
     ) async throws -> ActivityWindowRead {
         try await source.read(window)
+    }
+
+    func readTodayActivity() async throws -> ActivitySnapshot? {
+        let context = await context()
+        let calendar = try CompetitionCalendar(timeZoneIdentifier: context.timeZoneIdentifier)
+        let window = try CompetitionActivityWindow(calendar: calendar, dayContaining: context.instant.wallDate)
+        let read = try await source.read(window)
+        guard case let .snapshot(_, snapshot) = read.days.first else { return nil }
+        return snapshot
     }
 
     func activateSignalOwnership(

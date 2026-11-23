@@ -117,6 +117,27 @@ final class CompetitionEnvironmentClientTests: XCTestCase {
         )
     }
 
+    func testTodayActivityUsesTheDeviceDayAndDoesNotCarryYesterdayForward() async throws {
+        let calendar = try CompetitionCalendar(timeZoneIdentifier: "Pacific/Kiritimati")
+        let now = Date(timeIntervalSince1970: 1_786_878_000)
+        let today = try calendar.day(containing: now)
+        let reading = try snapshot(moveValue: 384)
+        let environment = CompetitionEnvironmentClient.accelerated(fixture: try ActivityFixture(
+            initialInstant: EnvironmentInstant(
+                wallDate: now, monotonic: MonotonicInstant(epochID: "today", nanoseconds: 0)
+            ),
+            timeZoneIdentifier: calendar.timeZoneIdentifier,
+            initialDays: [.snapshot(day: today, snapshot: reading)],
+            changes: []
+        ))
+
+        let result = try await environment.readTodayActivity()
+        XCTAssertEqual(result, reading)
+        try await environment.advanceFixture(to: now.addingTimeInterval(86_400))
+        let nextDay = try await environment.readTodayActivity()
+        XCTAssertNil(nextDay)
+    }
+
     func testAcceleratedEnvironmentForwardsSetDrivenSummarySubscriptionSynchronization() async throws {
         let calendar = try CompetitionCalendar(timeZoneIdentifier: "UTC")
         let start = try CompetitionDay(

@@ -1903,6 +1903,16 @@ private struct MultiUserCompetitionPracticeTestLabView: View {
                 stop: { hub.finish() },
                 startPractice: { _ in await server.start() }
             )
+            $0.competitionClient.readTodayActivity = {
+                try ActivitySnapshot(
+                    moveMode: .activeEnergyKilocalories,
+                    standMode: .standHours,
+                    move: ActivityRingReading(value: 384, goal: 500),
+                    exercise: ActivityRingReading(value: 24, goal: 30),
+                    standOrRoll: ActivityRingReading(value: 7, goal: 12),
+                    pauseState: .running
+                )
+            }
             $0.competitionRoutingClient = CompetitionRoutingClient(
                 routes: { AsyncStream { _ in } },
                 enqueue: { _ in },

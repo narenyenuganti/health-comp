@@ -131,6 +131,7 @@ struct CompetitionClient: Sendable {
     var setCompetitionMetrics: @Sendable (CompetitionID, CompetitionMetrics) async throws -> CompetitionPublication = { _, _ in
         throw CompetitionRemoteFailure.operationFailed
     }
+    var readTodayActivity: @Sendable () async throws -> ActivitySnapshot? = { nil }
     var requestSleepAuthorization: @Sendable () async throws -> Void = {}
 
     init(
