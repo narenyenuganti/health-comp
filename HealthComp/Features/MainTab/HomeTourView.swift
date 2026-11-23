@@ -86,7 +86,7 @@ struct HomeTourView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { coach }
         .background(Theme.ground)
         .sheet(isPresented: $isRingsPresented, onDismiss: advance) {
-            CompetitionTodayRingsSheet(competitions: [match])
+            CompetitionTodayRingsSheet(competitions: [match], activity: nil, loadActivity: {})
         }
         .sensoryFeedback(.selection, trigger: step)
         .environment(\.openCompetitionProfile, nil)
