@@ -154,6 +154,7 @@ struct FriendsView: View {
 
     @FocusState private var isFieldFocused: Bool
     @State private var cancelling: FriendPerson?
+    @State private var sortOrder: FriendsSortOrder = .name
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -391,7 +392,18 @@ struct FriendsView: View {
 
     @ViewBuilder
     private var listContent: some View {
+        let competitions = store.competition.publication?.dashboard.competitions ?? []
+        let highlights = ringsideHighlights(competitions, locale: locale)
         if let list = state.list {
+            if !highlights.isEmpty {
+                RingsideHighlightsStrip(
+                    highlights: highlights,
+                    openMatch: { id in store.send(.pathChanged([id])) },
+                    react: { id, ordinal, kind in
+                        store.send(.competition(.reactionTapped(id, .day(ordinal), kind)))
+                    }
+                )
+            }
             if list.friends.isEmpty, list.incoming.isEmpty, list.outgoing.isEmpty {
                 quietLine("No friends yet. Search for someone or send your link.", id: "friends.empty")
             }
@@ -401,9 +413,39 @@ struct FriendsView: View {
                 }
             }
             if !list.friends.isEmpty {
-                section("FRIENDS · \(list.friends.count)", id: "friends.list") {
-                    panel(list.friends) { friendRow($0) }
+                let ordered = sortedFriends(list.friends, by: sortOrder, competitions: competitions)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        SectionLabel("FRIENDS · \(list.friends.count)")
+                        Spacer(minLength: 8)
+                        if list.friends.count > 1 {
+                            Menu {
+                                Picker("Sort by", selection: $sortOrder) {
+                                    ForEach(FriendsSortOrder.allCases) { option in
+                                        Text(option.title).tag(option)
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(sortOrder.title)
+                                        .font(.caption.weight(.bold).width(.condensed))
+                                    Image(systemName: "arrow.up.arrow.down")
+                                        .font(.caption2.weight(.bold))
+                                }
+                                .foregroundStyle(Theme.you)
+                                .padding(.horizontal, 8)
+                                .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                                .contentShape(Rectangle())
+                            }
+                            .accessibilityIdentifier("friends.sort")
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                    panel(ordered) { friendRow($0) }
                 }
+                .moving(Motion.settle, value: sortOrder)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("friends.list")
             }
             if !list.outgoing.isEmpty {
                 section("SENT · \(list.outgoing.count)", id: "friends.sent") {
@@ -489,17 +531,34 @@ struct FriendsView: View {
     }
 
     private func friendRow(_ person: FriendPerson) -> some View {
-        NavigationLink(value: CompetitionHomeRoute.profile(person.identity)) {
+        let competitions = store.competition.publication?.dashboard.competitions ?? []
+        let todayPoints = sortOrder == .todayPoints
+            ? friendLiveTodayPoints(identity: person.identity, competitions: competitions)
+            : nil
+        let margin = sortOrder == .margin
+            ? friendLiveMargin(identity: person.identity, competitions: competitions)
+            : nil
+        return NavigationLink(value: CompetitionHomeRoute.profile(person.identity)) {
             HStack(spacing: 12) {
                 FriendsPersonLabel(
                     person: person,
                     detail: friendStatusLine(
                         identity: person.identity,
-                        competitions: store.competition.publication?.dashboard.competitions ?? [],
+                        competitions: competitions,
                         locale: locale,
                         timeZone: timeZone
                     )
                 )
+                if let todayPoints {
+                    Text(competitionPointsText(todayPoints, locale: locale))
+                        .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
+                        .foregroundStyle(Theme.ink)
+                } else if let margin {
+                    let sign = margin > 0 ? "+" : margin < 0 ? "\u{2212}" : ""
+                    Text("\(sign)\(competitionPointsText(abs(margin), locale: locale))")
+                        .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
+                        .foregroundStyle(margin > 0 ? Theme.you : Theme.ink)
+                }
                 DisclosureChevron()
             }
             .padding(.vertical, 12)

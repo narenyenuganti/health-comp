@@ -284,8 +284,12 @@ struct MainTabView: View {
                 switch route {
                 case .history:
                     if let publication = store.competition.publication {
-                        CompetitionHistoryView(publication: publication, openRecap: { recapPeriod = $0 })
-                            .toolbarRole(.editor)
+                        CompetitionHistoryView(
+                            publication: publication,
+                            openRecap: { recapPeriod = $0 },
+                            openMatch: { homeStack.wrappedValue.append(.competition($0)) }
+                        )
+                        .toolbarRole(.editor)
                     }
                 case .friends:
                     FriendsView(store: store)

@@ -147,12 +147,16 @@ private func activityRingRows(
 
 struct ActivityRingsView: View {
     let panel: CompetitionRingPanel
+    var opponentName: String? = nil
     var openNight: (() -> Void)? = nil
 
     @Environment(\.locale) private var locale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            if panel.isPaused {
+                CompetitionPausedRingsBanner(opponentName: opponentName)
+            }
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(Array(panel.rows.enumerated()), id: \.offset) { _, row in
                     if row.metric == .sleep, let openNight {
@@ -546,6 +550,107 @@ struct CompetitionTodayRingsSheet: View {
     }
 
     private static let dailyMaximum = Int(ActivityScore.maximumDailyPoints)
+}
+
+struct CompetitionHourlyPaceView: View {
+    let day: CompetitionDay
+    let points: Double?
+
+    @State private var buckets: [Double] = []
+    @Environment(\.timeZone) private var timeZone
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var displayedBuckets: [Double] {
+        if !buckets.isEmpty { return buckets }
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--multi-user-competition-test-lab"),
+           let points, points > 0 {
+            return Self.testLabCurve(for: day)
+        }
+#endif
+        return []
+    }
+
+    var body: some View {
+        let values = displayedBuckets
+        Group {
+            if !values.isEmpty, !dynamicTypeSize.isAccessibilitySize {
+                let peakHour = values.enumerated().max(by: { $0.element < $1.element })?.offset ?? 18
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline) {
+                        SectionLabel("24H PACE")
+                        Spacer(minLength: 8)
+                        Text("PEAK \(Self.hourLabel(peakHour))")
+                            .themeLabel()
+                            .foregroundStyle(Theme.secondary)
+                    }
+                    HStack(alignment: .bottom, spacing: 2) {
+                        ForEach(values.indices, id: \.self) { hour in
+                            let value = values[hour]
+                            SlantedBar()
+                                .fill(barColor(value: value))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: max(3, 44 * value))
+                        }
+                    }
+                    .frame(height: 44, alignment: .bottom)
+                    HStack {
+                        Text("12A")
+                        Spacer()
+                        Text("6A")
+                        Spacer()
+                        Text("12P")
+                        Spacer()
+                        Text("6P")
+                        Spacer()
+                        Text("11P")
+                    }
+                    .font(.caption2.weight(.bold).width(.condensed))
+                    .foregroundStyle(Theme.tertiary)
+                    Text("On-device hourly rhythm. Stays on this iPhone.")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.secondary)
+                }
+                .padding(16)
+                .themePanel()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("24 hour pace, peak around \(Self.hourLabel(peakHour)). Stays on this iPhone.")
+                .accessibilityIdentifier("competition.hourlyPace")
+            }
+        }
+        .task(id: day) {
+            buckets = await HealthKitProvider.readLocalHourlyPace(for: day, timeZone: timeZone)
+        }
+    }
+
+    private func barColor(value: Double) -> Color {
+        if value >= 0.72 { return Theme.exercise }
+        if value >= 0.25 { return Theme.move }
+        if value > 0.05 { return Theme.stand }
+        return Theme.track
+    }
+
+    static func hourLabel(_ hour: Int) -> String {
+        switch hour {
+        case 0: "12 AM"
+        case 1..<12: "\(hour) AM"
+        case 12: "12 PM"
+        default: "\(hour - 12) PM"
+        }
+    }
+
+    static func testLabCurve(for day: CompetitionDay) -> [Double] {
+        let base: [Double] = [
+            0.05, 0.02, 0.02, 0.02, 0.02, 0.03,
+            0.10, 0.28, 0.34, 0.16, 0.14, 0.22,
+            0.52, 0.32, 0.14, 0.16, 0.24, 0.62,
+            0.98, 0.84, 0.36, 0.18, 0.08, 0.03,
+        ]
+        let shift = abs(day.day) % 3
+        return base.indices.map { index in
+            base[(index + shift) % base.count]
+        }
+    }
 }
 
 private struct TodayRingBar: View {

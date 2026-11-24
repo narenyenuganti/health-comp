@@ -470,11 +470,238 @@ struct CompetitionAllLabel: View {
     }
 }
 
+struct CompetitionRivalTrophy: Equatable, Identifiable {
+    let opponentIdentity: String
+    let opponentDisplayName: String
+    let wins: Int
+    let losses: Int
+    let ties: Int
+    let latestWin: CompetitionID
+    let latestWeek: LocalCompetitionPresentation
+    let holdsBelt: Bool
+
+    var id: String { opponentIdentity }
+
+    var recordText: String {
+        ([wins, losses] + (ties > 0 ? [ties] : [])).map(String.init).joined(separator: "–")
+    }
+}
+
+func competitionRivalTrophies(
+    _ competitions: [LocalCompetitionPresentation]
+) -> [CompetitionRivalTrophy] {
+    let records = competitionOpponentRecords(competitions)
+    var trophies: [CompetitionRivalTrophy] = []
+    for record in records where record.wins > 0
+        && record.opponentDisplayName != competitionFormerCompetitorName {
+        let wins = competitionHistoryWeeks(competitions).filter {
+            $0.opponentIdentity == record.opponentIdentity && $0.terminalResult?.outcome == .win
+        }
+        guard let latest = wins.first else { continue }
+        trophies.append(CompetitionRivalTrophy(
+            opponentIdentity: record.opponentIdentity,
+            opponentDisplayName: record.opponentDisplayName,
+            wins: record.wins,
+            losses: record.losses,
+            ties: record.ties,
+            latestWin: latest.id,
+            latestWeek: latest,
+            holdsBelt: record.belt.holder == .you
+        ))
+    }
+    return trophies.sorted { lhs, rhs in
+        if lhs.wins != rhs.wins { return lhs.wins > rhs.wins }
+        return lhs.opponentDisplayName.localizedStandardCompare(rhs.opponentDisplayName) == .orderedAscending
+    }
+}
+
+struct CompetitionChampionshipPlate: View {
+    let symbol: String
+    let title: String
+    let subtitle: String
+    let engravedKicker: String
+    let engravedHeadline: String
+    let engravedDetail: String
+    let isEarned: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var angle: Double = 0
+    @State private var dragStart: Double?
+    @State private var flipCount = 0
+
+    private var isShowingBack: Bool {
+        let normalized = angle.truncatingRemainder(dividingBy: 360)
+        let positive = normalized < 0 ? normalized + 360 : normalized
+        return positive >= 90 && positive < 270
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                if reduceMotion {
+                    if isShowingBack {
+                        backFace
+                    } else {
+                        frontFace
+                    }
+                } else {
+                    ZStack {
+                        frontFace
+                            .opacity(isShowingBack ? 0 : 1)
+                        backFace
+                            .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
+                            .opacity(isShowingBack ? 1 : 0)
+                    }
+                    .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.45)
+                }
+            }
+            .frame(width: 176, height: 176)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard isEarned else { return }
+                toggleFlip()
+            }
+            .gesture(
+                DragGesture(minimumDistance: 8)
+                    .onChanged { value in
+                        guard isEarned, !reduceMotion else { return }
+                        let base = dragStart ?? angle
+                        if dragStart == nil { dragStart = angle }
+                        angle = base + Double(value.translation.width) * 0.85
+                    }
+                    .onEnded { value in
+                        guard isEarned, !reduceMotion else { return }
+                        let base = dragStart ?? angle
+                        dragStart = nil
+                        let projected = base + Double(value.predictedEndTranslation.width) * 0.65
+                        let snapped = (projected / 180).rounded() * 180
+                        angle = snapped
+                        flipCount += 1
+                    }
+            )
+            .moving(Motion.settle, value: angle)
+            .animation(Motion.fade, value: isShowingBack)
+            .sensoryFeedback(.impact(weight: .light), trigger: flipCount)
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(isEarned ? .isButton : [])
+            .accessibilityLabel(
+                isShowingBack
+                    ? "\(title) reverse engraved: \(engravedHeadline). \(engravedDetail)."
+                    : "\(title), \(subtitle)."
+            )
+            .accessibilityHint(isEarned ? "Double tap to flip plate" : "")
+            .accessibilityIdentifier("competition.plate.3d")
+
+            if isEarned {
+                Text(isShowingBack ? "ENGRAVED REVERSE · TAP TO FLIP" : "DRAG OR TAP TO INSPECT REVERSE")
+                    .font(.caption2.weight(.bold).width(.condensed))
+                    .tracking(1.0)
+                    .foregroundStyle(Theme.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+        .padding(.horizontal, 14)
+        .background(Theme.beltWell, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func toggleFlip() {
+        angle += 180
+        flipCount += 1
+    }
+
+    private var frontFace: some View {
+        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        return VStack(spacing: 10) {
+            HStack(spacing: 5) {
+                SlantedBar().fill(isEarned ? Theme.move : Theme.outline).frame(width: 7, height: 22)
+                SlantedBar().fill(isEarned ? Theme.exercise : Theme.outline).frame(width: 7, height: 22)
+                SlantedBar().fill(isEarned ? Theme.stand : Theme.outline).frame(width: 7, height: 22)
+            }
+            Image(systemName: symbol)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(isEarned ? Theme.youFill : Theme.tertiary)
+            VStack(spacing: 2) {
+                Text(title.uppercased())
+                    .font(.subheadline.weight(.heavy).width(.condensed))
+                    .tracking(0.8)
+                    .foregroundStyle(Color(hex: 0xF5F5F0))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Text(subtitle.uppercased())
+                    .font(.caption2.weight(.bold).width(.condensed))
+                    .tracking(1.0)
+                    .foregroundStyle(isEarned ? Theme.youFill : Theme.tertiary)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            LinearGradient(
+                colors: isEarned
+                    ? [Color(hex: 0x262118), Color(hex: 0x131316), Color(hex: 0x2A2213)]
+                    : [Color(hex: 0x1E1E22), Color(hex: 0x141416)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: shape
+        )
+        .overlay {
+            shape.strokeBorder(
+                isEarned ? Theme.youFill.opacity(0.75) : Theme.outline.opacity(0.45),
+                lineWidth: 2
+            )
+        }
+    }
+
+    private var backFace: some View {
+        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        return VStack(spacing: 6) {
+            Text(engravedKicker.uppercased())
+                .font(.caption2.weight(.heavy).width(.condensed))
+                .tracking(1.2)
+                .foregroundStyle(Color(hex: 0x1A1304).opacity(0.72))
+                .lineLimit(1)
+            Text(engravedHeadline.uppercased())
+                .font(.headline.weight(.heavy).width(.condensed))
+                .tracking(0.5)
+                .foregroundStyle(Color(hex: 0x1A1304))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+            Rectangle()
+                .fill(Color(hex: 0x1A1304).opacity(0.28))
+                .frame(width: 42, height: 1)
+                .padding(.vertical, 2)
+            Text(engravedDetail)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(Color(hex: 0x1A1304).opacity(0.84))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            LinearGradient(
+                colors: [Theme.youFill, Color(hex: 0xC78200), Color(hex: 0x9C6400)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: shape
+        )
+        .overlay {
+            shape.strokeBorder(Color(hex: 0xFFD166), lineWidth: 2)
+        }
+    }
+}
+
 struct CompetitionBadgesView: View {
     let publication: LocalCompetitionPublication
     let openWeek: (CompetitionID) -> Void
 
     @State private var shown: CompetitionBadge?
+    @State private var shownRival: CompetitionRivalTrophy?
     @State private var pendingWeek: CompetitionID?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
@@ -483,32 +710,60 @@ struct CompetitionBadgesView: View {
     var body: some View {
         let competitions = publication.dashboard.competitions
         let book = competitionBadgeBook(competitions)
+        let rivals = competitionRivalTrophies(competitions)
         let columns = dynamicTypeSize.isAccessibilitySize ? 1 : 3
         let rows = stride(from: 0, to: book.badges.count, by: columns).map {
             Array(book.badges[$0..<min($0 + columns, book.badges.count)])
         }
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    SectionLabel("EARNED")
-                    Spacer(minLength: 8)
-                    Text("\(book.badges.filter(\.isEarned).count) OF \(book.badges.count)")
-                        .themeLabel()
-                        .foregroundStyle(Theme.secondary)
-                        .accessibilityIdentifier("competition.badges.count")
-                }
-                .padding(.horizontal, 4)
-                Grid(horizontalSpacing: 10, verticalSpacing: 10) {
-                    ForEach(rows.indices, id: \.self) { index in
-                        GridRow {
-                            ForEach(rows[index]) { badge in
-                                Button { shown = badge } label: { card(badge) }
-                                    .buttonStyle(CompetitionPressButtonStyle())
-                                    .accessibilityLabel(badge.accessibilityText)
-                                    .accessibilityIdentifier("competition.badge.\(badge.kind.rawValue)")
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        SectionLabel("EARNED")
+                        Spacer(minLength: 8)
+                        Text("\(book.badges.filter(\.isEarned).count) OF \(book.badges.count)")
+                            .themeLabel()
+                            .foregroundStyle(Theme.secondary)
+                            .accessibilityIdentifier("competition.badges.count")
+                    }
+                    .padding(.horizontal, 4)
+                    Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                        ForEach(rows.indices, id: \.self) { index in
+                            GridRow {
+                                ForEach(rows[index]) { badge in
+                                    Button { shown = badge } label: { card(badge) }
+                                        .buttonStyle(CompetitionPressButtonStyle())
+                                        .accessibilityLabel(badge.accessibilityText)
+                                        .accessibilityIdentifier("competition.badge.\(badge.kind.rawValue)")
+                                }
                             }
                         }
                     }
+                }
+
+                if !rivals.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            SectionLabel("RIVAL TROPHIES")
+                            Spacer(minLength: 8)
+                            Text("\(rivals.count)")
+                                .themeLabel()
+                                .foregroundStyle(Theme.secondary)
+                        }
+                        .padding(.horizontal, 4)
+                        VStack(spacing: 0) {
+                            ForEach(Array(rivals.enumerated()), id: \.element.id) { index, trophy in
+                                if index > 0 { CompetitionRowDivider(inset: 16) }
+                                Button { shownRival = trophy } label: { rivalRow(trophy) }
+                                    .buttonStyle(CompetitionRowButtonStyle())
+                                    .accessibilityIdentifier("competition.badge.rival.\(trophy.opponentIdentity)")
+                            }
+                        }
+                        .themePanel()
+                        .clipShape(RoundedRectangle(cornerRadius: 20))
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("competition.badges.rivals")
                 }
             }
             .padding(.horizontal, 16)
@@ -533,8 +788,53 @@ struct CompetitionBadgesView: View {
                     shown = nil
                 }
             )
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.large])
         }
+        .sheet(item: $shownRival, onDismiss: {
+            if let week = pendingWeek {
+                pendingWeek = nil
+                openWeek(week)
+            }
+        }) { trophy in
+            CompetitionRivalTrophySheet(
+                trophy: trophy,
+                now: publication.evaluatedAt,
+                open: {
+                    pendingWeek = $0
+                    shownRival = nil
+                }
+            )
+            .presentationDetents([.large])
+        }
+    }
+
+    private func rivalRow(_ trophy: CompetitionRivalTrophy) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Theme.beltWell)
+                    .frame(width: 42, height: 42)
+                Image(systemName: trophy.holdsBelt ? "trophy.fill" : "shield.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Theme.youFill)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Victory over \(trophy.opponentDisplayName)")
+                    .font(.headline)
+                    .foregroundStyle(Theme.ink)
+                Text("Record \(trophy.recordText) · \(trophy.holdsBelt ? "Belt held" : "Rival plate")")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+            }
+            Spacer(minLength: 8)
+            Text("×\(trophy.wins)")
+                .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
+                .foregroundStyle(Theme.you)
+            DisclosureChevron()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
     }
 
     private func card(_ badge: CompetitionBadge) -> some View {
@@ -573,7 +873,15 @@ struct CompetitionBadgeSheet: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                CompetitionBadgePlate(kind: badge.kind, isEarned: badge.isEarned, size: 72)
+                CompetitionChampionshipPlate(
+                    symbol: badge.kind.symbol,
+                    title: badge.kind.name,
+                    subtitle: badge.isEarned ? "Earned \(badge.countText)" : badge.countText,
+                    engravedKicker: "Engraved · HealthComp",
+                    engravedHeadline: engravedHeadline,
+                    engravedDetail: engravedDetail,
+                    isEarned: badge.isEarned
+                )
                 Text(badge.kind.name)
                     .font(.title2.weight(.bold))
                     .foregroundStyle(Theme.ink)
@@ -614,11 +922,25 @@ struct CompetitionBadgeSheet: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 28)
+            .padding(.top, 24)
             .padding(.bottom, 20)
         }
         .background(Theme.ground)
         .accessibilityIdentifier("competition.badge.sheet")
+    }
+
+    private var engravedHeadline: String {
+        guard let week else { return badge.kind.name }
+        let margin = competitionPointsText(abs(week.userPoints - week.opponentPoints), locale: locale)
+        return "\(badge.kind.name) · +\(margin) vs \(week.opponentDisplayName)"
+    }
+
+    private var engravedDetail: String {
+        guard let week else { return badge.kind.rule }
+        let range = week.acceptedConfiguration.flatMap {
+            competitionScheduleDateRangeText($0.schedule, now: now, locale: locale)
+        } ?? ""
+        return "\(competitionPointsText(week.userPoints, locale: locale))–\(competitionPointsText(week.opponentPoints, locale: locale)) · \(range)"
     }
 
     private func latestText(_ week: LocalCompetitionPresentation) -> String {
@@ -626,6 +948,68 @@ struct CompetitionBadgeSheet: View {
             competitionScheduleDateRangeText($0.schedule, now: now, locale: locale)
         }
         return [range, competitionWeekVersusText(week)].compactMap { $0 }.joined(separator: ", ")
+    }
+}
+
+struct CompetitionRivalTrophySheet: View {
+    let trophy: CompetitionRivalTrophy
+    let now: Date
+    let open: (CompetitionID) -> Void
+
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        let range = trophy.latestWeek.acceptedConfiguration.flatMap {
+            competitionScheduleDateRangeText($0.schedule, now: now, locale: locale)
+        } ?? ""
+        ScrollView {
+            VStack(spacing: 14) {
+                CompetitionChampionshipPlate(
+                    symbol: trophy.holdsBelt ? "trophy.fill" : "shield.fill",
+                    title: "vs \(trophy.opponentDisplayName)",
+                    subtitle: "Rival Plate ×\(trophy.wins)",
+                    engravedKicker: "Rivalry Record · \(trophy.recordText)",
+                    engravedHeadline: "\(competitionOrdinalText(trophy.wins)) win over \(trophy.opponentDisplayName)",
+                    engravedDetail: "Latest · \(range)",
+                    isEarned: true
+                )
+                Text("Victory over \(trophy.opponentDisplayName)")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(Theme.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Text("Earn this plate each time you win a seven-day match against \(trophy.opponentDisplayName).")
+                    .font(.body)
+                    .foregroundStyle(Theme.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { open(trophy.latestWin) } label: {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Latest win")
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.secondary)
+                            Text("\(range) · \(competitionPointsText(trophy.latestWeek.userPoints, locale: locale))–\(competitionPointsText(trophy.latestWeek.opponentPoints, locale: locale))")
+                                .font(.headline)
+                                .foregroundStyle(Theme.ink)
+                                .multilineTextAlignment(.leading)
+                        }
+                        Spacer(minLength: 8)
+                        DisclosureChevron()
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                    .themePanel()
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(CompetitionPressButtonStyle())
+                .accessibilityIdentifier("competition.rivalTrophy.latest")
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .padding(.bottom, 20)
+        }
+        .background(Theme.ground)
+        .accessibilityIdentifier("competition.rivalTrophy.sheet")
     }
 }
 
@@ -645,6 +1029,7 @@ struct CompetitionOwnRecordsView: View {
         let sections = competitionOwnRecordSections(weeks, now: publication.evaluatedAt, locale: locale)
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                CompetitionFormCard(competitions: publication.dashboard.competitions)
                 if let thisYear {
                     CompetitionSegments(
                         selection: $showsAllTime, options: [(false, String(thisYear.year)), (true, "All time")]

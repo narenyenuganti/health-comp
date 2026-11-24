@@ -71,6 +71,7 @@ struct CompetitionDetailView: View {
     @State private var showsEndPracticeConfirmation = false
     @State private var showsReportPhotoConfirmation = false
     @State private var clappedDay: Int?
+    @AppStorage(CornerTimeoutStorage.untilKey) private var cornerTimeoutUntil: Double = 0
     @Environment(\.profilePhotos) private var photos
 
     private enum Page: Hashable {
@@ -456,10 +457,23 @@ struct CompetitionDetailView: View {
         }
     }
 
+    private var isTodayPausedOrResting: Bool {
+        if CornerTimeoutStorage.isActive(
+            at: competition.evaluatedAt,
+            until: cornerTimeoutUntil > 0 ? Date(timeIntervalSince1970: cornerTimeoutUntil) : nil
+        ) {
+            return true
+        }
+        guard let day = activityDay, let panel = competitionRingPanel(day, locale: locale) else {
+            return false
+        }
+        return panel.isPaused
+    }
+
     @ViewBuilder
     private var liveNudge: some View {
         switch competition.lifecycle {
-        case .active, .endsToday: nudgeControl
+        case .active, .endsToday where !isTodayPausedOrResting: nudgeControl
         default: EmptyView()
         }
     }
@@ -561,11 +575,17 @@ struct CompetitionDetailView: View {
         showsPullHint: Bool
     ) -> some View {
         if let panel = competitionRingPanel(day, locale: locale) {
-            ActivityRingsView(
-                panel: panel,
-                openNight: competition.isSleepMatch ? { drawer = .night(day.ordinal) } : nil
-            )
-                .id(day.ordinal)
+            VStack(alignment: .leading, spacing: 12) {
+                ActivityRingsView(
+                    panel: panel,
+                    opponentName: competition.opponentDisplayName,
+                    openNight: competition.isSleepMatch ? { drawer = .night(day.ordinal) } : nil
+                )
+                if !panel.isPaused, day.metrics.includesActivityRings {
+                    CompetitionHourlyPaceView(day: day.day, points: day.ownerAcceptedPoints)
+                }
+            }
+            .id(day.ordinal)
         } else if day.ownerLatestAvailability == .notSyncedYet {
             VStack(alignment: .leading, spacing: 4) {
                 Label(

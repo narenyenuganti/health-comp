@@ -129,6 +129,44 @@ final class HealthKitProvider: @unchecked Sendable {
         }
     }
 
+    static func readLocalHourlyPace(
+        for day: CompetitionDay,
+        timeZone: TimeZone = .current
+    ) async -> [Double] {
+        guard HKHealthStore.isHealthDataAvailable() else { return [] }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        guard let start = calendar.date(
+            from: DateComponents(year: day.year, month: day.month, day: day.day)
+        ),
+            let end = calendar.date(byAdding: .day, value: 1, to: start)
+        else { return [] }
+        let store = HKHealthStore()
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        let energyType = HKQuantityType(.activeEnergyBurned)
+        let descriptor = HKStatisticsCollectionQueryDescriptor(
+            predicate: .quantitySample(type: energyType, predicate: predicate),
+            options: .cumulativeSum,
+            anchorDate: start,
+            intervalComponents: DateComponents(hour: 1)
+        )
+        do {
+            let collection = try await descriptor.result(for: store)
+            var values = Array(repeating: 0.0, count: 24)
+            collection.enumerateStatistics(from: start, to: end) { stats, _ in
+                let hour = calendar.component(.hour, from: stats.startDate)
+                guard values.indices.contains(hour) else { return }
+                let kcal = stats.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
+                values[hour] = max(0, kcal)
+            }
+            let peak = values.max() ?? 0
+            guard peak > 0 else { return [] }
+            return values.map { $0 / peak }
+        } catch {
+            return []
+        }
+    }
+
     static func sleepSample(from sample: HKCategorySample) -> SleepSample? {
         guard let value = HKCategoryValueSleepAnalysis(rawValue: sample.value),
               HKCategoryValueSleepAnalysis.allAsleepValues.contains(value),

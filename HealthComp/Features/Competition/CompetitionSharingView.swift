@@ -1425,9 +1425,11 @@ private struct CompetitionRecordRow: View {
 struct CompetitionHistoryView: View {
     let publication: LocalCompetitionPublication
     var openRecap: ((CompetitionRecapPeriod) -> Void)? = nil
+    var openMatch: ((CompetitionID) -> Void)? = nil
 
     @State private var filter = CompetitionWeekFilter.all
     @State private var person: String?
+    @State private var isCalendarPresented = false
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
 
@@ -1458,6 +1460,27 @@ struct CompetitionHistoryView: View {
         .background(Theme.ground)
         .navigationTitle("History")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if !weeks.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { isCalendarPresented = true } label: {
+                        Image(systemName: "calendar")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.ink)
+                    }
+                    .accessibilityLabel("Match calendar")
+                    .accessibilityIdentifier("competition.history.calendar")
+                }
+            }
+        }
+        .sheet(isPresented: $isCalendarPresented) {
+            CompetitionHistoryCalendarSheet(
+                competitions: publication.dashboard.competitions,
+                now: publication.evaluatedAt,
+                openMatch: { id in openMatch?(id) }
+            )
+            .presentationDetents([.large])
+        }
     }
 
     private func recordSection(_ weeks: [LocalCompetitionPresentation]) -> some View {

@@ -8,6 +8,14 @@ enum WatchMatchPage: String, Hashable, CaseIterable {
     case rivalry
 }
 
+enum WatchCornerSheet: String, Identifiable {
+    case summary
+    case trophies
+    case ring
+
+    var id: String { rawValue }
+}
+
 struct WatchRootView: View {
     var model: WatchSnapshotModel
 
@@ -16,6 +24,7 @@ struct WatchRootView: View {
     @State private var selectedMatchID: UUID?
     @State private var showingList = false
     @State private var activePage: WatchMatchPage = .overview
+    @State private var initialSheet: WatchCornerSheet?
 
     init(model: WatchSnapshotModel) {
         self.model = model
@@ -28,6 +37,9 @@ struct WatchRootView: View {
             } else if let target = WatchMatchPage(rawValue: page) {
                 _activePage = State(initialValue: target)
             }
+        }
+        if let sheet = zip(arguments, arguments.dropFirst()).first(where: { $0.0 == "--watch-sheet" })?.1 {
+            _initialSheet = State(initialValue: WatchCornerSheet(rawValue: sheet))
         }
 #endif
     }
@@ -82,9 +94,11 @@ struct WatchRootView: View {
                 WatchMatchPagerView(
                     model: model,
                     match: match,
+                    trophies: drawn?.trophies ?? [],
                     date: date,
                     matchCount: pages.count,
                     activePage: $activePage,
+                    initialSheet: $initialSheet,
                     openList: { showingList = true }
                 )
                 .id(match.id)
@@ -198,10 +212,15 @@ private struct WatchMatchesListView: View {
 private struct WatchMatchPagerView: View {
     var model: WatchSnapshotModel
     let match: CompetitionWidgetSnapshot.Match
+    let trophies: [CompetitionWidgetSnapshot.Trophy]
     let date: Date
     let matchCount: Int
     @Binding var activePage: WatchMatchPage
+    @Binding var initialSheet: WatchCornerSheet?
     let openList: () -> Void
+
+    @State private var activeSheet: WatchCornerSheet?
+    @State private var focusedRing: CompetitionWidgetSnapshot.TodayRings.Row?
 
     private var showsToday: Bool {
         match.group == nil && (match.activeTodayRings(at: date) != nil || match.chase(at: date) != nil)
@@ -226,6 +245,22 @@ private struct WatchMatchPagerView: View {
         return list
     }
 
+    private var displayTrophies: [CompetitionWidgetSnapshot.Trophy] {
+        if !trophies.isEmpty { return trophies }
+        if let belt = match.belt {
+            let subtitle = match.beltDefensesText ?? (belt.holder == .you ? "Belt held" : "\(match.name) holds belt")
+            return [CompetitionWidgetSnapshot.Trophy(
+                id: "belt:\(match.id.uuidString)",
+                title: "Title Belt",
+                subtitle: subtitle,
+                engravedHeadline: belt.holder == .you ? "YOUR BELT · VS \(match.name.uppercased())" : "\(match.name.uppercased())’S BELT",
+                engravedDetail: subtitle,
+                isGold: belt.holder == .you
+            )]
+        }
+        return []
+    }
+
     var body: some View {
         TabView(selection: $activePage) {
             if let group = match.group {
@@ -245,8 +280,10 @@ private struct WatchMatchPagerView: View {
             }
 
             if showsToday {
-                WatchTodayRingsPage(match: match, date: date)
-                    .tag(WatchMatchPage.today)
+                WatchTodayRingsPage(match: match, date: date) { row in
+                    focusedRing = row
+                }
+                .tag(WatchMatchPage.today)
             }
 
             if showsWeek {
@@ -263,6 +300,16 @@ private struct WatchMatchPagerView: View {
         .onChange(of: availablePages) { _, pages in
             if !pages.contains(activePage) { activePage = .overview }
         }
+        .onAppear {
+            if let target = initialSheet {
+                initialSheet = nil
+                if target == .ring, let first = match.activeTodayRings(at: date)?.rows.first {
+                    focusedRing = first
+                } else {
+                    activeSheet = target
+                }
+            }
+        }
         .toolbar {
             if matchCount > 1 {
                 ToolbarItem(placement: .topBarLeading) {
@@ -274,6 +321,47 @@ private struct WatchMatchPagerView: View {
                     .accessibilityIdentifier("watch.matches.button")
                 }
             }
+            if showsWeek || !displayTrophies.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 4) {
+                        if !displayTrophies.isEmpty {
+                            Button { activeSheet = .trophies } label: {
+                                Image(systemName: "shield.fill")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(Theme.you)
+                            }
+                            .accessibilityLabel("Trophies")
+                            .accessibilityIdentifier("watch.trophies.button")
+                        }
+                        if showsWeek {
+                            Button { activeSheet = .summary } label: {
+                                Image(systemName: "chart.bar.fill")
+                                    .font(.caption2.weight(.bold))
+                            }
+                            .accessibilityLabel("Weekly summary")
+                            .accessibilityIdentifier("watch.summary.button")
+                        }
+                    }
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .summary:
+                WatchWeeklySummarySheet(match: match, date: date)
+            case .trophies:
+                WatchTrophySheet(trophies: displayTrophies)
+            case .ring:
+                if let first = match.activeTodayRings(at: date)?.rows.first {
+                    WatchFocusedRingSheet(row: first)
+                }
+            }
+        }
+        .sheet(item: Binding(
+            get: { focusedRing.map { WatchFocusedRingItem(row: $0) } },
+            set: { if $0 == nil { focusedRing = nil } }
+        )) { item in
+            WatchFocusedRingSheet(row: item.row)
         }
     }
 }
@@ -638,6 +726,7 @@ private struct WatchOverviewPage: View {
 private struct WatchTodayRingsPage: View {
     let match: CompetitionWidgetSnapshot.Match
     let date: Date
+    var selectRing: ((CompetitionWidgetSnapshot.TodayRings.Row) -> Void)? = nil
 
     @ScaledMetric(relativeTo: .body) private var scoreSize: CGFloat = 19
     @ScaledMetric(relativeTo: .footnote) private var ringPointsSize: CGFloat = 15
@@ -761,6 +850,8 @@ private struct WatchTodayRingsPage: View {
                                 }
                                 .frame(height: isCompact ? 5 : 6)
                             }
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectRing?(row) }
                         }
                     }
                     .padding(.horizontal, 9)
@@ -834,32 +925,43 @@ private struct WatchWeekChartPage: View {
                 }
                 .padding(.top, isCompact ? 6 : 8)
 
-                HStack(alignment: .bottom, spacing: isCompact ? 3 : 4) {
-                    ForEach(Array(days.enumerated()), id: \.offset) { _, day in
-                        VStack(spacing: 4) {
-                            GeometryReader { geo in
-                                HStack(alignment: .bottom, spacing: 2) {
-                                    barColumn(value: day.you, maxVal: maxPoints, height: geo.size.height, color: Theme.youFill)
-                                    barColumn(value: day.them, maxVal: maxPoints, height: geo.size.height, color: Theme.ink)
+                let barHeight: CGFloat = isCompact ? 52 : 62
+                let chartCeiling = max(maxPoints, match.baselineDailyAverage ?? 0)
+                ZStack(alignment: .bottom) {
+                    HStack(alignment: .bottom, spacing: isCompact ? 3 : 4) {
+                        ForEach(Array(days.enumerated()), id: \.offset) { _, day in
+                            VStack(spacing: 4) {
+                                GeometryReader { geo in
+                                    HStack(alignment: .bottom, spacing: 2) {
+                                        barColumn(value: day.you, maxVal: chartCeiling, height: geo.size.height, color: Theme.youFill)
+                                        barColumn(value: day.them, maxVal: chartCeiling, height: geo.size.height, color: Theme.ink)
+                                    }
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                                 }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                            }
-                            .frame(height: isCompact ? 52 : 62)
+                                .frame(height: barHeight)
 
-                            Text(day.day)
-                                .font(.caption2.weight(day.isToday ? .heavy : .semibold).width(.condensed))
-                                .foregroundStyle(day.isToday ? Theme.you : Theme.secondary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                        }
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 1.5)
-                        .background {
-                            if day.isToday {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.white.opacity(0.10))
+                                Text(day.day)
+                                    .font(.caption2.weight(day.isToday ? .heavy : .semibold).width(.condensed))
+                                    .foregroundStyle(day.isToday ? Theme.you : Theme.secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                            }
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 1.5)
+                            .background {
+                                if day.isToday {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color.white.opacity(0.10))
+                                }
                             }
                         }
+                    }
+                    if let baseline = match.baselineDailyAverage, baseline > 0 {
+                        let offset = min(1, max(0, baseline / chartCeiling)) * barHeight + 20
+                        Rectangle()
+                            .stroke(Color.white.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                            .frame(height: 1)
+                            .padding(.bottom, offset)
                     }
                 }
                 .padding(.horizontal, 6)
@@ -1490,5 +1592,306 @@ private struct WatchNothingView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(text.accessibilityLabel)
         .accessibilityIdentifier("watch.empty")
+    }
+}
+
+private struct WatchFocusedRingItem: Identifiable {
+    let row: CompetitionWidgetSnapshot.TodayRings.Row
+    var id: String { row.kind.rawValue }
+}
+
+private struct WatchFocusedRingSheet: View {
+    let row: CompetitionWidgetSnapshot.TodayRings.Row
+
+    @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 38
+
+    private var color: Color {
+        switch row.kind {
+        case .move: Theme.move
+        case .exercise: Theme.exercise
+        case .stand: Theme.stand
+        case .sleep: Theme.sleep
+        }
+    }
+
+    private var cap: Double {
+        row.kind == .sleep ? 100 : 200
+    }
+
+    var body: some View {
+        let points = row.points ?? 0
+        let remaining = max(0, cap - points)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(row.title.uppercased())
+                .themeLabel(tracking: 1.0)
+                .foregroundStyle(color)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(competitionPointsText(points))
+                    .font(.score(size: scoreSize))
+                    .foregroundStyle(Theme.ink)
+                Text("/ \(Int(cap))")
+                    .font(.caption.weight(.bold).width(.condensed))
+                    .foregroundStyle(Theme.secondary)
+            }
+            Text(row.detail)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.ink)
+                .privacySensitive()
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    SlantedBar().fill(Theme.track)
+                    SlantedBar()
+                        .fill(color)
+                        .frame(width: row.progress > 0 ? max(8, geo.size.width * min(1, row.progress)) : 0)
+                }
+            }
+            .frame(height: 8)
+            Text(remaining > 0 ? "\(competitionPointsText(remaining)) pts to cap" : "Ring cap reached")
+                .font(.caption2)
+                .foregroundStyle(Theme.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .containerBackground(
+            LinearGradient(
+                colors: [color.opacity(0.32), Color(hex: 0x0B0B0D)],
+                startPoint: .top,
+                endPoint: .bottom
+            ),
+            for: .navigation
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("watch.focusedRing")
+    }
+}
+
+private struct WatchWeeklySummarySheet: View {
+    let match: CompetitionWidgetSnapshot.Match
+    let date: Date
+
+    @ScaledMetric(relativeTo: .title2) private var numberSize: CGFloat = 24
+
+    var body: some View {
+        let days = match.playedDayPoints(at: date)
+        let playedYou = days.compactMap(\.you)
+        let avg = playedYou.isEmpty ? 0 : playedYou.reduce(0, +) / Double(playedYou.count)
+        let baseline = match.baselineDailyAverage
+        let ceiling = max((playedYou + [baseline ?? 0]).max() ?? 300, 100)
+        let headline: String = {
+            guard let baseline, baseline > 0 else {
+                return match.leadLine(at: date) ?? "Weekly pace"
+            }
+            let pct = Int(((avg - baseline) / baseline * 100).rounded(.toNearestOrAwayFromZero))
+            if abs(pct) <= 3 {
+                return "Right on your 28-day daily pace."
+            }
+            if pct > 0 {
+                return "\(pct)% ahead of your 28-day pace."
+            }
+            return "\(abs(pct))% below your 28-day pace."
+        }()
+
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("WEEKLY SUMMARY")
+                    .themeLabel(tracking: 1.0)
+                    .foregroundStyle(Theme.secondary)
+                Text(headline)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("DAILY AVG")
+                            .font(.caption2.weight(.bold).width(.condensed))
+                            .foregroundStyle(Theme.secondary)
+                        Text(playedYou.isEmpty ? "–" : competitionPointsText(avg))
+                            .font(.score(size: numberSize))
+                            .foregroundStyle(Theme.you)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10))
+                    if let baseline {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("28D BASE")
+                                .font(.caption2.weight(.bold).width(.condensed))
+                                .foregroundStyle(Theme.secondary)
+                            Text(competitionPointsText(baseline))
+                                .font(.score(size: numberSize))
+                                .foregroundStyle(Theme.ink)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+                ZStack(alignment: .bottom) {
+                    HStack(alignment: .bottom, spacing: 4) {
+                        ForEach(Array(days.enumerated()), id: \.offset) { _, day in
+                            let ratio = day.you.map { min(1, max(0.08, $0 / ceiling)) } ?? 0
+                            SlantedBar()
+                                .fill(day.you == nil ? Theme.track : Theme.youFill)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: day.you == nil ? 4 : 52 * ratio)
+                        }
+                    }
+                    .frame(height: 52, alignment: .bottom)
+                    if let baseline {
+                        Rectangle()
+                            .stroke(Color.white.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                            .frame(height: 1)
+                            .padding(.bottom, min(1, max(0, baseline / ceiling)) * 52)
+                    }
+                }
+                .padding(8)
+                .background(Theme.panel, in: RoundedRectangle(cornerRadius: 12))
+            }
+            .padding(.horizontal, 6)
+            .padding(.bottom, 6)
+        }
+        .containerBackground(
+            LinearGradient(
+                colors: [Theme.stand.opacity(0.28), Color(hex: 0x0B0B0D)],
+                startPoint: .topLeading,
+                endPoint: .bottom
+            ),
+            for: .navigation
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("watch.weeklySummary")
+    }
+}
+
+private struct WatchTrophySheet: View {
+    let trophies: [CompetitionWidgetSnapshot.Trophy]
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var crownAngle: Double = 0
+    @State private var index = 0
+
+    private var current: CompetitionWidgetSnapshot.Trophy {
+        trophies[min(index, max(0, trophies.count - 1))]
+    }
+
+    private var isBack: Bool {
+        let normalized = crownAngle.truncatingRemainder(dividingBy: 360)
+        let positive = normalized < 0 ? normalized + 360 : normalized
+        return positive >= 90 && positive < 270
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                if reduceMotion {
+                    if isBack { backPlate } else { frontPlate }
+                } else {
+                    ZStack {
+                        frontPlate.opacity(isBack ? 0 : 1)
+                        backPlate
+                            .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
+                            .opacity(isBack ? 1 : 0)
+                    }
+                    .rotation3DEffect(.degrees(crownAngle), axis: (x: 0, y: 1, z: 0), perspective: 0.45)
+                }
+            }
+            .frame(width: 112, height: 112)
+            .focusable()
+            .digitalCrownRotation(
+                $crownAngle,
+                from: -720,
+                through: 720,
+                by: 15,
+                sensitivity: .medium,
+                isContinuous: true,
+                isHapticFeedbackEnabled: true
+            )
+            .onTapGesture {
+                crownAngle += 180
+            }
+            .moving(Motion.settle, value: crownAngle)
+
+            Text(isBack ? "ENGRAVED REVERSE" : "TURN CROWN OR TAP")
+                .font(.caption2.weight(.bold).width(.condensed))
+                .tracking(0.8)
+                .foregroundStyle(Theme.secondary)
+
+            if trophies.count > 1 {
+                HStack(spacing: 6) {
+                    ForEach(trophies.indices, id: \.self) { i in
+                        Button {
+                            index = i
+                            crownAngle = 0
+                        } label: {
+                            Circle()
+                                .fill(i == index ? Theme.youFill : Theme.outline)
+                                .frame(width: 6, height: 6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .containerBackground(
+            LinearGradient(
+                colors: [Theme.youFill.opacity(0.22), Color(hex: 0x0B0B0D)],
+                startPoint: .top,
+                endPoint: .bottom
+            ),
+            for: .navigation
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(current.title), \(current.subtitle). \(current.engravedHeadline). \(current.engravedDetail).")
+        .accessibilityIdentifier("watch.trophies")
+    }
+
+    private var frontPlate: some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        return VStack(spacing: 6) {
+            WatchBeltPlate(gold: current.isGold)
+                .frame(height: 28)
+            Text(current.title.uppercased())
+                .font(.caption.weight(.heavy).width(.condensed))
+                .foregroundStyle(Theme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Text(current.subtitle.uppercased())
+                .font(.caption2.weight(.bold).width(.condensed))
+                .foregroundStyle(current.isGold ? Theme.you : Theme.secondary)
+                .lineLimit(1)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.beltWell, in: shape)
+        .overlay {
+            shape.strokeBorder(current.isGold ? Theme.youFill : Theme.outline, lineWidth: 1.5)
+        }
+    }
+
+    private var backPlate: some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        return VStack(spacing: 4) {
+            Text("ENGRAVED")
+                .font(.caption2.weight(.heavy).width(.condensed))
+                .foregroundStyle(Color(hex: 0x1A1304).opacity(0.7))
+            Text(current.engravedHeadline)
+                .font(.caption.weight(.heavy).width(.condensed))
+                .foregroundStyle(Color(hex: 0x1A1304))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+            Text(current.engravedDetail)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color(hex: 0x1A1304).opacity(0.85))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.youFill, in: shape)
     }
 }
