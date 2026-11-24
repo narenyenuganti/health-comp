@@ -116,19 +116,55 @@ extension CompetitionWidgetSnapshot {
     init(dashboard: CompetitionDashboard) {
         let competitions = dashboard.competitions
         let records = competitionOpponentRecords(competitions)
+        let baseline = competitionDailyBaselineAverage(competitions)
+        let trophies = Self.buildTrophies(competitions: competitions, records: records)
         self.init(
             matches: competitions.compactMap { competition in
                 Match(presentation: competition).map {
                     var match = $0
                     match.belt = Belt(for: competition, records: records, in: competitions)
                     match.rivalry = Rivalry(for: competition, records: records, in: competitions)
+                    match.baselineDailyAverage = baseline
                     return match
                 }
             } + dashboard.groupMatches.compactMap(Match.init(group:)),
             hasIncomingChallenge: competitions.contains {
                 if case .pending(.incoming, _, _) = $0.lifecycle { true } else { false }
-            }
+            },
+            trophies: trophies.isEmpty ? nil : trophies
         )
+    }
+
+    private static func buildTrophies(
+        competitions: [LocalCompetitionPresentation],
+        records: [CompetitionOpponentRecord]
+    ) -> [Trophy] {
+        var result: [Trophy] = []
+        for record in records where record.belt.holder == .you
+            && record.opponentDisplayName != competitionFormerCompetitorName {
+            let defenses = record.belt.current?.defenses ?? 0
+            let subtitle = defenses > 0 ? (defenses == 1 ? "1 defense" : "\(defenses) defenses") : "Belt held"
+            result.append(Trophy(
+                id: "belt:\(record.opponentIdentity)",
+                title: "Title Belt",
+                subtitle: subtitle,
+                engravedHeadline: "YOUR BELT · VS \(record.opponentDisplayName.uppercased())",
+                engravedDetail: "\(record.wins)–\(record.losses) all-time · \(subtitle)",
+                isGold: true
+            ))
+        }
+        for badge in competitionBadgeBook(competitions).badges where badge.isEarned {
+            let week = competitions.first { $0.id == badge.latest }
+            result.append(Trophy(
+                id: "badge:\(badge.kind.rawValue)",
+                title: badge.kind.name,
+                subtitle: "Earned \(badge.countText)",
+                engravedHeadline: badge.kind.name.uppercased(),
+                engravedDetail: week.map { "Latest · vs \($0.opponentDisplayName)" } ?? badge.kind.rule,
+                isGold: true
+            ))
+        }
+        return Array(result.prefix(8))
     }
 }
 

@@ -7,6 +7,16 @@ struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
     var version = Self.currentVersion
     var matches: [Match]
     var hasIncomingChallenge: Bool
+    var trophies: [Trophy]? = nil
+
+    struct Trophy: Codable, Equatable, Sendable, Identifiable {
+        var id: String
+        var title: String
+        var subtitle: String
+        var engravedHeadline: String
+        var engravedDetail: String
+        var isGold: Bool
+    }
 
     struct Match: Codable, Equatable, Sendable {
         var id: UUID
@@ -28,6 +38,7 @@ struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
         var todayRings: TodayRings? = nil
         var rivalry: Rivalry? = nil
         var customMetrics: [TodayRings.RingKind]? = nil
+        var baselineDailyAverage: Double? = nil
     }
 
     struct TodayRings: Codable, Equatable, Sendable {
@@ -684,9 +695,30 @@ extension CompetitionWidgetSnapshot {
             matches = [match(5, "Sam", currentDay: 9, you: 1_840.25, them: 1_840.40,
                              youDays: theirs, themDays: week, final: .loss)]
         case "beltLive":
-            matches = [match(5, "Sam", currentDay: 5, you: 1_204, them: 1_150, youDays: week, themDays: theirs,
-                             belt: Belt(holder: .you, defenses: 2),
-                             todayRings: liveRings, rivalry: samRivalry)]
+            var liveBelt = match(5, "Sam", currentDay: 5, you: 1_204, them: 1_150, youDays: week, themDays: theirs,
+                                 belt: Belt(holder: .you, defenses: 2),
+                                 todayRings: liveRings, rivalry: samRivalry)
+            liveBelt.baselineDailyAverage = 228
+            matches = [liveBelt]
+            let trophies = [
+                Trophy(
+                    id: "belt:sam",
+                    title: "Title Belt",
+                    subtitle: "2 defenses",
+                    engravedHeadline: "YOUR BELT · VS SAM",
+                    engravedDetail: "4–2 all-time · 2 defenses",
+                    isGold: true
+                ),
+                Trophy(
+                    id: "badge:comeback",
+                    title: "Comeback",
+                    subtitle: "Earned ×2",
+                    engravedHeadline: "COMEBACK · WON WEEK",
+                    engravedDetail: "Trailed entering Day 7 · vs Sam",
+                    isGold: true
+                ),
+            ]
+            return Self(matches: matches, hasIncomingChallenge: hasIncomingChallenge, trophies: trophies)
         case "beltTrailing":
             matches = [match(5, "Sam", currentDay: 3, you: 610, them: 664, youDays: [200, 210, 200],
                              themDays: [220, 224, 220], belt: Belt(holder: .them, defenses: 1),

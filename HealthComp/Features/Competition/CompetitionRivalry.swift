@@ -539,6 +539,7 @@ struct CompetitionRecordsView: View {
                     .accessibilityIdentifier("competition.records.year")
                 }
                 weeklyPoints(weeks, name: name)
+                CompetitionRivalryTrendTiles(weeks: weeks)
                 let records = competitionRivalryRecords(
                     weeks, opponentName: name, now: publication.evaluatedAt, year: shown?.year, locale: locale
                 )

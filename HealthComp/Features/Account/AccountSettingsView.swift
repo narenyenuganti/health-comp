@@ -153,6 +153,7 @@ struct AccountSettingsView: View {
     private var appearance = AppAppearance.system
     @AppStorage(Sounds.enabledKey) private var soundsAreOn = true
     @AppStorage(SleepBeta.sourceKey) private var sleepSource = SleepSourcePreference.automatic.rawValue
+    @AppStorage(CornerTimeoutStorage.untilKey) private var cornerTimeoutUntil: Double = 0
     @State private var challengeCodeItem: ChallengeCodeSheetItem?
     @State private var hasLoaded = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -580,6 +581,22 @@ struct AccountSettingsView: View {
                 }
             }
             .accessibilityIdentifier("account.sounds")
+
+            NavigationLink {
+                AccountCornerTimeoutPage()
+            } label: {
+                LabeledContent {
+                    Text(
+                        CornerTimeoutStorage.isActive(
+                            at: .now,
+                            until: cornerTimeoutUntil > 0 ? Date(timeIntervalSince1970: cornerTimeoutUntil) : nil
+                        ) ? "On" : "Off"
+                    )
+                } label: {
+                    Label("Corner Timeout", systemImage: "pause.circle")
+                }
+            }
+            .accessibilityIdentifier("account.corner-timeout")
 
             Button { isTourPresented = true } label: {
                 Label("Take the Tour", systemImage: "hand.tap")

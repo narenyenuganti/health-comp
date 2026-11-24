@@ -233,6 +233,22 @@ final class HealthCompWatchUITests: XCTestCase {
         XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 5))
     }
 
+    func testWeeklySummaryTrophiesAndFocusedRingSheets() {
+        let summaryApp = launch("beltLive", "--watch-sheet", "summary")
+        XCTAssertTrue(element(summaryApp, "watch.weeklySummary").waitForExistence(timeout: 15))
+        shoot(summaryApp, "watch-weekly-summary")
+
+        let trophyApp = launch("beltLive", "--watch-sheet", "trophies")
+        let trophies = element(trophyApp, "watch.trophies")
+        XCTAssertTrue(trophies.waitForExistence(timeout: 15))
+        XCTAssertTrue(trophies.label.contains("Title Belt"), trophies.label)
+        shoot(trophyApp, "watch-trophies")
+
+        let ringApp = launch("beltLive", "--watch-sheet", "ring")
+        XCTAssertTrue(element(ringApp, "watch.focusedRing").waitForExistence(timeout: 15))
+        shoot(ringApp, "watch-focused-ring")
+    }
+
     func testComplicationOnTheFace() throws {
         XCTAssertTrue(element(launch("live"), "watch.match").waitForExistence(timeout: 15))
         let face = XCUIApplication(bundleIdentifier: "com.apple.Carousel")
