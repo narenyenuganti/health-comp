@@ -302,8 +302,11 @@ final class FriendsAccountUITests: XCTestCase {
     }
 
     private func waitForStatus(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
+        let message = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@ AND label == %@", "account.username.status", expected))
+            .firstMatch
         XCTAssertTrue(
-            waitUntil(5) { self.status.exists && self.status.label == expected },
+            message.waitForExistence(timeout: 5),
             "Expected '\(expected)'; \(shown)",
             file: file, line: line
         )
