@@ -1,4 +1,4 @@
--- Callable catalogue for build 1.0.8 (8).
+-- Callable catalogue for build 1.0.9 (9).
 begin;
 
 set local role postgres;
@@ -89,6 +89,7 @@ select is_empty($released$
     ('set_current_notification_mute', 'jsonb', '{"opponent_profile_id uuid","is_muted boolean"}'::text[], '{"opponent_profile_id uuid","is_muted boolean"}'::text[]),
     ('set_profile_photo', 'jsonb', '{"photo_version uuid"}'::text[], '{"photo_version uuid"}'::text[]),
     ('set_username', 'jsonb', '{"username text"}'::text[], '{"username text"}'::text[]),
+    ('sign_up_with_username', 'jsonb', '{"username text"}'::text[], '{"username text"}'::text[]),
     ('submit_attested_score_revision', 'jsonb', '{"grant_id uuid","competition_id uuid","semantic_event_id uuid","day_ordinal integer","client_revision bigint","evaluated_at timestamp with time zone","move_mode text","stand_mode text","move_basis_points integer","exercise_basis_points integer","stand_basis_points integer","availability_reason text","scoring_policy_identity text","payload_sha256 text","expected_wire_content_sha256 text"}'::text[], '{"grant_id uuid","competition_id uuid","semantic_event_id uuid","day_ordinal integer","client_revision bigint","evaluated_at timestamp with time zone","move_mode text","stand_mode text","move_basis_points integer","exercise_basis_points integer","stand_basis_points integer","availability_reason text","scoring_policy_identity text","payload_sha256 text","expected_wire_content_sha256 text"}'::text[]),
     ('submit_sleep_night', 'jsonb', '{"competition_id uuid","day_ordinal integer","sleep_basis_points integer"}'::text[], '{"competition_id uuid","day_ordinal integer","sleep_basis_points integer"}'::text[]),
     ('unblock_profile', 'jsonb', '{"profile_id uuid"}'::text[], '{"profile_id uuid"}'::text[]),
@@ -109,7 +110,7 @@ select is_empty($released$
         and array(select split_part(x, ' ', 1) from unnest(c.required) x)
           <@ array(select split_part(x, ' ', 1) from unnest(r.args) x)) <> 1
 $released$,
-  'builds up to 1.0.8 (8) can still call every function they shipped with; if not, keep the old function and add the change as optional arguments or a new overload');
+  'builds up to 1.0.9 (9) can still call every function they shipped with; if not, keep the old function and add the change as optional arguments or a new overload');
 
 select * from finish();
 rollback;
