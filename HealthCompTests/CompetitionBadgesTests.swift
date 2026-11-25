@@ -9,6 +9,35 @@ final class CompetitionBadgesTests: XCTestCase {
     private let locale = Locale(identifier: "en_US")
     private let zone = "America/Los_Angeles"
 
+    func testBadgesFallIntoThreeMedalFamilies() {
+        XCTAssertEqual(
+            CompetitionBadgeKind.allCases.filter { $0.medalFamily == .weekly },
+            [.sweep, .comeback, .photoFinish, .tripleCrown, .fullWeek]
+        )
+        XCTAssertEqual(
+            CompetitionBadgeKind.allCases.filter { $0.medalFamily == .reign },
+            [.defender, .hotStreak, .collector, .rival]
+        )
+        XCTAssertEqual(CompetitionMedalArt.rival(initial: competitionMedalInitial("sam")), .rival(initial: "S"))
+        XCTAssertEqual(CompetitionMedalArt.rival(initial: "S").family, .rival)
+        XCTAssertEqual(competitionMedalInitial(""), "?")
+    }
+
+    @MainActor
+    func testEveryMedalDrawsInEachState() {
+        let arts = CompetitionBadgeKind.allCases.map(CompetitionMedalArt.badge) + [.rival(initial: "S")]
+        for art in arts {
+            for isEarned in [true, false] {
+                let renderer = ImageRenderer(content: CompetitionMedal(art: art, isEarned: isEarned, size: 80))
+                XCTAssertEqual(renderer.uiImage?.size, CGSize(width: 80, height: 80), "\(art) earned: \(isEarned)")
+            }
+        }
+        for family in [CompetitionMedalFamily.weekly, .reign, .rival] {
+            let back = CompetitionMedalBack(family: family, kicker: "Engraved", headline: "Comeback", detail: "412–398")
+            XCTAssertNotNil(ImageRenderer(content: back).uiImage)
+        }
+    }
+
     func testAWeeksFeatsEarnTheirBadges() {
         let weeks = [
             week(0, you: Array(repeating: 300, count: 7), them: Array(repeating: 290, count: 7)),
