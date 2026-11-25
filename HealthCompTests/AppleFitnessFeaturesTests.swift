@@ -8,6 +8,19 @@ final class AppleFitnessFeaturesTests: XCTestCase {
     private let locale = Locale(identifier: "en_US")
     private let zone = "America/Los_Angeles"
 
+    func testRingStackKeepsOneFootprintForOneToFourRings() {
+        XCTAssertEqual(CompetitionRingStackLayout(size: 200, count: 1).lineWidth, 30, accuracy: 0.001)
+        for size in [26.0, 74, 200] as [CGFloat] {
+            for count in 1...4 {
+                let layout = CompetitionRingStackLayout(size: size, count: count)
+                XCTAssertGreaterThan(layout.lineWidth, 0)
+                XCTAssertLessThanOrEqual(layout.diameter(0) + layout.lineWidth, size + 0.001)
+                let innermost = layout.diameter(count - 1) / 2 - layout.lineWidth / 2
+                XCTAssertGreaterThanOrEqual(innermost, layout.hole - 0.001, "\(count) rings at \(size) pt")
+            }
+        }
+    }
+
     func testRivalTrophiesAndCalendarEntries() {
         let weeks = [
             week(0, "Maya", you: Array(repeating: 420, count: 7), them: Array(repeating: 380, count: 7)),

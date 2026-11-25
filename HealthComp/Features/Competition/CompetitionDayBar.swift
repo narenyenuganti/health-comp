@@ -78,3 +78,58 @@ struct HatchBar: View {
             .clipShape(SlantedBar())
     }
 }
+
+struct CompetitionRing: Equatable {
+    let color: Color
+    let progress: Double
+}
+
+struct CompetitionRingStackLayout: Equatable {
+    let size: CGFloat
+    let count: Int
+
+    var lineWidth: CGFloat {
+        let radius = size / 2
+        let available = radius - padding - hole - gap * CGFloat(max(count - 1, 0))
+        return min(size * 0.15, available / CGFloat(max(count, 1)))
+    }
+
+    var hole: CGFloat { size * (size < 40 ? 0.08 : 0.13) }
+
+    func diameter(_ index: Int) -> CGFloat {
+        let radius = size / 2 - padding - lineWidth / 2 - CGFloat(index) * (lineWidth + gap)
+        return radius * 2
+    }
+
+    private var padding: CGFloat { size * 0.015 }
+    private var gap: CGFloat { max(0.7, size * 0.025) }
+}
+
+struct CompetitionRingStack: View {
+    let rings: [CompetitionRing]
+    var track: Color = Theme.track
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = min(proxy.size.width, proxy.size.height)
+            let layout = CompetitionRingStackLayout(size: size, count: rings.count)
+            ZStack {
+                ForEach(rings.indices, id: \.self) { index in
+                    let diameter = layout.diameter(index)
+                    Circle()
+                        .stroke(track, lineWidth: layout.lineWidth)
+                        .frame(width: diameter, height: diameter)
+                    Circle()
+                        .trim(from: 0, to: min(max(rings[index].progress, 0), 0.999))
+                        .stroke(rings[index].color, style: StrokeStyle(lineWidth: layout.lineWidth, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: diameter, height: diameter)
+                        .opacity(rings[index].progress > 0 ? 1 : 0)
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .accessibilityHidden(true)
+    }
+}
