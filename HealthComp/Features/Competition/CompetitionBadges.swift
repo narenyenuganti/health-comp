@@ -494,9 +494,7 @@ struct CompetitionChampionshipPlate: View {
     let art: CompetitionMedalArt
     let title: String
     let subtitle: String
-    let engravedKicker: String
-    let engravedHeadline: String
-    let engravedDetail: String
+    let engravedLines: [String]
     let isEarned: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -561,18 +559,11 @@ struct CompetitionChampionshipPlate: View {
             .accessibilityAddTraits(isEarned ? .isButton : [])
             .accessibilityLabel(
                 isShowingBack
-                    ? "\(title) reverse engraved: \(engravedHeadline). \(engravedDetail)."
+                    ? "\(title), back: \(engravedLines.joined(separator: ", "))."
                     : "\(title), \(subtitle)."
             )
             .accessibilityHint(isEarned ? "Double tap to flip plate" : "")
             .accessibilityIdentifier("competition.plate.3d")
-
-            if isEarned {
-                Text(isShowingBack ? "ENGRAVED REVERSE · TAP TO FLIP" : "DRAG OR TAP TO INSPECT REVERSE")
-                    .font(.caption2.weight(.bold).width(.condensed))
-                    .tracking(1.0)
-                    .foregroundStyle(Theme.secondary)
-            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 18)
@@ -593,9 +584,7 @@ struct CompetitionChampionshipPlate: View {
     private var backFace: some View {
         CompetitionMedalBack(
             family: art.family,
-            kicker: engravedKicker,
-            headline: engravedHeadline,
-            detail: engravedDetail
+            lines: engravedLines
         )
     }
 }
@@ -781,9 +770,7 @@ struct CompetitionBadgeSheet: View {
                     art: .badge(badge.kind),
                     title: badge.kind.name,
                     subtitle: badge.isEarned ? "Earned \(badge.countText)" : badge.countText,
-                    engravedKicker: "Engraved · HealthComp",
-                    engravedHeadline: engravedHeadline,
-                    engravedDetail: engravedDetail,
+                    engravedLines: engravedLines,
                     isEarned: badge.isEarned
                 )
                 Text(badge.kind.name)
@@ -833,18 +820,12 @@ struct CompetitionBadgeSheet: View {
         .accessibilityIdentifier("competition.badge.sheet")
     }
 
-    private var engravedHeadline: String {
-        guard let week else { return badge.kind.name }
-        let margin = competitionPointsText(abs(week.userPoints - week.opponentPoints), locale: locale)
-        return "\(badge.kind.name) · +\(margin) vs \(week.opponentDisplayName)"
-    }
-
-    private var engravedDetail: String {
-        guard let week else { return badge.kind.rule }
+    private var engravedLines: [String] {
+        guard let week else { return [badge.kind.name] }
         let range = week.acceptedConfiguration.flatMap {
             competitionScheduleDateRangeText($0.schedule, now: now, locale: locale)
-        } ?? ""
-        return "\(competitionPointsText(week.userPoints, locale: locale))–\(competitionPointsText(week.opponentPoints, locale: locale)) · \(range)"
+        }
+        return [badge.kind.name, competitionWeekVersusText(week)] + (range.map { [$0] } ?? [])
     }
 
     private func latestText(_ week: LocalCompetitionPresentation) -> String {
@@ -872,9 +853,7 @@ struct CompetitionRivalTrophySheet: View {
                     art: .rival(initial: competitionMedalInitial(trophy.opponentDisplayName)),
                     title: "vs \(trophy.opponentDisplayName)",
                     subtitle: "Rival Plate ×\(trophy.wins)",
-                    engravedKicker: "Rivalry Record · \(trophy.recordText)",
-                    engravedHeadline: "\(competitionOrdinalText(trophy.wins)) win over \(trophy.opponentDisplayName)",
-                    engravedDetail: "Latest · \(range)",
+                    engravedLines: [trophy.recordText, "vs \(trophy.opponentDisplayName)"],
                     isEarned: true
                 )
                 Text("Victory over \(trophy.opponentDisplayName)")
@@ -1074,9 +1053,7 @@ struct CompetitionMedal: View {
 
 struct CompetitionMedalBack: View {
     let family: CompetitionMedalFamily
-    let kicker: String
-    let headline: String
-    let detail: String
+    let lines: [String]
     var size: CGFloat = 176
 
     @Environment(\.locale) private var locale
@@ -1088,10 +1065,10 @@ struct CompetitionMedalBack: View {
                 context.scaleBy(x: canvas.width / 120, y: canvas.height / 120)
                 MedalPainter(finish: .earned).back(family, in: &context)
             }
-            VStack(spacing: size * 0.012) {
-                engraved(kicker, size: 0.05, weight: .heavy)
-                engraved(headline, size: 0.075, weight: .heavy, lines: 2)
-                engraved(detail, size: 0.05, weight: .bold, lines: 2)
+            VStack(spacing: size * 0.014) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                    engraved(line, size: index == 0 ? 0.09 : 0.058, weight: index == 0 ? .heavy : .bold)
+                }
             }
             .multilineTextAlignment(.center)
             .frame(width: size * (family == .reign ? 0.5 : 0.58))
@@ -1100,14 +1077,14 @@ struct CompetitionMedalBack: View {
         .frame(width: size, height: size)
     }
 
-    private func engraved(_ text: String, size scale: CGFloat, weight: Font.Weight, lines: Int = 1) -> some View {
+    private func engraved(_ text: String, size scale: CGFloat, weight: Font.Weight) -> some View {
         Text(text.uppercased(with: locale))
             .font(.system(size: size * scale, weight: weight).width(.condensed))
             .tracking(0.4)
             .foregroundStyle(Color(hex: 0x6E4706))
             .shadow(color: Color(hex: 0xFCE9B4).opacity(0.8), radius: 0, y: size * 0.006)
-            .lineLimit(lines)
-            .minimumScaleFactor(0.7)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
     }
 }
 

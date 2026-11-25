@@ -33,7 +33,7 @@ final class CompetitionBadgesTests: XCTestCase {
             }
         }
         for family in [CompetitionMedalFamily.weekly, .reign, .rival] {
-            let back = CompetitionMedalBack(family: family, kicker: "Engraved", headline: "Comeback", detail: "412–398")
+            let back = CompetitionMedalBack(family: family, lines: ["Comeback", "beat Sam", "Oct 12 – 18"])
             XCTAssertNotNil(ImageRenderer(content: back).uiImage)
         }
     }
