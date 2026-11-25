@@ -34,20 +34,6 @@ enum CompetitionBadgeKind: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var symbol: String {
-        switch self {
-        case .sweep: "checkmark.seal"
-        case .comeback: "arrow.uturn.up"
-        case .photoFinish: "flag.checkered"
-        case .tripleCrown: "crown"
-        case .defender: "shield"
-        case .fullWeek: "calendar"
-        case .hotStreak: "flame"
-        case .collector: "square.stack.3d.up"
-        case .rival: "person.2"
-        }
-    }
-
     var goal: Int? {
         switch self {
         case .defender, .collector: 3
@@ -358,18 +344,7 @@ struct CompetitionBadgePlate: View {
     var size: CGFloat = 46
 
     var body: some View {
-        Image(systemName: kind.symbol)
-            .font(.system(size: size * 0.42, weight: .semibold))
-            .foregroundStyle(isEarned ? Theme.onYouFill : Theme.tertiary)
-            .frame(width: size, height: size)
-            .background {
-                if isEarned {
-                    Circle().fill(Theme.youFill)
-                } else {
-                    Circle().strokeBorder(Theme.outline, lineWidth: 1.5)
-                }
-            }
-            .accessibilityHidden(true)
+        CompetitionMedal(art: .badge(kind), isEarned: isEarned, size: size)
     }
 }
 
@@ -516,12 +491,10 @@ func competitionRivalTrophies(
 }
 
 struct CompetitionChampionshipPlate: View {
-    let symbol: String
+    let art: CompetitionMedalArt
     let title: String
     let subtitle: String
-    let engravedKicker: String
-    let engravedHeadline: String
-    let engravedDetail: String
+    let engravedLines: [String]
     let isEarned: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -586,18 +559,11 @@ struct CompetitionChampionshipPlate: View {
             .accessibilityAddTraits(isEarned ? .isButton : [])
             .accessibilityLabel(
                 isShowingBack
-                    ? "\(title) reverse engraved: \(engravedHeadline). \(engravedDetail)."
+                    ? "\(title), back: \(engravedLines.joined(separator: ", "))."
                     : "\(title), \(subtitle)."
             )
             .accessibilityHint(isEarned ? "Double tap to flip plate" : "")
             .accessibilityIdentifier("competition.plate.3d")
-
-            if isEarned {
-                Text(isShowingBack ? "ENGRAVED REVERSE · TAP TO FLIP" : "DRAG OR TAP TO INSPECT REVERSE")
-                    .font(.caption2.weight(.bold).width(.condensed))
-                    .tracking(1.0)
-                    .foregroundStyle(Theme.secondary)
-            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 18)
@@ -611,88 +577,15 @@ struct CompetitionChampionshipPlate: View {
     }
 
     private var frontFace: some View {
-        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
-        return VStack(spacing: 10) {
-            HStack(spacing: 5) {
-                SlantedBar().fill(isEarned ? Theme.move : Theme.outline).frame(width: 7, height: 22)
-                SlantedBar().fill(isEarned ? Theme.exercise : Theme.outline).frame(width: 7, height: 22)
-                SlantedBar().fill(isEarned ? Theme.stand : Theme.outline).frame(width: 7, height: 22)
-            }
-            Image(systemName: symbol)
-                .font(.title2.weight(.bold))
-                .foregroundStyle(isEarned ? Theme.youFill : Theme.tertiary)
-            VStack(spacing: 2) {
-                Text(title.uppercased())
-                    .font(.subheadline.weight(.heavy).width(.condensed))
-                    .tracking(0.8)
-                    .foregroundStyle(Color(hex: 0xF5F5F0))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                Text(subtitle.uppercased())
-                    .font(.caption2.weight(.bold).width(.condensed))
-                    .tracking(1.0)
-                    .foregroundStyle(isEarned ? Theme.youFill : Theme.tertiary)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            LinearGradient(
-                colors: isEarned
-                    ? [Color(hex: 0x262118), Color(hex: 0x131316), Color(hex: 0x2A2213)]
-                    : [Color(hex: 0x1E1E22), Color(hex: 0x141416)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: shape
-        )
-        .overlay {
-            shape.strokeBorder(
-                isEarned ? Theme.youFill.opacity(0.75) : Theme.outline.opacity(0.45),
-                lineWidth: 2
-            )
-        }
+        CompetitionMedal(art: art, isEarned: isEarned, size: 176)
+            .environment(\.colorScheme, .dark)
     }
 
     private var backFace: some View {
-        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
-        return VStack(spacing: 6) {
-            Text(engravedKicker.uppercased())
-                .font(.caption2.weight(.heavy).width(.condensed))
-                .tracking(1.2)
-                .foregroundStyle(Color(hex: 0x1A1304).opacity(0.72))
-                .lineLimit(1)
-            Text(engravedHeadline.uppercased())
-                .font(.headline.weight(.heavy).width(.condensed))
-                .tracking(0.5)
-                .foregroundStyle(Color(hex: 0x1A1304))
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.75)
-            Rectangle()
-                .fill(Color(hex: 0x1A1304).opacity(0.28))
-                .frame(width: 42, height: 1)
-                .padding(.vertical, 2)
-            Text(engravedDetail)
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(Color(hex: 0x1A1304).opacity(0.84))
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            LinearGradient(
-                colors: [Theme.youFill, Color(hex: 0xC78200), Color(hex: 0x9C6400)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: shape
+        CompetitionMedalBack(
+            family: art.family,
+            lines: engravedLines
         )
-        .overlay {
-            shape.strokeBorder(Color(hex: 0xFFD166), lineWidth: 2)
-        }
     }
 }
 
@@ -705,65 +598,53 @@ struct CompetitionBadgesView: View {
     @State private var pendingWeek: CompetitionID?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
-    @ScaledMetric(relativeTo: .headline) private var plateSize: CGFloat = 56
+    @ScaledMetric(relativeTo: .headline) private var medalSize: CGFloat = 80
 
     var body: some View {
         let competitions = publication.dashboard.competitions
         let book = competitionBadgeBook(competitions)
         let rivals = competitionRivalTrophies(competitions)
-        let columns = dynamicTypeSize.isAccessibilitySize ? 1 : 3
-        let rows = stride(from: 0, to: book.badges.count, by: columns).map {
-            Array(book.badges[$0..<min($0 + columns, book.badges.count)])
-        }
+        let earned = book.badges.filter(\.isEarned)
+        let notYet = book.badges.filter { !$0.isEarned }
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        SectionLabel("EARNED")
-                        Spacer(minLength: 8)
-                        Text("\(book.badges.filter(\.isEarned).count) OF \(book.badges.count)")
-                            .themeLabel()
+            VStack(alignment: .leading, spacing: 28) {
+                section("EARNED", count: "\(earned.count) OF \(book.badges.count)", countIdentifier: "competition.badges.count") {
+                    if earned.isEmpty {
+                        Text("Win a week to earn your first badge.")
+                            .font(.subheadline)
                             .foregroundStyle(Theme.secondary)
-                            .accessibilityIdentifier("competition.badges.count")
-                    }
-                    .padding(.horizontal, 4)
-                    Grid(horizontalSpacing: 10, verticalSpacing: 10) {
-                        ForEach(rows.indices, id: \.self) { index in
-                            GridRow {
-                                ForEach(rows[index]) { badge in
-                                    Button { shown = badge } label: { card(badge) }
-                                        .buttonStyle(CompetitionPressButtonStyle())
-                                        .accessibilityLabel(badge.accessibilityText)
-                                        .accessibilityIdentifier("competition.badge.\(badge.kind.rawValue)")
-                                }
-                            }
-                        }
+                            .padding(.horizontal, 4)
+                    } else {
+                        grid(earned) { badgeButton($0) }
                     }
                 }
 
                 if !rivals.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            SectionLabel("RIVAL TROPHIES")
-                            Spacer(minLength: 8)
-                            Text("\(rivals.count)")
-                                .themeLabel()
-                                .foregroundStyle(Theme.secondary)
-                        }
-                        .padding(.horizontal, 4)
-                        VStack(spacing: 0) {
-                            ForEach(Array(rivals.enumerated()), id: \.element.id) { index, trophy in
-                                if index > 0 { CompetitionRowDivider(inset: 16) }
-                                Button { shownRival = trophy } label: { rivalRow(trophy) }
-                                    .buttonStyle(CompetitionRowButtonStyle())
-                                    .accessibilityIdentifier("competition.badge.rival.\(trophy.opponentIdentity)")
+                    section("RIVAL TROPHIES", count: "\(rivals.count)") {
+                        grid(rivals) { trophy in
+                            Button { shownRival = trophy } label: {
+                                medalCell(
+                                    art: .rival(initial: competitionMedalInitial(trophy.opponentDisplayName)),
+                                    isEarned: true,
+                                    name: trophy.opponentDisplayName,
+                                    count: "×\(trophy.wins)"
+                                )
                             }
+                            .buttonStyle(CompetitionPressButtonStyle())
+                            .accessibilityLabel(
+                                "Victory over \(trophy.opponentDisplayName), \(competitionTimesText(trophy.wins)). Record \(trophy.recordText)."
+                            )
+                            .accessibilityIdentifier("competition.badge.rival.\(trophy.opponentIdentity)")
                         }
-                        .themePanel()
-                        .clipShape(RoundedRectangle(cornerRadius: 20))
                     }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("competition.badges.rivals")
+                }
+
+                if !notYet.isEmpty {
+                    section("NOT YET", count: "\(notYet.count)") {
+                        grid(notYet) { badgeButton($0) }
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -808,56 +689,68 @@ struct CompetitionBadgesView: View {
         }
     }
 
-    private func rivalRow(_ trophy: CompetitionRivalTrophy) -> some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Theme.beltWell)
-                    .frame(width: 42, height: 42)
-                Image(systemName: trophy.holdsBelt ? "trophy.fill" : "shield.fill")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Theme.youFill)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Victory over \(trophy.opponentDisplayName)")
-                    .font(.headline)
-                    .foregroundStyle(Theme.ink)
-                Text("Record \(trophy.recordText) · \(trophy.holdsBelt ? "Belt held" : "Rival plate")")
-                    .font(.subheadline)
+    private func section<Content: View>(
+        _ title: String,
+        count: String,
+        countIdentifier: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                SectionLabel(title)
+                Spacer(minLength: 8)
+                Text(count)
+                    .themeLabel()
                     .foregroundStyle(Theme.secondary)
+                    .accessibilityIdentifier(countIdentifier ?? "")
             }
-            Spacer(minLength: 8)
-            Text("×\(trophy.wins)")
-                .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
-                .foregroundStyle(Theme.you)
-            DisclosureChevron()
+            .padding(.horizontal, 4)
+            content()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
     }
 
-    private func card(_ badge: CompetitionBadge) -> some View {
-        VStack(spacing: 8) {
-            CompetitionBadgePlate(kind: badge.kind, isEarned: badge.isEarned, size: min(plateSize, 72))
-            Text(badge.kind.name)
+    private func grid<Item: Identifiable, Cell: View>(
+        _ items: [Item],
+        @ViewBuilder cell: @escaping (Item) -> Cell
+    ) -> some View {
+        let columns = dynamicTypeSize.isAccessibilitySize ? 1 : 3
+        let rows = stride(from: 0, to: items.count, by: columns).map { Array(items[$0..<min($0 + columns, items.count)]) }
+        return Grid(alignment: .top, horizontalSpacing: 8, verticalSpacing: 22) {
+            ForEach(rows.indices, id: \.self) { index in
+                GridRow {
+                    ForEach(rows[index]) { cell($0) }
+                    ForEach(rows[index].count..<columns, id: \.self) { _ in
+                        Color.clear.gridCellUnsizedAxes(.vertical)
+                    }
+                }
+            }
+        }
+    }
+
+    private func badgeButton(_ badge: CompetitionBadge) -> some View {
+        Button { shown = badge } label: {
+            medalCell(art: .badge(badge.kind), isEarned: badge.isEarned, name: badge.kind.name, count: badge.countText)
+        }
+        .buttonStyle(CompetitionPressButtonStyle())
+        .accessibilityLabel(badge.accessibilityText)
+        .accessibilityIdentifier("competition.badge.\(badge.kind.rawValue)")
+    }
+
+    private func medalCell(art: CompetitionMedalArt, isEarned: Bool, name: String, count: String) -> some View {
+        VStack(spacing: 6) {
+            CompetitionMedal(art: art, isEarned: isEarned, size: min(medalSize, 104))
+                .padding(.bottom, 2)
+            Text(name)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Theme.ink)
-            Text(badge.kind.rule)
-                .font(.caption)
-                .foregroundStyle(Theme.secondary)
-                .frame(maxHeight: .infinity, alignment: .top)
-            Text(badge.countText)
+                .foregroundStyle(isEarned ? Theme.ink : Theme.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(count)
                 .font(.themeLabel.monospacedDigit())
                 .tracking(0.6)
-                .foregroundStyle(badge.isEarned ? Theme.ink : Theme.secondary)
+                .foregroundStyle(isEarned ? Theme.you : Theme.secondary)
         }
-        .multilineTextAlignment(.center)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .themePanel()
+        .frame(maxWidth: .infinity, alignment: .top)
         .contentShape(Rectangle())
     }
 }
@@ -874,12 +767,10 @@ struct CompetitionBadgeSheet: View {
         ScrollView {
             VStack(spacing: 14) {
                 CompetitionChampionshipPlate(
-                    symbol: badge.kind.symbol,
+                    art: .badge(badge.kind),
                     title: badge.kind.name,
                     subtitle: badge.isEarned ? "Earned \(badge.countText)" : badge.countText,
-                    engravedKicker: "Engraved · HealthComp",
-                    engravedHeadline: engravedHeadline,
-                    engravedDetail: engravedDetail,
+                    engravedLines: engravedLines,
                     isEarned: badge.isEarned
                 )
                 Text(badge.kind.name)
@@ -929,18 +820,12 @@ struct CompetitionBadgeSheet: View {
         .accessibilityIdentifier("competition.badge.sheet")
     }
 
-    private var engravedHeadline: String {
-        guard let week else { return badge.kind.name }
-        let margin = competitionPointsText(abs(week.userPoints - week.opponentPoints), locale: locale)
-        return "\(badge.kind.name) · +\(margin) vs \(week.opponentDisplayName)"
-    }
-
-    private var engravedDetail: String {
-        guard let week else { return badge.kind.rule }
+    private var engravedLines: [String] {
+        guard let week else { return [badge.kind.name] }
         let range = week.acceptedConfiguration.flatMap {
             competitionScheduleDateRangeText($0.schedule, now: now, locale: locale)
-        } ?? ""
-        return "\(competitionPointsText(week.userPoints, locale: locale))–\(competitionPointsText(week.opponentPoints, locale: locale)) · \(range)"
+        }
+        return [badge.kind.name, competitionWeekVersusText(week)] + (range.map { [$0] } ?? [])
     }
 
     private func latestText(_ week: LocalCompetitionPresentation) -> String {
@@ -965,12 +850,10 @@ struct CompetitionRivalTrophySheet: View {
         ScrollView {
             VStack(spacing: 14) {
                 CompetitionChampionshipPlate(
-                    symbol: trophy.holdsBelt ? "trophy.fill" : "shield.fill",
+                    art: .rival(initial: competitionMedalInitial(trophy.opponentDisplayName)),
                     title: "vs \(trophy.opponentDisplayName)",
                     subtitle: "Rival Plate ×\(trophy.wins)",
-                    engravedKicker: "Rivalry Record · \(trophy.recordText)",
-                    engravedHeadline: "\(competitionOrdinalText(trophy.wins)) win over \(trophy.opponentDisplayName)",
-                    engravedDetail: "Latest · \(range)",
+                    engravedLines: [trophy.recordText, "vs \(trophy.opponentDisplayName)"],
                     isEarned: true
                 )
                 Text("Victory over \(trophy.opponentDisplayName)")
@@ -1118,5 +1001,430 @@ struct CompetitionOwnRecordsView: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
         .contentShape(Rectangle())
+    }
+}
+
+enum CompetitionMedalFamily: Equatable {
+    case weekly, reign, rival
+}
+
+enum CompetitionMedalArt: Equatable {
+    case badge(CompetitionBadgeKind)
+    case rival(initial: String)
+
+    var family: CompetitionMedalFamily {
+        switch self {
+        case .badge(let kind): kind.medalFamily
+        case .rival: .rival
+        }
+    }
+}
+
+extension CompetitionBadgeKind {
+    var medalFamily: CompetitionMedalFamily {
+        switch self {
+        case .sweep, .comeback, .photoFinish, .tripleCrown, .fullWeek: .weekly
+        case .defender, .hotStreak, .collector, .rival: .reign
+        }
+    }
+}
+
+func competitionMedalInitial(_ name: String) -> String {
+    name.first.map { String($0).uppercased() } ?? "?"
+}
+
+struct CompetitionMedal: View {
+    let art: CompetitionMedalArt
+    let isEarned: Bool
+    var size: CGFloat = 80
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let finish: MedalFinish = isEarned ? .earned : colorScheme == .dark ? .lockedDark : .locked
+        Canvas { context, canvas in
+            context.scaleBy(x: canvas.width / 120, y: canvas.height / 120)
+            MedalPainter(finish: finish).front(art, in: &context)
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+struct CompetitionMedalBack: View {
+    let family: CompetitionMedalFamily
+    let lines: [String]
+    var size: CGFloat = 176
+
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        let top: CGFloat = family == .reign ? 30 : 36
+        ZStack(alignment: .top) {
+            Canvas { context, canvas in
+                context.scaleBy(x: canvas.width / 120, y: canvas.height / 120)
+                MedalPainter(finish: .earned).back(family, in: &context)
+            }
+            VStack(spacing: size * 0.014) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                    engraved(line, size: index == 0 ? 0.09 : 0.058, weight: index == 0 ? .heavy : .bold)
+                }
+            }
+            .multilineTextAlignment(.center)
+            .frame(width: size * (family == .reign ? 0.5 : 0.58))
+            .padding(.top, size * top / 120)
+        }
+        .frame(width: size, height: size)
+    }
+
+    private func engraved(_ text: String, size scale: CGFloat, weight: Font.Weight) -> some View {
+        Text(text.uppercased(with: locale))
+            .font(.system(size: size * scale, weight: weight).width(.condensed))
+            .tracking(0.4)
+            .foregroundStyle(Color(hex: 0x6E4706))
+            .shadow(color: Color(hex: 0xFCE9B4).opacity(0.8), radius: 0, y: size * 0.006)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+    }
+}
+
+private enum MedalFinish {
+    case earned, locked, lockedDark
+
+    var markUnder: Color {
+        switch self {
+        case .earned: Color(hex: 0x211F1C)
+        case .locked: Color(hex: 0xC2C2BB)
+        case .lockedDark: Color(hex: 0x08080A)
+        }
+    }
+
+    var markFlat: Color { self == .lockedDark ? Color(hex: 0x303035) : Color(hex: 0xDCDCD5) }
+    var rim: Color { self == .lockedDark ? Color(hex: 0x1F1F22) : Color(hex: 0xE8E8E2) }
+    var line: Color { self == .lockedDark ? Color(hex: 0x3A3A40) : Color(hex: 0xCBCBC4) }
+    var face: Color { self == .lockedDark ? Color(hex: 0x17171A) : Color(hex: 0xF1F1EC) }
+    var inlay: Color { self == .lockedDark ? Color(hex: 0x222226) : Color(hex: 0xE7E7E1) }
+}
+
+private enum MedalMarkPart {
+    case fill(Path, hue: Color? = nil)
+    case stroke(Path, width: CGFloat)
+    case letter(String)
+}
+
+private enum MedalGeometry {
+    static let slant = tan(12 * Double.pi / 180)
+
+    static func pt(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: x, y: y) }
+
+    static func polygon(_ points: [CGPoint]) -> Path {
+        Path { path in
+            path.addLines(points)
+            path.closeSubpath()
+        }
+    }
+
+    static func polyline(_ points: [CGPoint]) -> Path {
+        Path { $0.addLines(points) }
+    }
+
+    static func line(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double) -> Path {
+        polyline([pt(x1, y1), pt(x2, y2)])
+    }
+
+    static func rect(_ x: Double, _ y: Double, _ w: Double, _ h: Double) -> Path {
+        Path(CGRect(x: x, y: y, width: w, height: h))
+    }
+
+    static func leaning(_ x: Double, _ y: Double, _ w: Double, _ h: Double) -> Path {
+        polygon([pt(x + h * slant, y), pt(x + w + h * slant, y), pt(x + w, y + h), pt(x, y + h)])
+    }
+
+    static func chamfer(_ corners: [CGPoint], _ cut: Double) -> [CGPoint] {
+        corners.indices.flatMap { index -> [CGPoint] in
+            let corner = corners[index]
+            func toward(_ other: CGPoint) -> CGPoint {
+                let dx = other.x - corner.x, dy = other.y - corner.y, length = hypot(dx, dy)
+                return pt(corner.x + dx / length * cut, corner.y + dy / length * cut)
+            }
+            return [
+                toward(corners[(index + corners.count - 1) % corners.count]),
+                toward(corners[(index + 1) % corners.count]),
+            ]
+        }
+    }
+
+    static func plate(_ cx: Double, _ cy: Double, _ w: Double, _ h: Double, cut: Double) -> Path {
+        polygon(chamfer([
+            pt(cx - w + h * slant, cy - h), pt(cx + w + h * slant, cy - h),
+            pt(cx + w - h * slant, cy + h), pt(cx - w - h * slant, cy + h),
+        ], cut))
+    }
+
+    static func circle(_ r: Double) -> Path {
+        Path(ellipseIn: CGRect(x: 60 - r, y: 60 - r, width: r * 2, height: r * 2))
+    }
+
+    static func hexagon(_ r: Double) -> Path {
+        polygon(chamfer([
+            pt(60, 60 - r), pt(60 + r * 0.866, 60 - r / 2), pt(60 + r * 0.866, 60 + r / 2),
+            pt(60, 60 + r), pt(60 - r * 0.866, 60 + r / 2), pt(60 - r * 0.866, 60 - r / 2),
+        ], 2.5))
+    }
+
+    static func shield(_ inset: Double) -> Path {
+        let left = 16 + inset, right = 104 - inset, top = 10 + inset, middle = 60.0
+        let bottom = 112 - inset * 1.3, cut = 5.0
+        return Path { path in
+            path.move(to: pt(left + cut, top))
+            path.addLine(to: pt(right - cut, top))
+            path.addLine(to: pt(right, top + cut))
+            path.addLine(to: pt(right, middle))
+            path.addCurve(
+                to: pt(60, bottom),
+                control1: pt(right, middle + 28 - inset * 0.5),
+                control2: pt(82 - inset * 0.3, bottom - 9)
+            )
+            path.addCurve(
+                to: pt(left, middle),
+                control1: pt(38 + inset * 0.3, bottom - 9),
+                control2: pt(left, middle + 28 - inset * 0.5)
+            )
+            path.addLine(to: pt(left, top + cut))
+            path.closeSubpath()
+        }
+    }
+
+    static func shapes(_ family: CompetitionMedalFamily) -> (outer: Path, wall: Path, face: Path) {
+        switch family {
+        case .weekly: (circle(52), circle(46), circle(43))
+        case .reign: (shield(0), shield(6.5), shield(9))
+        case .rival: (hexagon(54), hexagon(48), hexagon(44))
+        }
+    }
+
+    static func mark(_ art: CompetitionMedalArt) -> [MedalMarkPart] {
+        guard case .badge(let kind) = art else {
+            if case .rival(let initial) = art { return [.letter(initial)] }
+            return []
+        }
+        switch kind {
+        case .sweep:
+            return (0..<7).map { .fill(leaning(0.6 + Double($0) * 4.9, 7, 3, 26)) }
+        case .comeback:
+            return [
+                .stroke(polyline([pt(3, 11), pt(14.5, 28.5), pt(30.2, 9.9)]), width: 5.2),
+                .fill(polygon([pt(36, 3.5), pt(35.2, 15.6), pt(24.7, 7.4)])),
+            ]
+        case .photoFinish:
+            let cell = 4.6, top = 3.9, left = 12.6, height = 7 * cell
+            var parts: [MedalMarkPart] = [.stroke(leaning(left - 1, top - 1, 3 * cell + 2, height + 2), width: 1.3)]
+            for row in 0..<7 {
+                for column in 0..<3 where (row + column) % 2 == 0 {
+                    let base = top + Double(row + 1) * cell
+                    parts.append(.fill(leaning(
+                        left + Double(column) * cell + (top + height - base) * slant,
+                        top + Double(row) * cell, cell, cell
+                    )))
+                }
+            }
+            return parts
+        case .tripleCrown:
+            let hues = [Theme.move, Theme.exercise, Theme.stand]
+            func lean(_ x: Double, _ y: Double) -> CGPoint { pt(x + (31 - y) * slant, y) }
+            let points: [MedalMarkPart] = [9.0, 3, 9].enumerated().map { index, peak in
+                let x = 3.2 + Double(index) * 10.4
+                return .fill(polygon([
+                    lean(x, 31), lean(x + 8.2, 31), lean(x + 8.2, peak + 5.5), lean(x + 4.1, peak), lean(x, peak + 5.5),
+                ]), hue: hues[index])
+            }
+            return points + [.fill(leaning(2.2, 33, 32.6, 4))]
+        case .fullWeek:
+            var parts: [MedalMarkPart] = [
+                .stroke(Path(roundedRect: CGRect(x: 4, y: 6, width: 32, height: 29), cornerRadius: 3), width: 3),
+                .fill(Path(roundedRect: CGRect(x: 4, y: 6, width: 32, height: 7.5), cornerRadius: 2)),
+                .fill(rect(11, 2.5, 3.2, 7)),
+                .fill(rect(25.8, 2.5, 3.2, 7)),
+            ]
+            for (count, left, y) in [(4, 7.4, 16.6), (3, 11.0, 24.8)] {
+                parts += (0..<count).map { MedalMarkPart.fill(leaning(left + Double($0) * 7.2, y, 4.8, 5.2)) }
+            }
+            return parts
+        case .hotStreak:
+            return (0..<5).map { index in
+                let y = 3 + Double(index) * 6.6
+                return .stroke(polyline([pt(5.5, y + 9), pt(20, y), pt(34.5, y + 9)]), width: 3.7)
+            }
+        case .defender:
+            return [
+                .fill(rect(0, 14.5, 7, 11)),
+                .fill(rect(33, 14.5, 7, 11)),
+                .fill(plate(20, 20, 11, 12.5, cut: 12.5 * 0.26)),
+            ]
+        case .collector:
+            return [(20.0, 11.0), (10, 29), (30, 29)].map { .fill(plate($0.0, $0.1, 7.6, 7, cut: 7 * 0.26)) }
+        case .rival:
+            return [3.5, 22].flatMap { left -> [MedalMarkPart] in
+                (0..<4).map { index -> MedalMarkPart in
+                    let x = left + Double(index) * 3.7
+                    return .stroke(line(x + 23 * slant, 8, x, 31), width: 2.3)
+                } + [.stroke(line(left - 2.5, 25, left + 16, 13), width: 2.6)]
+            }
+        }
+    }
+}
+
+private struct MedalPainter {
+    let finish: MedalFinish
+
+    private typealias G = MedalGeometry
+
+    func front(_ art: CompetitionMedalArt, in context: inout GraphicsContext) {
+        let (outer, wall, face) = G.shapes(art.family)
+        body(outer: outer, wall: wall, face: face, in: &context)
+        var inner = context
+        inner.clip(to: face)
+        switch art.family {
+        case .weekly:
+            inner.fill(G.rect(0, 0, 120, 76), with: inlay(CGRect(x: 0, y: 0, width: 120, height: 76)))
+            inner.fill(G.rect(0, 76, 120, 44), with: band(CGRect(x: 0, y: 76, width: 120, height: 44)))
+            for y in [82.0, 88, 94, 100] { groove(G.line(10, y, 110, y), width: 1.2, in: &inner) }
+            inner.stroke(G.line(10, 76, 110, 76), with: .color(seam), lineWidth: 1.3)
+        case .reign:
+            inner.fill(G.rect(0, 0, 120, 120), with: inlay(CGRect(x: 0, y: 0, width: 120, height: 120)))
+            inner.fill(
+                G.polygon([G.pt(0, 64), G.pt(60, 86), G.pt(120, 64), G.pt(120, 120), G.pt(0, 120)]),
+                with: band(CGRect(x: 0, y: 64, width: 120, height: 56))
+            )
+            for y in [70.0, 76, 82, 88] { groove(chevron(y), width: 1.4, in: &inner) }
+        case .rival:
+            let upper = 60 + 50 * G.slant, lower = 60 - 50 * G.slant
+            inner.fill(G.rect(0, 0, 120, 120), with: inlay(CGRect(x: 0, y: 0, width: 120, height: 120)))
+            inner.fill(
+                G.polygon([G.pt(0, 10), G.pt(upper, 10), G.pt(lower, 110), G.pt(0, 110)]),
+                with: band(CGRect(x: 0, y: 10, width: upper, height: 100))
+            )
+            for y in stride(from: 26.0, through: 96, by: 7) { groove(G.line(10, y, 62, y), width: 1, in: &inner) }
+            inner.stroke(G.line(upper, 10, lower, 110), with: .color(seam), lineWidth: 1.6)
+        }
+        context.stroke(face, with: .color(edge), lineWidth: 0.9)
+        let (center, size): (CGPoint, Double) = switch art.family {
+        case .weekly: (G.pt(60, 47), 46)
+        case .reign: (G.pt(60, 41), 40)
+        case .rival: (G.pt(79, 60), 36)
+        }
+        mark(G.mark(art), center: center, size: size, in: &context)
+    }
+
+    func back(_ family: CompetitionMedalFamily, in context: inout GraphicsContext) {
+        let (outer, wall, face) = G.shapes(family)
+        body(outer: outer, wall: wall, face: face, in: &context)
+        var inner = context
+        inner.clip(to: face)
+        if family == .reign {
+            for y in [72.0, 78, 84] { groove(chevron(y), width: 1.4, in: &inner) }
+        } else {
+            for y in [82.0, 88, 94, 100] { groove(G.line(10, y, 110, y), width: 1.2, in: &inner) }
+        }
+        let top: Double = family == .reign ? 18 : 24
+        let cut = GraphicsContext.Shading.color(Color(hex: 0x6E4706))
+        for index in 0..<3 { context.fill(G.leaning(48.5 + Double(index) * 4.2, top, 2.6, 8), with: cut) }
+        context.fill(G.leaning(62.4, top, 7, 8), with: cut)
+    }
+
+    private var seam: Color { finish == .earned ? Color(hex: 0xFBE2A0) : finish.line }
+    private var edge: Color { finish == .earned ? Color(hex: 0x7A4F08) : finish.line }
+
+    private func chevron(_ y: Double) -> Path {
+        G.polyline([G.pt(10, y), G.pt(60, y + 22), G.pt(110, y)])
+    }
+
+    private func gradient(_ stops: [(UInt32, Double)], _ rect: CGRect, _ start: UnitPoint, _ end: UnitPoint) -> GraphicsContext.Shading {
+        .linearGradient(
+            Gradient(stops: stops.map { Gradient.Stop(color: Color(hex: $0.0), location: $0.1) }),
+            startPoint: CGPoint(x: rect.minX + rect.width * start.x, y: rect.minY + rect.height * start.y),
+            endPoint: CGPoint(x: rect.minX + rect.width * end.x, y: rect.minY + rect.height * end.y)
+        )
+    }
+
+    private func inlay(_ rect: CGRect) -> GraphicsContext.Shading {
+        finish == .earned
+            ? gradient([(0x57524B, 0), (0x36332F, 1)], rect, UnitPoint(x: 0.2, y: 0), UnitPoint(x: 0.8, y: 1))
+            : .color(finish.inlay)
+    }
+
+    private func band(_ rect: CGRect) -> GraphicsContext.Shading {
+        finish == .earned ? gradient([(0xD9A54A, 0), (0xB98422, 1)], rect, .top, .bottom) : .color(finish.face)
+    }
+
+    private func body(outer: Path, wall: Path, face: Path, in context: inout GraphicsContext) {
+        guard finish == .earned else {
+            context.fill(outer, with: .color(finish.rim))
+            context.stroke(outer, with: .color(finish.line), lineWidth: 1)
+            context.stroke(wall, with: .color(finish.line), lineWidth: 0.8)
+            context.fill(face, with: .color(finish.face))
+            return
+        }
+        let lit = UnitPoint(x: 0.15, y: 0.05), shaded = UnitPoint(x: 0.85, y: 0.95)
+        context.fill(outer, with: gradient(
+            [(0xF7DD94, 0), (0xDDA94A, 0.42), (0xB07B18, 0.78), (0x875809, 1)], outer.boundingRect, lit, shaded
+        ))
+        context.stroke(outer, with: .color(Color(hex: 0x7A4F08)), lineWidth: 0.8)
+        context.fill(wall, with: gradient([(0x8E5E0C, 0), (0xC08A28, 0.55), (0xF3D486, 1)], wall.boundingRect, lit, shaded))
+        context.fill(face, with: gradient(
+            [(0xF1D387, 0), (0xE0B460, 0.6), (0xCC9A3C, 1)], face.boundingRect, UnitPoint(x: 0.3, y: 0), UnitPoint(x: 0.7, y: 1)
+        ))
+    }
+
+    private func groove(_ path: Path, width: CGFloat, in context: inout GraphicsContext) {
+        guard finish == .earned else {
+            context.stroke(path, with: .color(finish.line), lineWidth: width)
+            return
+        }
+        context.stroke(path, with: .color(Color(hex: 0x8A5A0A).opacity(0.6)), lineWidth: width)
+        context.stroke(
+            path.offsetBy(dx: 0, dy: width * 0.8),
+            with: .color(Color(hex: 0xFCE9B4).opacity(0.7)),
+            lineWidth: width * 0.6
+        )
+    }
+
+    private func mark(_ parts: [MedalMarkPart], center: CGPoint, size: Double, in context: inout GraphicsContext) {
+        var box = context
+        box.translateBy(x: center.x - size / 2, y: center.y - size / 2)
+        box.scaleBy(x: size / 40, y: size / 40)
+        var under = box
+        under.translateBy(x: 0, y: -0.9)
+        draw(parts, with: .color(finish.markUnder), color: finish.markUnder, hued: false, in: &under)
+        let raised: GraphicsContext.Shading = finish == .earned
+            ? gradient([(0xFBE6AA, 0), (0xE7B95C, 0.55), (0xC79232, 1)], CGRect(x: 0, y: 0, width: 40, height: 40), .top, .bottom)
+            : .color(finish.markFlat)
+        draw(parts, with: raised, color: finish == .earned ? Color(hex: 0xEBC067) : finish.markFlat, hued: finish == .earned, in: &box)
+    }
+
+    private func draw(
+        _ parts: [MedalMarkPart],
+        with shading: GraphicsContext.Shading,
+        color: Color,
+        hued: Bool,
+        in context: inout GraphicsContext
+    ) {
+        for part in parts {
+            switch part {
+            case .fill(let path, let hue):
+                if hued, let hue {
+                    context.fill(path, with: .color(hue))
+                } else {
+                    context.fill(path, with: shading)
+                }
+            case .stroke(let path, let width):
+                context.stroke(path, with: shading, style: StrokeStyle(lineWidth: width, lineCap: .butt, lineJoin: .miter))
+            case .letter(let letter):
+                context.draw(
+                    Text(letter).font(.system(size: 34, weight: .heavy).width(.compressed)).foregroundStyle(color),
+                    at: CGPoint(x: 20, y: 20)
+                )
+            }
+        }
     }
 }
