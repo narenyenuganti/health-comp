@@ -921,7 +921,7 @@ private struct CompetitionDetailWeekStrip: View {
             locale: locale
         )
         if isFuture {
-            slotContent(day, isSelected: false, isFuture: true)
+            slotContent(day, isSelected: false)
                 .accessibilityElement(children: .ignore)
                 .accessibilityIdentifier("competition.strip.day.\(day.ordinal)")
                 .accessibilityLabel(label)
@@ -929,7 +929,7 @@ private struct CompetitionDetailWeekStrip: View {
             Button {
                 select(day.ordinal)
             } label: {
-                slotContent(day, isSelected: isSelected, isFuture: false)
+                slotContent(day, isSelected: isSelected)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("competition.strip.day.\(day.ordinal)")
@@ -941,29 +941,25 @@ private struct CompetitionDetailWeekStrip: View {
 
     private func slotContent(
         _ day: LocalCompetitionDayPresentation,
-        isSelected: Bool,
-        isFuture: Bool
+        isSelected: Bool
     ) -> some View {
         let rings = competitionDayRings(day, metrics: metrics).owner
         let outcome = competitionDayOutcome(day, currentDayOrdinal: currentDayOrdinal)
         let dotColor = competitionDayWinnerDotColor(outcome)
         return VStack(spacing: 4) {
-            Text(weekdayInitial(day.day, locale: locale))
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(isSelected ? Theme.onInk : isFuture ? Theme.faint : Theme.secondary)
-                .fixedSize()
-                .padding(4)
-                .frame(minWidth: 22, minHeight: 22)
-                .background(isSelected ? Theme.ink : .clear, in: Circle())
-                .animation(Motion.fade, value: isSelected)
             CompetitionRingStack(rings: rings)
                 .frame(width: 34, height: 34)
+                .padding(4)
+                .overlay {
+                    Circle().stroke(isSelected ? Theme.ink : .clear, lineWidth: 2)
+                }
+                .animation(Motion.fade, value: isSelected)
             Circle()
                 .fill(dotColor ?? .clear)
                 .frame(width: 5, height: 5)
         }
         .padding(.vertical, 4)
-        .frame(maxWidth: .infinity, minHeight: 68)
+        .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
     }
 }

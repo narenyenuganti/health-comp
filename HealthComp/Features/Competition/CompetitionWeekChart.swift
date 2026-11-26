@@ -1038,17 +1038,6 @@ func weekdayText(_ day: CompetitionDay, locale: Locale = .current) -> String {
     return calendar.shortWeekdaySymbols[index]
 }
 
-func weekdayInitial(_ day: CompetitionDay, locale: Locale = .current) -> String {
-    guard let date = competitionDayDate(day) else {
-        return String(day.day)
-    }
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = competitionDayTimeZone
-    calendar.locale = locale
-    let index = calendar.component(.weekday, from: date) - 1
-    return calendar.veryShortWeekdaySymbols[index]
-}
-
 func weekdayName(_ day: CompetitionDay, locale: Locale = .current) -> String {
     guard let date = competitionDayDate(day) else {
         return "\(day.month)/\(day.day)"

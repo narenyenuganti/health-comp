@@ -241,8 +241,6 @@ final class AppleFitnessFeaturesTests: XCTestCase {
         XCTAssertNil(competitionDayWinnerDotColor(.upcoming))
         XCTAssertNil(competitionDayWinnerDotColor(.noData))
 
-        XCTAssertEqual(weekdayInitial(day, locale: locale), "S")
-
         let todayHead = competitionDayHeadline(
             fallback, currentDayOrdinal: 1, now: now, opponentName: "Sam",
             locale: locale, timeZone: TimeZone(identifier: zone)!
