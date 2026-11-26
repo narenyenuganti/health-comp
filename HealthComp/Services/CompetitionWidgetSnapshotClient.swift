@@ -250,6 +250,7 @@ extension CompetitionWidgetSnapshot.TodayRings {
         let shares = snapshot.map {
             competitionRingShares($0, perRingCap: day.scoringPolicy.perRingCap)
         } ?? [0, 0, 0]
+        let opponentRings = day.opponentRingPoints?.count == 3 ? day.opponentRingPoints : nil
         let rows = panel.rows.map { row in
             let kind: RingKind = switch row.metric {
             case .move: .move
@@ -263,12 +264,19 @@ extension CompetitionWidgetSnapshot.TodayRings {
             case .stand: max(0, shares[2])
             case .sleep: max(0, (row.points ?? 0) / 100)
             }
+            let opponentProgress: Double? = switch row.metric {
+            case .move: opponentRings.map { max(0, $0[0] / 100) }
+            case .exercise: opponentRings.map { max(0, $0[1] / 100) }
+            case .stand: opponentRings.map { max(0, $0[2] / 100) }
+            case .sleep: day.opponentSleepPoints.map { max(0, $0 / 100) }
+            }
             return Row(
                 kind: kind,
                 title: row.title,
                 detail: row.detail,
                 progress: progress,
-                points: row.points
+                points: row.points,
+                opponentProgress: opponentProgress
             )
         }
         self.init(dayOrdinal: ordinal, rows: rows)
