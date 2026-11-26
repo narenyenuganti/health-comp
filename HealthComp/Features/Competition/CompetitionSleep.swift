@@ -33,6 +33,9 @@ struct CompetitionSleepReading: Equatable, Sendable {
     var source: SleepSource? { night.source }
     var points: Double { Double(night.basisPoints) / 100 }
     var bedtime: Date? { night.onsetMinutes.map { windowStart.addingTimeInterval($0 * 60) } }
+    var wakeTime: Date? {
+        bedtime.map { $0.addingTimeInterval((minutesAsleep + night.awakeMinutes) * 60) }
+    }
     var usualBedtime: Date? { usualOnsetMinutes.map { windowStart.addingTimeInterval($0 * 60) } }
 }
 
@@ -254,7 +257,8 @@ func competitionSleepRow(
         title: "Sleep",
         detail: "\(competitionSleepDurationText(minutes)) asleep",
         spokenDetail: "\(hours) hours \(rest) minutes asleep",
-        points: points
+        points: points,
+        sleepReading: day.ownerSleepReading
     )
 }
 

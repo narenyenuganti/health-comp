@@ -39,14 +39,16 @@ final class SleepBetaUITests: XCTestCase {
         shot("sleep-night")
         app.buttons["Close"].firstMatch.tap()
 
-        let week = app.buttons["Week"]
-        if week.waitForExistence(timeout: 2) {
-            week.tap()
-            sleep(2)
-            app.swipeUp()
-            sleep(1)
-            shot("sleep-week")
-        }
+        let dayOne = app.buttons["competition.strip.day.1"]
+        XCTAssertTrue(dayOne.waitForExistence(timeout: 3))
+        dayOne.tap()
+        XCTAssertTrue(rings.waitForExistence(timeout: 3))
+        XCTAssertTrue(rings.label.contains("Sleep, 7 hours 18 minutes asleep"), rings.label)
+
+        let leadLine = element("competition.leadLine")
+        scrollToElement(leadLine)
+        XCTAssertTrue(leadLine.exists)
+        shot("sleep-week")
     }
 
     func testCreateSheetOffersRingsAndSleep() {

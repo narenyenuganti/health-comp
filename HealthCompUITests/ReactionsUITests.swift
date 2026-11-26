@@ -32,18 +32,21 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(latest.frame.height, 44)
         latest.tap()
 
-        XCTAssertTrue(app.staticTexts["Day 2"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitFor(app.buttons["competition.strip.day.2"], "isSelected == true", timeout: 3))
         let received = element("competition.reaction.received")
         XCTAssertTrue(received.waitForExistence(timeout: 3))
+        scrollToElement(received)
         XCTAssertEqual(received.label, "Huffing. Jordan reacted to your Day 2")
         XCTAssertEqual(
             app.descendants(matching: .any).matching(identifier: "competition.reaction.received").count,
             1
         )
         let heading = app.staticTexts["REACT TO JORDAN’S DAY"]
+        scrollToElement(heading)
         XCTAssertTrue(heading.exists)
         XCTAssertFalse(app.staticTexts["Jordan sees your reaction on this day."].exists)
         XCTAssertLessThan(received.frame.maxY, heading.frame.minY + 1)
+        scrollToElement(chip("clap"))
         assertChips(selected: nil)
         XCTAssertGreaterThan(chip("clap").frame.minY, heading.frame.maxY - 1)
         XCTAssertFalse(element("competition.react.error").exists)
@@ -66,17 +69,16 @@ final class ReactionsUITests: XCTestCase {
         chip("salute").tap()
         XCTAssertTrue(waitFor(chip("salute"), "isEnabled == true", timeout: 6))
         assertChips(selected: "salute")
-        closeDrawer()
 
         XCTAssertTrue(latest.exists)
 
         openDay(3)
         XCTAssertFalse(element("competition.reaction.received").exists)
+        scrollToElement(chip("clap"))
         assertChips(selected: nil)
-        closeDrawer()
         openDay(2)
+        scrollToElement(chip("salute"))
         assertChips(selected: "salute")
-        closeDrawer()
 
         goBack()
         let seen = card("active", "Jordan")
@@ -98,7 +100,8 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertTrue(latest.waitForExistence(timeout: 3))
         XCTAssertEqual(latest.label, "Fire. Jordan reacted to your Day 3")
         latest.tap()
-        XCTAssertTrue(app.staticTexts["Day 3"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitFor(app.buttons["competition.strip.day.3"], "isSelected == true", timeout: 3))
+        scrollToElement(element("competition.reaction.received"))
         XCTAssertEqual(
             element("competition.reaction.received").label,
             "Fire. Jordan reacted to your Day 3"
@@ -111,6 +114,7 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertFalse(app.buttons["competition.reaction.latest"].exists)
         openDay(1)
         XCTAssertFalse(element("competition.reaction.received").exists)
+        scrollToElement(chip("clap"))
         XCTAssertTrue(app.staticTexts["REACT TO SAM’S DAY"].exists)
         chip("clap").tap()
         XCTAssertTrue(chip("clap").isSelected)
@@ -124,7 +128,6 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertTrue(waitFor(chip("clap"), "isSelected == true", timeout: 5))
         XCTAssertTrue(error.waitForNonExistence(timeout: 3))
         assertChips(selected: "clap")
-        closeDrawer()
 
         goBack()
         open("completed", "Quinn")
@@ -217,23 +220,25 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertTrue(tally.exists)
         XCTAssertLessThan(latest.frame.maxY, tally.frame.minY + 1)
         latest.tap()
-        XCTAssertTrue(app.staticTexts["Day 6"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitFor(app.buttons["competition.strip.day.6"], "isSelected == true", timeout: 3))
+        scrollToElement(element("competition.reaction.received"))
         XCTAssertEqual(
             element("competition.reaction.received").label,
             "Fire. Morgan reacted to your Day 6"
         )
         XCTAssertTrue(app.staticTexts["REACT TO MORGAN’S DAY"].exists)
+        scrollToElement(chip("salute"))
         chip("salute").tap()
         XCTAssertTrue(waitFor(chip("salute"), "isSelected == true", timeout: 3))
-        closeDrawer()
         openDay(7)
+        scrollToElement(chip("clap"))
         assertChips(selected: nil)
-        closeDrawer()
 
         goBack()
         open("ends-today", "Casey")
         XCTAssertFalse(app.buttons["competition.reaction.latest"].exists)
         openDay(7)
+        scrollToElement(chip("huffing"))
         XCTAssertTrue(app.staticTexts["REACT TO CASEY’S DAY"].exists)
         chip("huffing").tap()
         XCTAssertTrue(waitFor(chip("huffing"), "isSelected == true", timeout: 3))
@@ -253,18 +258,17 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertTrue(latest.waitForExistence(timeout: 3))
         XCTAssertEqual(latest.label, "Clap. Former competitor reacted to your Day 1")
         latest.tap()
-        XCTAssertTrue(app.staticTexts["Day 1"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitFor(app.buttons["competition.strip.day.1"], "isSelected == true", timeout: 3))
+        scrollToElement(element("competition.reaction.received"))
         XCTAssertEqual(
             element("competition.reaction.received").label,
             "Clap. Former competitor reacted to your Day 1"
         )
         assertNoPicker()
         XCTAssertFalse(app.staticTexts["Former competitor sees your reaction on this day."].exists)
-        closeDrawer()
         openDay(2)
         XCTAssertFalse(element("competition.reaction.received").exists)
         assertNoPicker()
-        closeDrawer()
 
         goBack()
         open("completed", "Former competitor")
@@ -296,48 +300,42 @@ final class ReactionsUITests: XCTestCase {
         XCTAssertTrue(latest.waitForExistence(timeout: 3))
         XCTAssertEqual(latest.label, "Fire. \(name) reacted to your Day 1")
         latest.tap()
-        XCTAssertTrue(app.staticTexts["Day 1"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitFor(app.buttons["competition.strip.day.1"], "isSelected == true", timeout: 3))
+        scrollToElement(chip("clap"))
         XCTAssertTrue(app.staticTexts["REACT TO ALEXANDRIA MONTGOMERY-FEATHERSTONEHAUGH’S DAY"].exists)
         XCTAssertFalse(app.staticTexts["\(name) sees your reaction on this day."].exists)
         assertChips(selected: nil)
-        try audit("long-name-drawer")
+        try audit("long-name-day")
     }
 
-    func testLogoUpdatesThenShowsTodaysRings() {
+    func testHomeToolbarKeepsLogoAndPullToRefreshLoadsIncomingReaction() {
         launch()
-        let logo = app.buttons["home.logo"]
-        XCTAssertTrue(logo.waitForExistence(timeout: 5))
-        XCTAssertEqual(logo.label, "Today’s rings")
-        let rings = app.otherElements["home.todayRings"]
-        XCTAssertFalse(rings.exists)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["home.logo"].exists)
         let before = card("active", "Jordan")
         XCTAssertTrue(before.waitForExistence(timeout: 5))
         XCTAssertFalse(before.label.contains("Fire"), before.label)
 
-        logo.tap()
-        XCTAssertTrue(rings.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["YOUR RINGS TODAY"].exists)
-        XCTAssertTrue(rings.label.hasPrefix("Your rings. Move, "), rings.label)
-        XCTAssertTrue(rings.label.hasSuffix(" points of 600 today."), rings.label)
+        let scroll = app.scrollViews.firstMatch
+        let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+        start.press(forDuration: 0.05, thenDragTo: end)
 
-        rings.swipeDown(velocity: .fast)
-        XCTAssertTrue(waitFor(rings, "exists == false", timeout: 3))
         let jordan = card("active", "Jordan")
         XCTAssertTrue(
             waitFor(jordan, "label ENDSWITH '. Fire. Jordan reacted to your Day 3'", timeout: 5),
             jordan.label
         )
-
-        logo.tap()
-        XCTAssertTrue(rings.waitForExistence(timeout: 5))
     }
 
-    func testDraggingTheDrawerFromAChipSendsNoReaction() {
+    func testDraggingFromAChipSendsNoReaction() {
         launch()
         open("active", "Sam")
         openDay(1)
+        scrollToElement(chip("clap"))
         for kind in kinds {
             for dy in [-120.0, 120.0] {
+                scrollToElement(chip(kind))
                 let start = chip(kind).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
                 start.press(
                     forDuration: 0.05,
@@ -345,9 +343,9 @@ final class ReactionsUITests: XCTestCase {
                     withVelocity: .slow,
                     thenHoldForDuration: 0.2
                 )
-                if !chip(kind).exists { openDay(1) }
             }
         }
+        scrollToElement(chip("fire"))
         XCTAssertFalse(element("competition.react.error").waitForExistence(timeout: 2))
         assertChips(selected: nil)
         chip("fire").tap()
@@ -365,7 +363,6 @@ final class ReactionsUITests: XCTestCase {
         openDay(2)
         XCTAssertFalse(element("competition.reaction.received").exists)
         assertNoPicker()
-        closeDrawer()
         goBack()
         open("completed", "Riley")
         XCTAssertTrue(app.buttons["competition.rematch.create"].waitForExistence(timeout: 3))
@@ -425,42 +422,38 @@ final class ReactionsUITests: XCTestCase {
         shot("match-latest-\(suffix)")
         try audit("match-latest-\(suffix)")
         latest.tap()
-        XCTAssertTrue(app.staticTexts["Day 2"].waitForExistence(timeout: 3))
-        revealInDrawer(chip("salute"), title: "Day 2")
+        XCTAssertTrue(waitFor(app.buttons["competition.strip.day.2"], "isSelected == true", timeout: 3))
+        scrollToElement(chip("salute"))
         chip("fire").tap()
         XCTAssertTrue(waitFor(chip("fire"), "isEnabled == true", timeout: 6))
-        shot("day-drawer-\(suffix)")
-        try audit("day-drawer-\(suffix)")
-        closeDrawer()
+        shot("day-reactions-\(suffix)")
+        try audit("day-reactions-\(suffix)")
         goBack()
 
         open("active", "Sam")
         openDay(1)
-        revealInDrawer(chip("salute"), title: "Day 1")
+        scrollToElement(chip("salute"))
         chip("clap").tap()
         let error = element("competition.react.error")
         XCTAssertTrue(error.waitForExistence(timeout: 5))
-        revealInDrawer(error, title: "Day 1")
-        shot("day-drawer-error-\(suffix)")
-        try audit("day-drawer-error-\(suffix)")
-        closeDrawer()
+        scrollToElement(error)
+        shot("day-reactions-error-\(suffix)")
+        try audit("day-reactions-error-\(suffix)")
         goBack()
 
         open("active", "Former competitor")
         openDay(1)
         let received = element("competition.reaction.received")
         XCTAssertTrue(received.waitForExistence(timeout: 3))
-        revealInDrawer(received, title: "Day 1")
-        shot("day-drawer-former-\(suffix)")
-        try audit("day-drawer-former-\(suffix)")
-        closeDrawer()
+        scrollToElement(received)
+        shot("day-reactions-former-\(suffix)")
+        try audit("day-reactions-former-\(suffix)")
         goBack()
 
         open("active", "Alexandria")
         openDay(1)
-        revealInDrawer(chip("salute"), title: "Day 1")
-        shot("day-drawer-long-name-\(suffix)")
-        closeDrawer()
+        scrollToElement(chip("salute"))
+        shot("day-reactions-long-name-\(suffix)")
         goBack()
 
         open("completed", "Riley")
@@ -549,15 +542,10 @@ final class ReactionsUITests: XCTestCase {
     }
 
     private func openDay(_ ordinal: Int) {
-        let week = app.buttons["Week"]
-        if week.waitForExistence(timeout: 2), !week.isSelected {
-            scrollToElement(week)
-            week.tap()
-        }
-        let day = app.descendants(matching: .any)["competition.day.\(ordinal)"]
+        let day = app.buttons["competition.strip.day.\(ordinal)"]
         scrollToElement(day)
         day.tap()
-        XCTAssertTrue(app.staticTexts["Day \(ordinal)"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitFor(day, "isSelected == true", timeout: 3))
     }
 
     private func closeDrawer() {

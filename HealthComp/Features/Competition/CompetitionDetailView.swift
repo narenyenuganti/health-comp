@@ -54,13 +54,16 @@ struct CompetitionDetailView: View {
     var reportPhoto: CompetitionReportPhoto? = nil
     var recordLink: CompetitionRecordLink? = nil
     var replayIntro: (() -> Void)? = nil
+    var initialSelectedDayOrdinal: Int? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
-    @State private var page: Page = .today
+    @State private var selectedDayOrdinal: Int? = nil
+    @State private var hourlyPace: [Double] = []
     @State private var drawer: Drawer? = nil
     @State private var showsCancelConfirmation = false
     @AppStorage(CompetitionReactionsSeen.storageKey)
@@ -74,13 +77,9 @@ struct CompetitionDetailView: View {
     @AppStorage(CornerTimeoutStorage.untilKey) private var cornerTimeoutUntil: Double = 0
     @Environment(\.profilePhotos) private var photos
 
-    private enum Page: Hashable {
-        case today
-        case week
-    }
+    private static let stripAnchorID = "competition.weekStrip"
 
     private enum Drawer: Identifiable, Hashable {
-        case day(Int)
         case activitySync
         case rules
         case night(Int)
@@ -89,66 +88,91 @@ struct CompetitionDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let issue {
-                    CompetitionIssueLine(issue: issue, retry: retry, id: competition.id)
-                        .transition(Motion.appear)
-                }
-
-                muteButton?.failureNote
-                    .transition(Motion.appear)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    CompetitionScoreboardPanel(
-                        competition: competition,
-                        todayDay: todayDay,
-                        isProvisional: scoresAreProvisional,
-                        isMuted: muteButton?.isMuted == true
-                    )
-                    leadStatement
-                    freshnessLine
-                    liveNudge
-                    if cancelMatch?.failed == true {
-                        Text("Couldn’t cancel the match. It may have already started.")
-                            .font(.callout)
-                            .foregroundStyle(Theme.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("competition.cancel.error")
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if let issue {
+                        CompetitionIssueLine(issue: issue, retry: retry, id: competition.id)
                             .transition(Motion.appear)
                     }
-                }
 
-                latestReaction
+                    muteButton?.failureNote
+                        .transition(Motion.appear)
 
-                tallyPanel
-
-                if competitionShouldShowScores(competition.lifecycle) {
-                    CompetitionSegments(
-                        selection: $page,
-                        options: [(Page.today, todayTabTitle), (Page.week, "Week")]
-                    )
-                    .transition(Motion.appear)
-
-                    ZStack(alignment: .topLeading) {
-                        switch page {
-                        case .today:
-                            todayActivity
-                                .transition(Motion.appear)
-                        case .week:
-                            weekSection
+                    VStack(alignment: .leading, spacing: 12) {
+                        CompetitionScoreboardPanel(
+                            competition: competition,
+                            todayDay: todayDay,
+                            isProvisional: scoresAreProvisional,
+                            isMuted: muteButton?.isMuted == true
+                        )
+                        leadStatement
+                        freshnessLine
+                        liveNudge
+                        if cancelMatch?.failed == true {
+                            Text("Couldn’t cancel the match. It may have already started.")
+                                .font(.callout)
+                                .foregroundStyle(Theme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("competition.cancel.error")
                                 .transition(Motion.appear)
                         }
                     }
-                    .transition(Motion.appear)
+
+                    latestReaction(proxy: scrollProxy)
+
+                    tallyPanel
+
+                    if competitionShouldShowScores(competition.lifecycle) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            CompetitionDetailWeekStrip(
+                                days: competition.days,
+                                metrics: competition.metrics,
+                                selectedOrdinal: resolvedSelectedOrdinal,
+                                currentDayOrdinal: competition.currentDayOrdinal,
+                                opponentName: competition.opponentDisplayName,
+                                now: competition.evaluatedAt,
+                                select: { selectedDayOrdinal = $0 }
+                            )
+                            .id(Self.stripAnchorID)
+
+                            selectedDaySection
+                        }
+                        .transition(Motion.appear)
+
+                        weekSection(proxy: scrollProxy)
+                            .transition(Motion.appear)
+                    }
+                }
+                .moving(Motion.settle, value: layoutKey)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 24)
+            }
+            .refreshable(refresh)
+            .onAppear {
+                if let initial = initialSelectedDayOrdinal,
+                   competition.days.contains(where: { $0.ordinal == initial && $0.ownerLatestAvailability != .notYetOccurred }) {
+                    scrollToStrip(proxy: scrollProxy)
                 }
             }
-            .moving(Motion.settle, value: layoutKey)
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 24)
+            .onChange(of: initialSelectedDayOrdinal) { _, newValue in
+                if let newValue {
+                    selectAndScroll(to: newValue, proxy: scrollProxy)
+                }
+            }
         }
-        .refreshable(refresh)
+        .task(id: selectedDay?.day) {
+            await loadHourlyPace(for: selectedDay)
+        }
+        .onChange(of: competition.id) { _, _ in
+            selectedDayOrdinal = nil
+        }
+        .onChange(of: competition.currentDayOrdinal) { old, _ in
+            if selectedDayOrdinal == old {
+                selectedDayOrdinal = nil
+            }
+        }
         .onDisappear { reactionsSeen = reactionsSeen.marking(competition) }
         .competitionReactionRain(
             incoming: reactions == nil ? nil : competitionReactionRainBatch(
@@ -254,9 +278,6 @@ struct CompetitionDetailView: View {
         }
         .sheet(item: $drawer) { item in
             switch item {
-            case let .day(ordinal):
-                dayDrawer(ordinal)
-                    .competitionReactionRain()
             case .activitySync:
                 activitySyncDrawer
             case let .night(ordinal):
@@ -317,6 +338,7 @@ struct CompetitionDetailView: View {
         let reaction: Date?
         let hasRings: Bool?
         let availability: LocalCompetitionOwnerAvailability?
+        let reactionFailed: Bool
     }
 
     private var layoutKey: LayoutKey {
@@ -328,10 +350,12 @@ struct CompetitionDetailView: View {
             isProvisional: scoresAreProvisional,
             nudge: nudgeDisplay,
             tally: tallyCopy?.headline,
-            takes: competitionWhatItTakes(competition, locale: locale)?.headline,
+            takes: selectedDay?.ordinal == competition.currentDayOrdinal
+                ? competitionWhatItTakes(competition, locale: locale)?.headline : nil,
             reaction: competitionUnseenReaction(competition, seen: reactionsSeen)?.updatedAt,
-            hasRings: activityDay.map { competitionRingPanel($0, locale: locale) != nil },
-            availability: activityDay?.ownerLatestAvailability
+            hasRings: selectedDay.map { competitionRingPanel($0, locale: locale) != nil },
+            availability: selectedDay?.ownerLatestAvailability,
+            reactionFailed: resolvedSelectedOrdinal.map { reactions?.failed.contains(.day($0)) == true } ?? false
         )
     }
 
@@ -387,11 +411,11 @@ struct CompetitionDetailView: View {
     }
 
     @ViewBuilder
-    private var latestReaction: some View {
+    private func latestReaction(proxy: ScrollViewProxy) -> some View {
         if reactions != nil,
            let unseen = competitionUnseenReaction(competition, seen: reactionsSeen),
            let day = unseen.target.dayOrdinal {
-            Button { drawer = .day(day) } label: {
+            Button { selectAndScroll(to: day, proxy: proxy) } label: {
                 HStack(spacing: 8) {
                     CompetitionReactionLine(
                         reaction: unseen,
@@ -413,10 +437,48 @@ struct CompetitionDetailView: View {
                     opponentName: competition.opponentDisplayName
                 )
             )
-            .accessibilityHint("Opens Day \(day)")
+            .accessibilityHint("Selects Day \(day)")
             .accessibilityIdentifier("competition.reaction.latest")
             .transition(Motion.appear)
         }
+    }
+
+    private func selectAndScroll(to ordinal: Int, proxy: ScrollViewProxy) {
+        guard competition.days.contains(where: {
+            $0.ordinal == ordinal && $0.ownerLatestAvailability != .notYetOccurred
+        }) else { return }
+        selectedDayOrdinal = ordinal
+        scrollToStrip(proxy: proxy)
+    }
+
+    private func scrollToStrip(proxy: ScrollViewProxy) {
+        if reduceMotion {
+            proxy.scrollTo(Self.stripAnchorID, anchor: .top)
+        } else {
+            withAnimation(Motion.fade) {
+                proxy.scrollTo(Self.stripAnchorID, anchor: .top)
+            }
+        }
+    }
+
+    private func loadHourlyPace(for day: LocalCompetitionDayPresentation?) async {
+        guard let day, day.metrics.includesActivityRings else {
+            hourlyPace = []
+            return
+        }
+        let loaded = await HealthKitProvider.readLocalHourlyPace(for: day.day, timeZone: timeZone)
+        if !loaded.isEmpty {
+            hourlyPace = loaded
+            return
+        }
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--multi-user-competition-test-lab"),
+           let points = day.ownerAcceptedPoints, points > 0 {
+            hourlyPace = CompetitionHourlyPaceView.testLabCurve(for: day.day)
+            return
+        }
+#endif
+        hourlyPace = []
     }
 
     @ViewBuilder
@@ -502,7 +564,7 @@ struct CompetitionDetailView: View {
         !weekShown && !reduceMotion && !voiceOver && motionSeen.weekGained(competition)
     }
 
-    private var weekSection: some View {
+    private func weekSection(proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if let lead = competitionLeadLine(
                 competition.days, currentDayOrdinal: competition.currentDayOrdinal
@@ -512,9 +574,13 @@ struct CompetitionDetailView: View {
                     days: competition.days,
                     currentDayOrdinal: competition.currentDayOrdinal,
                     opponentName: competition.opponentDisplayName,
-                    isDrawn: !weekGrows
+                    isDrawn: !weekGrows,
+                    surface: Theme.panel
                 )
-                .padding(.bottom, 12)
+                Rectangle()
+                    .fill(Theme.hairline)
+                    .frame(height: 1)
+                    .padding(.vertical, 4)
             }
             SectionLabel("THE WEEK")
             CompetitionWeekChart(
@@ -524,7 +590,9 @@ struct CompetitionDetailView: View {
                 opponentName: competition.opponentDisplayName,
                 showsDates: true,
                 isGrown: !weekGrows,
-                selectDay: { drawer = .day($0.ordinal) },
+                highlightBackground: Theme.control,
+                rowBackground: Theme.ground,
+                selectDay: { selectAndScroll(to: $0.ordinal, proxy: proxy) },
                 clap: weekClap
             )
             weekClapNote
@@ -533,6 +601,9 @@ struct CompetitionDetailView: View {
                 opponentName: competition.opponentDisplayName
             )
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .themePanel()
         .onAppear {
             if weekGrows { motionSeen = motionSeen.drawingWeek(competition) }
             weekShown = true
@@ -540,14 +611,54 @@ struct CompetitionDetailView: View {
     }
 
     @ViewBuilder
-    private var todayActivity: some View {
-        if let day = activityDay {
+    private var selectedDaySection: some View {
+        if let day = selectedDay {
+            let headline = competitionDayHeadline(
+                day,
+                currentDayOrdinal: competition.currentDayOrdinal,
+                now: competition.evaluatedAt,
+                opponentName: competition.opponentDisplayName,
+                locale: locale,
+                timeZone: timeZone
+            )
             VStack(alignment: .leading, spacing: 12) {
-                if let takes = competitionWhatItTakes(competition, locale: locale) {
+                let headerLayout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+                    : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+                headerLayout {
+                    Text(headline.title)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(Theme.ink)
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Spacer(minLength: 8)
+                    }
+                    Text(headline.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                }
+                .padding(.horizontal, 2)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Day \(day.ordinal), \(headline.title), \(headline.subtitle)")
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("competition.selectedDay.header")
+
+                CompetitionDayRingPairPanel(
+                    day: day,
+                    metrics: competition.metrics,
+                    opponentName: competition.opponentDisplayName
+                )
+
+                if day.ordinal == competition.currentDayOrdinal,
+                   let takes = competitionWhatItTakes(competition, locale: locale) {
                     CompetitionWhatItTakesPanel(takes: takes)
                         .transition(Motion.appear)
                 }
-                dayActivity(day, showsPullHint: true)
+
+                dayPanel(day, showsPullHint: day.ordinal == competition.currentDayOrdinal)
+
+                if let reactions {
+                    dayReactions(day.ordinal, control: reactions)
+                }
             }
         } else {
             Label("Activity appears when Day 1 begins.", systemImage: "clock")
@@ -559,33 +670,19 @@ struct CompetitionDetailView: View {
         }
     }
 
-    private func dayActivity(
-        _ day: LocalCompetitionDayPresentation,
-        showsPullHint: Bool
-    ) -> some View {
-        ZStack(alignment: .topLeading) {
-            dayPanel(day, showsPullHint: showsPullHint)
-                .transition(Motion.appear)
-        }
-    }
-
     @ViewBuilder
     private func dayPanel(
         _ day: LocalCompetitionDayPresentation,
         showsPullHint: Bool
     ) -> some View {
         if let panel = competitionRingPanel(day, locale: locale) {
-            VStack(alignment: .leading, spacing: 12) {
-                ActivityRingsView(
-                    panel: panel,
-                    opponentName: competition.opponentDisplayName,
-                    openNight: competition.isSleepMatch ? { drawer = .night(day.ordinal) } : nil
-                )
-                if !panel.isPaused, day.metrics.includesActivityRings {
-                    CompetitionHourlyPaceView(day: day.day, points: day.ownerAcceptedPoints)
-                }
-            }
-            .id(day.ordinal)
+            ActivityRingsView(
+                panel: panel,
+                opponentName: competition.opponentDisplayName,
+                hourlyPace: hourlyPace,
+                isToday: day.ordinal == competition.currentDayOrdinal,
+                openNight: competition.isSleepMatch ? { drawer = .night(day.ordinal) } : nil
+            )
         } else if day.ownerLatestAvailability == .notSyncedYet {
             VStack(alignment: .leading, spacing: 4) {
                 Label(
@@ -619,30 +716,6 @@ struct CompetitionDetailView: View {
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .padding(16)
             .themePanel()
-        }
-    }
-
-    @ViewBuilder
-    private func dayDrawer(_ ordinal: Int) -> some View {
-        if let day = competition.days.first(where: { $0.ordinal == ordinal }) {
-            CompetitionDrawer(
-                title: "Day \(day.ordinal)",
-                subtitle: competitionDayText(
-                    day.day, now: competition.evaluatedAt, locale: locale, timeZone: timeZone
-                )
-            ) {
-                CompetitionWeekChart(
-                    days: [day],
-                    currentDayOrdinal: competition.currentDayOrdinal,
-                    now: competition.evaluatedAt,
-                    opponentName: competition.opponentDisplayName
-                )
-                if let reactions {
-                    dayReactions(ordinal, control: reactions)
-                }
-                dayActivity(day, showsPullHint: false)
-            }
-            .moving(Motion.settle, value: reactions?.failed.contains(.day(ordinal)))
         }
     }
 
@@ -727,6 +800,8 @@ struct CompetitionDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .themePanel()
         }
     }
 
@@ -762,10 +837,27 @@ struct CompetitionDetailView: View {
         }
     }
 
-    private var todayTabTitle: String {
-        todayDay.map {
-            $0.ordinal == competition.currentDayOrdinal ? "Today" : "Day \($0.ordinal)"
-        } ?? "Today"
+    private var defaultSelectedOrdinal: Int? {
+        if let initial = initialSelectedDayOrdinal,
+           let day = competition.days.first(where: { $0.ordinal == initial }),
+           day.ownerLatestAvailability != .notYetOccurred {
+            return day.ordinal
+        }
+        return activityDay?.ordinal
+    }
+
+    private var resolvedSelectedOrdinal: Int? {
+        if let selected = selectedDayOrdinal,
+           let day = competition.days.first(where: { $0.ordinal == selected }),
+           day.ownerLatestAvailability != .notYetOccurred {
+            return day.ordinal
+        }
+        return defaultSelectedOrdinal
+    }
+
+    private var selectedDay: LocalCompetitionDayPresentation? {
+        guard let ordinal = resolvedSelectedOrdinal else { return nil }
+        return competition.days.first { $0.ordinal == ordinal }
     }
 
     private var todayDay: LocalCompetitionDayPresentation? {
@@ -789,6 +881,82 @@ struct CompetitionDetailView: View {
     private var scoresAreProvisional: Bool {
         if case .tallying = competition.lifecycle { return true }
         return false
+    }
+}
+
+private struct CompetitionDetailWeekStrip: View {
+    let days: [LocalCompetitionDayPresentation]
+    let metrics: CompetitionMetrics
+    let selectedOrdinal: Int?
+    let currentDayOrdinal: Int?
+    let opponentName: String
+    let now: Date
+    let select: (Int) -> Void
+
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(days, id: \.ordinal) { day in
+                daySlot(day)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("competition.weekStrip")
+    }
+
+    @ViewBuilder
+    private func daySlot(_ day: LocalCompetitionDayPresentation) -> some View {
+        let isSelected = day.ordinal == selectedOrdinal
+        let isFuture = day.ownerLatestAvailability == .notYetOccurred
+        let label = competitionDayAccessibilityLabel(
+            day,
+            currentDayOrdinal: currentDayOrdinal,
+            opponentName: opponentName,
+            now: now,
+            locale: locale
+        )
+        if isFuture {
+            slotContent(day, isSelected: false)
+                .accessibilityElement(children: .ignore)
+                .accessibilityIdentifier("competition.strip.day.\(day.ordinal)")
+                .accessibilityLabel(label)
+        } else {
+            Button {
+                select(day.ordinal)
+            } label: {
+                slotContent(day, isSelected: isSelected)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("competition.strip.day.\(day.ordinal)")
+            .accessibilityLabel(label)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .accessibilityHint(isSelected ? "" : "Shows this day’s breakdown")
+        }
+    }
+
+    private func slotContent(
+        _ day: LocalCompetitionDayPresentation,
+        isSelected: Bool
+    ) -> some View {
+        let rings = competitionDayRings(day, metrics: metrics).owner
+        let outcome = competitionDayOutcome(day, currentDayOrdinal: currentDayOrdinal)
+        let dotColor = competitionDayWinnerDotColor(outcome)
+        return VStack(spacing: 4) {
+            CompetitionRingStack(rings: rings)
+                .frame(width: 34, height: 34)
+                .padding(4)
+                .overlay {
+                    Circle().stroke(isSelected ? Theme.ink : .clear, lineWidth: 2)
+                }
+                .animation(Motion.fade, value: isSelected)
+            Circle()
+                .fill(dotColor ?? .clear)
+                .frame(width: 5, height: 5)
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
     }
 }
 

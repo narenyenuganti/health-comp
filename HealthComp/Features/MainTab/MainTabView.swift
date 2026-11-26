@@ -26,6 +26,7 @@ struct MainTabView: View {
     @State private var isVersusPlaying = false
     @State private var replaysVersus = false
     @State private var recapPeriod: CompetitionRecapPeriod?
+    @State private var selectedDayOrdinals: [CompetitionID: Int] = [:]
     @State private var profileActionID = UUID()
     @State private var replayIntroActionID = UUID()
 
@@ -175,7 +176,7 @@ struct MainTabView: View {
             || store.competition.challengeSheetStatus.controlPhase == .sent
     }
 
-    private func competitionScreen(_ id: CompetitionID) -> some View {
+    private func competitionScreen(_ id: CompetitionID, dayOrdinal: Int? = nil) -> some View {
         let publication = store.competition.publication
         let kind = publication?.dashboard.competitions.first { $0.id == id }
             .map { competitionScreenKind($0, source: publication?.source) }
@@ -287,7 +288,7 @@ struct MainTabView: View {
                         CompetitionHistoryView(
                             publication: publication,
                             openRecap: { recapPeriod = $0 },
-                            openMatch: { homeStack.wrappedValue.append(.competition($0)) }
+                            openMatch: { homeStack.wrappedValue.append(.competition($0, dayOrdinal: $1)) }
                         )
                         .toolbarRole(.editor)
                     }
@@ -333,8 +334,8 @@ struct MainTabView: View {
                         CompetitionOwnRecordsView(publication: publication)
                             .toolbarRole(.editor)
                     }
-                case let .competition(id):
-                    competitionScreen(id)
+                case let .competition(id, dayOrdinal):
+                    competitionScreen(id, dayOrdinal: dayOrdinal)
                         .toolbarRole(.editor)
                         .onChange(of: completedResultTitle(id)) { old, title in
                             if old == nil, let title {
@@ -397,7 +398,8 @@ struct MainTabView: View {
             showsFriends: Binding(
                 get: { store.showsFriends },
                 set: { store.send(.friendsPresentationChanged($0)) }
-            )
+            ),
+            dayOrdinals: $selectedDayOrdinals
         )
     }
 
@@ -902,7 +904,8 @@ struct MainTabView: View {
                     recordLink: recordLink(competition, in: publication),
                     replayIntro: CompetitionVersusIntroGate.isEnabled
                         && competitionVersusIntroContent(competition, in: publication, isReplay: true) != nil
-                        ? { replaysVersus = true } : nil
+                        ? { replaysVersus = true } : nil,
+                    initialSelectedDayOrdinal: selectedDayOrdinals[id]
                 )
 
             case .completed, .archived:
@@ -991,7 +994,8 @@ struct MainTabView: View {
                         await store.send(.competition(.pullToRefresh)).finish()
                     }.value
                 },
-                endPractice: { store.send(.competition(.deleteTapped(id))) }
+                endPractice: { store.send(.competition(.deleteTapped(id))) },
+                initialSelectedDayOrdinal: selectedDayOrdinals[id]
             )
         }
     }

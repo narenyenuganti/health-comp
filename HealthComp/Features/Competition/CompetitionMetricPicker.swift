@@ -28,10 +28,10 @@ extension CompetitionMetrics {
     }
 
     var badgeText: String {
-        if self == .all { return "RINGS + SLEEP" }
+        if self == .all { return "Rings + Sleep" }
         let items = orderedMetrics
-        if items.count == 1 { return "\(items[0].shortTitle) ONLY" }
-        return items.map(\.shortTitle).joined(separator: " · ")
+        if items.count == 1 { return "\(items[0].title) only" }
+        return items.map(\.title).joined(separator: " · ")
     }
 
     var spokenSummary: String {
@@ -214,8 +214,7 @@ struct CompetitionMetricBadge: View {
                 }
                 .accessibilityHidden(true)
                 Text(metrics.badgeText)
-                    .font(.caption2.weight(.bold).width(.condensed))
-                    .tracking(0.9)
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(Theme.secondary)
                     .lineLimit(1)
             }

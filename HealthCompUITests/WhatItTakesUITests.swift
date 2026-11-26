@@ -21,18 +21,18 @@ final class WhatItTakesUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
         XCTAssertFalse(takes.exists)
 
-        let shown: [(name: String, status: String, label: String)] = [
-            ("Sam", "Day 5 of 7",
+        let shown: [(name: String, status: String, dayOrdinal: Int, label: String)] = [
+            ("Sam", "Day 5 of 7", 5,
              "39 points to take the lead. About 240 kilocalories of Move or 12 minutes of Exercise."),
-            ("Bartholomew", "Day 3 of 7",
+            ("Bartholomew", "Day 3 of 7", 3,
              "50 points to take the lead. About 180 kilocalories of Move and 6 minutes of Exercise."),
-            ("Morgan", "Day 4 of 7",
+            ("Morgan", "Day 4 of 7", 4,
              "39 points to take the lead. About 12 minutes of Move Time or 12 minutes of Exercise."),
-            ("Devon", "Day 6 of 7", "1 point to take the lead. About 1 minute of Exercise."),
-            ("Priya", "Last day",
+            ("Devon", "Day 6 of 7", 6, "1 point to take the lead. About 1 minute of Exercise."),
+            ("Priya", "Last day", 7,
              "Out of reach today. Priya is 380 points ahead and you have 110 points left in Move and Exercise today."),
-            ("Quinn", "Day 6 of 7", "Out of reach today. All square, and you’ve reached today’s cap."),
-            ("Riley", "Day 5 of 7",
+            ("Quinn", "Day 6 of 7", 6, "Out of reach today. All square, and you’ve reached today’s cap."),
+            ("Riley", "Day 5 of 7", 5,
              "Out of reach today. Riley is 20 points ahead and Move and Exercise are at the 200% cap."),
         ]
         for match in shown {
@@ -45,9 +45,13 @@ final class WhatItTakesUITests: XCTestCase {
             XCTAssertTrue(rings.exists, match.name)
             XCTAssertLessThan(takes.frame.maxY, rings.frame.minY, "\(match.name): above the rings")
             XCTAssertNotEqual(takes.elementType, .button, "not tappable")
-            showWeek()
+            let dayOne = app.buttons["competition.strip.day.1"]
+            XCTAssertTrue(dayOne.waitForExistence(timeout: 3), match.name)
+            dayOne.tap()
             XCTAssertFalse(takes.exists, match.name)
-            app.buttons["Today"].tap()
+            let todayStrip = app.buttons["competition.strip.day.\(match.dayOrdinal)"]
+            XCTAssertTrue(todayStrip.waitForExistence(timeout: 3), match.name)
+            todayStrip.tap()
             XCTAssertTrue(takes.waitForExistence(timeout: 3), match.name)
             goHome()
         }
@@ -72,20 +76,20 @@ final class WhatItTakesUITests: XCTestCase {
         }
     }
 
-    func testDayDrawerNeverShowsThePanel() {
+    func testPastDayInStripNeverShowsThePanel() {
         launchRemote(Self.lightDefault)
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
         open("Sam")
         XCTAssertTrue(takes.waitForExistence(timeout: 3))
-        showWeek()
-        let today = app.descendants(matching: .any)["competition.day.5"]
-        scrollToElement(today)
-        today.tap()
-        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.otherElements["competition.ownerRings"].waitForExistence(timeout: 3))
+        let pastDay = app.buttons["competition.strip.day.4"]
+        XCTAssertTrue(pastDay.waitForExistence(timeout: 3))
+        pastDay.tap()
+        XCTAssertTrue(app.otherElements["competition.dayPair.you"].waitForExistence(timeout: 3))
         XCTAssertFalse(takes.exists)
-        app.buttons["Close"].tap()
-        app.buttons["Today"].tap()
+        let today = app.buttons["competition.strip.day.5"]
+        XCTAssertTrue(today.waitForExistence(timeout: 3))
+        today.tap()
+        XCTAssertTrue(app.otherElements["competition.ownerRings"].waitForExistence(timeout: 3))
         XCTAssertTrue(takes.waitForExistence(timeout: 3))
         XCTAssertEqual(allTakes.count, 1)
     }
@@ -106,7 +110,6 @@ final class WhatItTakesUITests: XCTestCase {
         for day in 2...7 {
             nextCheckpoint()
             XCTAssertTrue(waitForStatus(day == 7 ? "Last day" : "Day \(day) of 7"))
-            if !app.buttons["Today"].isSelected { app.buttons["Today"].tap() }
             let lead = staticText(beginningWith: "Alex leads by ")
             XCTAssertTrue(lead.waitForExistence(timeout: 3), "Day \(day)")
             let gap = Int(lead.label.filter(\.isNumber))!
@@ -117,7 +120,6 @@ final class WhatItTakesUITests: XCTestCase {
 
         nextCheckpoint()
         XCTAssertTrue(waitForStatus("Final score pending"))
-        XCTAssertFalse(app.buttons["Today"].exists)
         XCTAssertFalse(takes.exists)
     }
 
@@ -175,7 +177,6 @@ final class WhatItTakesUITests: XCTestCase {
 
                 for _ in 0..<6 { nextCheckpoint() }
                 XCTAssertTrue(waitForStatus("Last day"))
-                if !app.buttons["Today"].isSelected { app.buttons["Today"].tap() }
                 XCTAssertTrue(takes.waitForExistence(timeout: 3))
                 XCTAssertTrue(takes.label.hasPrefix("Out of reach today"), takes.label)
                 try captureWholePanel("takes-local-last-day-\(suffix)")
@@ -259,8 +260,8 @@ final class WhatItTakesUITests: XCTestCase {
         ).firstMatch
         scrollToElement(card)
         card.tap()
-        if !app.buttons["Week"].waitForExistence(timeout: 3), card.isHittable { card.tap() }
-        XCTAssertTrue(app.buttons["Week"].waitForExistence(timeout: 3), name)
+        if !app.buttons["competition.strip.day.1"].waitForExistence(timeout: 3), card.isHittable { card.tap() }
+        XCTAssertTrue(app.buttons["competition.strip.day.1"].waitForExistence(timeout: 3), name)
     }
 
     private func goHome() {
@@ -279,12 +280,6 @@ final class WhatItTakesUITests: XCTestCase {
         XCTAssertTrue(button.waitForExistence(timeout: 5))
         wait(for: [expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: button)], timeout: 8)
         button.tap()
-    }
-
-    private func showWeek() {
-        let week = app.buttons["Week"]
-        XCTAssertTrue(week.waitForExistence(timeout: 3))
-        week.tap()
     }
 
     private func staticText(beginningWith prefix: String) -> XCUIElement {
