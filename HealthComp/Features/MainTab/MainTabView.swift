@@ -19,13 +19,12 @@ struct MainTabView: View {
     @State private var newMatchLineup: GroupMatchLineup?
     @State private var opensDuel = false
     @State private var isPracticePresented = false
-    @State private var isLogoUpdating = false
-    @State private var isTodayRingsPresented = false
     @State private var isTourPresented = false
     @State private var isLaunchSlow = false
     @State private var isVersusPlaying = false
     @State private var replaysVersus = false
     @State private var recapPeriod: CompetitionRecapPeriod?
+    @State private var selectedDayOrdinals: [CompetitionID: Int] = [:]
     @State private var profileActionID = UUID()
     @State private var replayIntroActionID = UUID()
 
@@ -175,7 +174,7 @@ struct MainTabView: View {
             || store.competition.challengeSheetStatus.controlPhase == .sent
     }
 
-    private func competitionScreen(_ id: CompetitionID) -> some View {
+    private func competitionScreen(_ id: CompetitionID, dayOrdinal: Int? = nil) -> some View {
         let publication = store.competition.publication
         let kind = publication?.dashboard.competitions.first { $0.id == id }
             .map { competitionScreenKind($0, source: publication?.source) }
@@ -250,8 +249,7 @@ struct MainTabView: View {
                         refresh: { [store] in
                             await store.send(.competition(.pullToRefresh)).finish()
                         },
-                        openRecap: { recapPeriod = $0 },
-                        isUpdating: isLogoUpdating
+                        openRecap: { recapPeriod = $0 }
                     )
                     .sheet(isPresented: $isChallengePresented, onDismiss: dismissChallengeSheet) {
                         challengeSheet(publication: publication)
@@ -273,13 +271,6 @@ struct MainTabView: View {
                     )
                 }
             }
-            .sheet(isPresented: $isTodayRingsPresented, onDismiss: { store.send(.todayActivityLoaded(nil)) }) {
-                CompetitionTodayRingsSheet(
-                    competitions: store.competition.publication?.dashboard.competitions ?? [],
-                    activity: store.todayActivity,
-                    loadActivity: { await store.send(.todayActivityRequested).finish() }
-                )
-            }
             .navigationDestination(for: CompetitionHomeRoute.self) { route in
                 switch route {
                 case .history:
@@ -287,7 +278,7 @@ struct MainTabView: View {
                         CompetitionHistoryView(
                             publication: publication,
                             openRecap: { recapPeriod = $0 },
-                            openMatch: { homeStack.wrappedValue.append(.competition($0)) }
+                            openMatch: { homeStack.wrappedValue.append(.competition($0, dayOrdinal: $1)) }
                         )
                         .toolbarRole(.editor)
                     }
@@ -333,8 +324,8 @@ struct MainTabView: View {
                         CompetitionOwnRecordsView(publication: publication)
                             .toolbarRole(.editor)
                     }
-                case let .competition(id):
-                    competitionScreen(id)
+                case let .competition(id, dayOrdinal):
+                    competitionScreen(id, dayOrdinal: dayOrdinal)
                         .toolbarRole(.editor)
                         .onChange(of: completedResultTitle(id)) { old, title in
                             if old == nil, let title {
@@ -397,7 +388,8 @@ struct MainTabView: View {
             showsFriends: Binding(
                 get: { store.showsFriends },
                 set: { store.send(.friendsPresentationChanged($0)) }
-            )
+            ),
+            dayOrdinals: $selectedDayOrdinals
         )
     }
 
@@ -711,13 +703,6 @@ struct MainTabView: View {
     @ToolbarContentBuilder
     private var homeToolbar: some ToolbarContent {
         if isToolbarShown {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: updateThenShowRings) {
-                    BrandMark(spins: isLogoUpdating).frame(height: 26)
-                }
-                .accessibilityLabel("Today’s rings")
-                .accessibilityIdentifier("home.logo")
-            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if store.competition.publication?.source == .remoteParticipants {
                     CompetitionChallengeButton {
@@ -771,19 +756,6 @@ struct MainTabView: View {
 
     private func retry() async {
         await store.send(.competition(.pullToRefresh)).finish()
-    }
-
-    private func updateThenShowRings() {
-        guard !isLogoUpdating else { return }
-        isLogoUpdating = true
-        Task {
-            let clock = ContinuousClock()
-            let lap = clock.now + .seconds(0.75)
-            await retry()
-            try? await clock.sleep(until: lap)
-            isLogoUpdating = false
-            isTodayRingsPresented = true
-        }
     }
 
     private var navigationPath: Binding<[CompetitionID]> {

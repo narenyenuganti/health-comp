@@ -303,33 +303,24 @@ final class ReactionsUITests: XCTestCase {
         try audit("long-name-drawer")
     }
 
-    func testLogoUpdatesThenShowsTodaysRings() {
+    func testHomeToolbarDropsLogoAndPullToRefreshLoadsIncomingReaction() {
         launch()
-        let logo = app.buttons["home.logo"]
-        XCTAssertTrue(logo.waitForExistence(timeout: 5))
-        XCTAssertEqual(logo.label, "Today’s rings")
-        let rings = app.otherElements["home.todayRings"]
-        XCTAssertFalse(rings.exists)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["home.logo"].exists)
         let before = card("active", "Jordan")
         XCTAssertTrue(before.waitForExistence(timeout: 5))
         XCTAssertFalse(before.label.contains("Fire"), before.label)
 
-        logo.tap()
-        XCTAssertTrue(rings.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["YOUR RINGS TODAY"].exists)
-        XCTAssertTrue(rings.label.hasPrefix("Your rings. Move, "), rings.label)
-        XCTAssertTrue(rings.label.hasSuffix(" points of 600 today."), rings.label)
+        let scroll = app.scrollViews.firstMatch
+        let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+        start.press(forDuration: 0.05, thenDragTo: end)
 
-        rings.swipeDown(velocity: .fast)
-        XCTAssertTrue(waitFor(rings, "exists == false", timeout: 3))
         let jordan = card("active", "Jordan")
         XCTAssertTrue(
             waitFor(jordan, "label ENDSWITH '. Fire. Jordan reacted to your Day 3'", timeout: 5),
             jordan.label
         )
-
-        logo.tap()
-        XCTAssertTrue(rings.waitForExistence(timeout: 5))
     }
 
     func testDraggingTheDrawerFromAChipSendsNoReaction() {

@@ -88,6 +88,36 @@ final class RecordsAndBadgesUITests: XCTestCase {
         shot("history-won")
     }
 
+    func testHistoryCalendarShowsRingsAndOpensMatchOnTap() {
+        launch()
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let history = app.buttons["competition.history.open"]
+        scrollTo(history)
+        history.tap()
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
+
+        let calendarButton = app.buttons["competition.history.calendar"]
+        XCTAssertTrue(calendarButton.waitForExistence(timeout: 5))
+        calendarButton.tap()
+
+        let sheet = element("competition.calendar.sheet")
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["competition.calendar.done"].exists)
+        XCTAssertFalse(element("competition.calendar.selected").exists)
+
+        let nonMatchDay = app.buttons["competition.calendar.day.2026-10-1"]
+        XCTAssertTrue(nonMatchDay.waitForExistence(timeout: 3))
+        XCTAssertFalse(nonMatchDay.isEnabled)
+
+        let matchDay = app.buttons["competition.calendar.day.2026-10-26"]
+        XCTAssertTrue(matchDay.waitForExistence(timeout: 3))
+        XCTAssertTrue(matchDay.isEnabled)
+        matchDay.tap()
+
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(element("competition.result").waitForExistence(timeout: 5))
+    }
+
     private func launch(_ arguments: [String] = []) {
         app.launchEnvironment["TZ"] = "America/Los_Angeles"
         app.launchArguments = [

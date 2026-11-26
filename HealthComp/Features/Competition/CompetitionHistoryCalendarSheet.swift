@@ -28,11 +28,13 @@ struct CompetitionCalendarDayKey: Hashable, Comparable, Identifiable, Sendable {
 struct CompetitionCalendarDayEntry: Equatable, Identifiable {
     let key: CompetitionCalendarDayKey
     let day: CompetitionDay
+    let dayOrdinal: Int
     let competitionID: CompetitionID
     let opponentName: String
     let outcome: CompetitionOutcome?
     let userPoints: Double?
     let opponentPoints: Double?
+    let rings: [CompetitionRing]
 
     var id: CompetitionCalendarDayKey { key }
 }
@@ -44,6 +46,43 @@ struct CompetitionCalendarMonth: Equatable, Identifiable {
     let days: [CompetitionCalendarDayKey]
 
     var id: String { "\(year)-\(month)" }
+}
+
+func competitionCalendarDayRings(
+    _ day: LocalCompetitionDayPresentation,
+    metrics: CompetitionMetrics
+) -> [CompetitionRing] {
+    let resolved = metrics.isEmpty ? (day.metrics.isEmpty ? .threeRings : day.metrics) : metrics
+    let activityProgress: [Double]
+    if let points = day.ownerRingPoints, points.count == 3 {
+        activityProgress = points.map { $0 / 100 }
+    } else if let snapshot = day.ownerAcceptedSnapshot ?? day.ownerLatestSnapshot,
+              let score = ActivityScoreCalculator.score(
+                snapshot,
+                policy: day.scoringPolicy,
+                metrics: .threeRings
+              ).availableScore {
+        activityProgress = [
+            score.movePercentage / 100,
+            score.exercisePercentage / 100,
+            score.standOrRollPercentage / 100,
+        ]
+    } else if let accepted = day.ownerAcceptedPoints {
+        let count = resolved.activeActivityIndices.count
+        let perRing = count > 0 ? max(0, accepted - (day.ownerSleepPoints ?? 0)) / Double(count) : 0
+        activityProgress = [perRing / 100, perRing / 100, perRing / 100]
+    } else {
+        activityProgress = [0, 0, 0]
+    }
+    let sleepProgress = (day.ownerSleepPoints ?? day.ownerSleepReading?.points ?? 0) / 100
+    return resolved.orderedMetrics.map { metric in
+        switch metric {
+        case .move: CompetitionRing(color: Theme.move, progress: activityProgress[0])
+        case .exercise: CompetitionRing(color: Theme.exercise, progress: activityProgress[1])
+        case .stand: CompetitionRing(color: Theme.stand, progress: activityProgress[2])
+        case .sleep: CompetitionRing(color: Theme.sleep, progress: sleepProgress)
+        }
+    }
 }
 
 func competitionCalendarEntries(
@@ -73,11 +112,13 @@ func competitionCalendarEntries(
             map[key] = CompetitionCalendarDayEntry(
                 key: key,
                 day: day.day,
+                dayOrdinal: day.ordinal,
                 competitionID: competition.id,
                 opponentName: competition.opponentDisplayName,
                 outcome: outcome,
                 userPoints: day.ownerAcceptedPoints,
-                opponentPoints: day.opponentRevealedPoints
+                opponentPoints: day.opponentRevealedPoints,
+                rings: competitionCalendarDayRings(day, metrics: competition.metrics)
             )
         }
     }
@@ -116,182 +157,107 @@ func competitionCalendarMonths(
 struct CompetitionHistoryCalendarSheet: View {
     let competitions: [LocalCompetitionPresentation]
     let now: Date
-    let openMatch: (CompetitionID) -> Void
+    let openMatch: (CompetitionID, Int?) -> Void
 
-    @State private var selectedDay: CompetitionCalendarDayKey?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
 
     private let weekdayHeaders = ["M", "T", "W", "T", "F", "S", "S"]
+    private let ringSize: CGFloat = 26
+    private let dotSize: CGFloat = 5
 
     var body: some View {
         let entries = competitionCalendarEntries(competitions)
         let months = competitionCalendarMonths(from: entries)
-        let activeEntry = selectedDay.flatMap { entries[$0] }
-            ?? entries.keys.sorted().last.flatMap { entries[$0] }
 
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if let activeEntry {
-                        selectedBanner(activeEntry)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                if months.isEmpty {
+                    Text("Played match days appear on your calendar.")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ForEach(Array(months.enumerated()), id: \.element.id) { index, month in
+                        monthSection(month, entries: entries, showsHint: index == 0)
                     }
-
-                    if months.isEmpty {
-                        Text("Played match days appear on your calendar.")
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        ForEach(months) { month in
-                            monthCard(month, entries: entries, selected: activeEntry?.key)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-            }
-            .background(Theme.ground)
-            .navigationTitle("Calendar")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .accessibilityIdentifier("competition.calendar.done")
+                    legend
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
         }
+        .background(Theme.ground)
         .accessibilityIdentifier("competition.calendar.sheet")
     }
 
-    private func selectedBanner(_ entry: CompetitionCalendarDayEntry) -> some View {
-        let verdict: String
-        let verdictColor: Color
-        switch entry.outcome {
-        case .win:
-            verdict = "YOU WON DAY"
-            verdictColor = Theme.you
-        case .loss:
-            verdict = "\(entry.opponentName.uppercased()) WON"
-            verdictColor = Theme.ink
-        case .tie:
-            verdict = "TIED DAY"
-            verdictColor = Theme.secondary
-        case nil:
-            verdict = "IN PLAY"
-            verdictColor = Theme.secondary
-        }
-        return Button {
-            dismiss()
-            openMatch(entry.competitionID)
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(competitionDayText(entry.day, now: now, locale: locale))
-                            .font(.headline)
-                            .foregroundStyle(Theme.ink)
-                        Text(verdict)
-                            .font(.caption2.weight(.heavy).width(.condensed))
-                            .tracking(0.8)
-                            .foregroundStyle(verdictColor)
-                    }
-                    Text("vs \(entry.opponentName) · You \(competitionPointsText(entry.userPoints, locale: locale)) · \(entry.opponentName) \(competitionPointsText(entry.opponentPoints, locale: locale))")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondary)
-                        .multilineTextAlignment(.leading)
-                }
-                Spacer(minLength: 4)
-                DisclosureChevron()
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .themePanel()
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(CompetitionPressButtonStyle())
-        .accessibilityIdentifier("competition.calendar.selected")
-    }
-
-    private func monthCard(
+    private func monthSection(
         _ month: CompetitionCalendarMonth,
         entries: [CompetitionCalendarDayKey: CompetitionCalendarDayEntry],
-        selected: CompetitionCalendarDayKey?
+        showsHint: Bool
     ) -> some View {
-        let monthEntries = month.days.compactMap { entries[$0] }
-        let wins = monthEntries.filter { $0.outcome == .win }.count
-        let losses = monthEntries.filter { $0.outcome == .loss }.count
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                SectionLabel(monthTitle(month))
+                Text(monthTitle(month))
+                    .font(.headline)
+                    .foregroundStyle(Theme.ink)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 8)
-                Text("\(wins)–\(losses) DAYS")
-                    .themeLabel()
-                    .foregroundStyle(Theme.secondary)
+                if showsHint {
+                    Text("Tap a day")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondary)
+                }
             }
-            .padding(.horizontal, 4)
 
-            VStack(spacing: 8) {
-                HStack(spacing: 4) {
-                    ForEach(weekdayHeaders.indices, id: \.self) { index in
-                        Text(weekdayHeaders[index])
-                            .font(.caption2.weight(.bold).width(.condensed))
-                            .foregroundStyle(Theme.tertiary)
-                            .frame(maxWidth: .infinity)
-                    }
-                }
-                LazyVGrid(columns: columns, spacing: 6) {
-                    ForEach(0..<month.leadingBlanks, id: \.self) { _ in
-                        Color.clear.frame(height: 36)
-                    }
-                    ForEach(month.days, id: \.self) { day in
-                        dayCell(day, entry: entries[day], isSelected: day == selected)
-                    }
+            HStack(spacing: 0) {
+                ForEach(weekdayHeaders.indices, id: \.self) { index in
+                    Text(weekdayHeaders[index])
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Theme.secondary)
+                        .frame(maxWidth: .infinity)
                 }
             }
-            .padding(14)
-            .themePanel()
+
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(0..<month.leadingBlanks, id: \.self) { _ in
+                    Color.clear.frame(height: 52)
+                }
+                ForEach(month.days, id: \.self) { day in
+                    dayCell(day, entry: entries[day])
+                }
+            }
         }
     }
 
     private func dayCell(
         _ day: CompetitionCalendarDayKey,
-        entry: CompetitionCalendarDayEntry?,
-        isSelected: Bool
+        entry: CompetitionCalendarDayEntry?
     ) -> some View {
         Button {
-            if let entry {
-                if selectedDay == day {
-                    dismiss()
-                    openMatch(entry.competitionID)
-                } else {
-                    selectedDay = day
-                }
-            }
+            guard let entry else { return }
+            dismiss()
+            openMatch(entry.competitionID, entry.dayOrdinal)
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: 3) {
                 Text(String(day.day))
-                    .font(.caption.weight(entry != nil ? .bold : .regular).monospacedDigit())
+                    .font(.caption.weight(entry != nil ? .semibold : .medium).monospacedDigit())
                     .foregroundStyle(entry != nil ? Theme.ink : Theme.faint)
-                pip(for: entry)
-                    .frame(width: 16, height: 5)
-            }
-            .frame(maxWidth: .infinity, minHeight: 36)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Theme.ground)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 8)
-                                .strokeBorder(Theme.ink, lineWidth: 1.5)
-                        }
-                } else if entry != nil {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Theme.control)
+                if let entry {
+                    CompetitionRingStack(rings: entry.rings)
+                        .frame(width: ringSize, height: ringSize)
+                    Circle()
+                        .fill(dotColor(for: entry.outcome))
+                        .frame(width: dotSize, height: dotSize)
+                } else {
+                    Color.clear
+                        .frame(width: ringSize, height: ringSize + dotSize + 3)
                 }
             }
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .top)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -300,18 +266,32 @@ struct CompetitionHistoryCalendarSheet: View {
         .accessibilityIdentifier("competition.calendar.day.\(day.year)-\(day.month)-\(day.day)")
     }
 
-    @ViewBuilder
-    private func pip(for entry: CompetitionCalendarDayEntry?) -> some View {
-        switch entry?.outcome {
-        case .win: SlantedBar().fill(Theme.youFill)
-        case .loss: SlantedBar().fill(Theme.ink)
-        case .tie: SlantedBar().fill(Theme.tertiary)
-        case nil:
-            if entry != nil {
-                SlantedBar().stroke(Theme.secondary, lineWidth: 1)
-            } else {
-                SlantedBar().fill(Theme.track.opacity(0.5))
-            }
+    private var legend: some View {
+        HStack(spacing: 14) {
+            legendItem(color: Theme.youFill, text: "You won")
+            legendItem(color: Theme.ink, text: "They won")
+            legendItem(color: Theme.tertiary, text: "Tied")
+        }
+        .font(.caption)
+        .foregroundStyle(Theme.secondary)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func legendItem(color: Color, text: String) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text(text)
+        }
+    }
+
+    private func dotColor(for outcome: CompetitionOutcome?) -> Color {
+        switch outcome {
+        case .win: Theme.youFill
+        case .loss: Theme.ink
+        case .tie: Theme.tertiary
+        case nil: .clear
         }
     }
 
@@ -322,7 +302,6 @@ struct CompetitionHistoryCalendarSheet: View {
             return "\(month.year)-\(month.month)"
         }
         return date.formatted(Date.FormatStyle(locale: locale, calendar: gmt, timeZone: .gmt).month(.wide).year())
-            .uppercased(with: locale)
     }
 
     private func dayAccessibilityLabel(_ day: CompetitionCalendarDayKey, entry: CompetitionCalendarDayEntry?) -> String {
