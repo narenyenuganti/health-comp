@@ -898,6 +898,7 @@ private struct CompetitionDetailWeekStrip: View {
     let select: (Int) -> Void
 
     @Environment(\.locale) private var locale
+    @ScaledMetric(relativeTo: .caption2) private var initialSize: CGFloat = 22
 
     var body: some View {
         HStack(spacing: 2) {
@@ -950,9 +951,9 @@ private struct CompetitionDetailWeekStrip: View {
         return VStack(spacing: 4) {
             Text(weekdayInitial(day.day, locale: locale))
                 .font(.caption2.weight(.bold))
-                .dynamicTypeSize(...DynamicTypeSize.large)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .foregroundStyle(isSelected ? Theme.onInk : isFuture ? Theme.faint : Theme.secondary)
-                .frame(width: 22, height: 22)
+                .frame(width: min(initialSize, 30), height: min(initialSize, 30))
                 .background(isSelected ? Theme.ink : .clear, in: Circle())
                 .animation(Motion.fade, value: isSelected)
             CompetitionRingStack(rings: rings)
