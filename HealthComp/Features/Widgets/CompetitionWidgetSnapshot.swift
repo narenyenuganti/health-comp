@@ -52,6 +52,7 @@ struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
             var detail: String
             var progress: Double
             var points: Double?
+            var opponentProgress: Double? = nil
         }
 
         var dayOrdinal: Int
@@ -584,14 +585,14 @@ extension CompetitionWidgetSnapshot {
         let week: [Double?] = [250, 230, 262, 250, 212, 260, 300]
         let theirs: [Double?] = [230, 260, 280, 192, 188, 250, 240]
         let liveRings = TodayRings(dayOrdinal: 5, rows: [
-            .init(kind: .move, title: "Move", detail: "510/600 kcal", progress: 0.85, points: 85),
-            .init(kind: .exercise, title: "Exercise", detail: "27/30 min", progress: 0.90, points: 90),
-            .init(kind: .stand, title: "Stand", detail: "10/12 hr", progress: 0.83, points: 83),
+            .init(kind: .move, title: "Move", detail: "510/600 kcal", progress: 0.85, points: 85, opponentProgress: 0.70),
+            .init(kind: .exercise, title: "Exercise", detail: "27/30 min", progress: 0.90, points: 90, opponentProgress: 0.65),
+            .init(kind: .stand, title: "Stand", detail: "10/12 hr", progress: 0.83, points: 83, opponentProgress: 0.53),
         ])
         let trailingRings = TodayRings(dayOrdinal: 3, rows: [
-            .init(kind: .move, title: "Move", detail: "430/600 kcal", progress: 0.72, points: 72),
-            .init(kind: .exercise, title: "Exercise", detail: "21/30 min", progress: 0.70, points: 70),
-            .init(kind: .stand, title: "Stand", detail: "7/12 hr", progress: 0.58, points: 58),
+            .init(kind: .move, title: "Move", detail: "430/600 kcal", progress: 0.72, points: 72, opponentProgress: 0.80),
+            .init(kind: .exercise, title: "Exercise", detail: "21/30 min", progress: 0.70, points: 70, opponentProgress: 0.75),
+            .init(kind: .stand, title: "Stand", detail: "7/12 hr", progress: 0.58, points: 58, opponentProgress: 0.65),
         ])
         let samRivalry = Rivalry(
             wins: 4, losses: 2, ties: 0,
@@ -737,12 +738,20 @@ extension CompetitionWidgetSnapshot {
                              final: .win, belt: Belt(holder: .you, defenses: 3, card: .defended(3)))]
         case "sleepMatch":
             let sleepRings = TodayRings(dayOrdinal: 5, rows: liveRings.rows + [
-                .init(kind: .sleep, title: "Sleep", detail: "7h 48m", progress: 0.92, points: 92),
+                .init(kind: .sleep, title: "Sleep", detail: "7h 48m", progress: 0.92, points: 92, opponentProgress: 0.74),
             ])
             matches = [match(5, "Sam", currentDay: 5, you: 1_564, them: 1_490, youDays: [330, 310, 352, 340, 304],
                              themDays: [305, 330, 350, 272, 233],
                              todayRings: sleepRings, rivalry: samRivalry,
                              customMetrics: [.move, .exercise, .stand, .sleep])]
+        case "sleepOnly":
+            let sleepOnlyRings = TodayRings(dayOrdinal: 5, rows: [
+                .init(kind: .sleep, title: "Sleep", detail: "7h 48m", progress: 0.92, points: 92, opponentProgress: 0.78),
+            ])
+            matches = [match(5, "Sam", currentDay: 5, you: 446, them: 412,
+                             youDays: [88, 90, 84, 92, 92], themDays: [82, 86, 80, 86, 78],
+                             todayRings: sleepOnlyRings, rivalry: samRivalry,
+                             customMetrics: [.sleep])]
         default: return nil
         }
         return Self(matches: matches, hasIncomingChallenge: hasIncomingChallenge)

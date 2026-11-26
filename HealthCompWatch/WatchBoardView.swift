@@ -311,36 +311,32 @@ private struct WatchMatchPagerView: View {
             }
         }
         .toolbar {
-            if matchCount > 1 {
+            if showsWeek {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(action: openList) {
-                        Image(systemName: "list.bullet")
-                            .font(.footnote.weight(.bold))
+                    Button { activeSheet = .summary } label: {
+                        Image(systemName: "chart.bar.fill")
                     }
-                    .accessibilityLabel("Matches")
-                    .accessibilityIdentifier("watch.matches.button")
+                    .accessibilityLabel("Weekly summary")
+                    .accessibilityIdentifier("watch.summary.button")
                 }
             }
-            if showsWeek || !displayTrophies.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 4) {
-                        if !displayTrophies.isEmpty {
-                            Button { activeSheet = .trophies } label: {
-                                Image(systemName: "shield.fill")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(Theme.you)
-                            }
-                            .accessibilityLabel("Trophies")
-                            .accessibilityIdentifier("watch.trophies.button")
+            if activePage == .overview, matchCount > 1 || !displayTrophies.isEmpty {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    if matchCount > 1 {
+                        Button(action: openList) {
+                            Image(systemName: "list.bullet")
                         }
-                        if showsWeek {
-                            Button { activeSheet = .summary } label: {
-                                Image(systemName: "chart.bar.fill")
-                                    .font(.caption2.weight(.bold))
-                            }
-                            .accessibilityLabel("Weekly summary")
-                            .accessibilityIdentifier("watch.summary.button")
+                        .accessibilityLabel("Matches")
+                        .accessibilityIdentifier("watch.matches.button")
+                    }
+                    Spacer()
+                    if !displayTrophies.isEmpty {
+                        Button { activeSheet = .trophies } label: {
+                            Image(systemName: "shield.fill")
+                                .foregroundStyle(Theme.you)
                         }
+                        .accessibilityLabel("Trophies")
+                        .accessibilityIdentifier("watch.trophies.button")
                     }
                 }
             }
@@ -452,7 +448,7 @@ private struct WatchOverviewPage: View {
 
     @ViewBuilder
     private func overviewContent(_ status: String) -> some View {
-        VStack(alignment: .leading, spacing: isCompact ? 5 : 7) {
+        VStack(alignment: .leading, spacing: isCompact ? 3 : 4) {
             HStack(spacing: 6) {
                 Text(status)
                     .font(.caption2.weight(.heavy).width(.condensed))
@@ -480,7 +476,7 @@ private struct WatchOverviewPage: View {
                     .animation(numberAnimation, value: numberRests)
                 }
             }
-            .padding(.top, isCompact ? 6 : 8)
+            .padding(.top, isCompact ? 0 : 1)
 
             scores
 
@@ -511,7 +507,7 @@ private struct WatchOverviewPage: View {
         let rawSize = competitionWatchScoreSize(
             you: you, them: them, width: WKInterfaceDevice.current().screenBounds.width - 42
         )
-        let scoreSize = min(rawSize, isCompact ? 34 : 44)
+        let scoreSize = min(rawSize, isCompact ? 30 : 35)
         return HStack(alignment: .bottom, spacing: 6) {
             VStack(alignment: .leading, spacing: -1) {
                 Text("YOU")
@@ -558,9 +554,9 @@ private struct WatchOverviewPage: View {
 
     private func roundStrip(_ status: String) -> some View {
         let days = match.playedDayPoints(at: date)
-        return VStack(spacing: 3) {
+        return VStack(spacing: 2) {
             ZStack {
-                CompetitionMatchStrip(match: match, date: date, height: isCompact ? 10 : 12, spacing: 3.5) { index, outcome, bar in
+                CompetitionMatchStrip(match: match, date: date, height: isCompact ? 8 : 9.5, spacing: 3.5) { index, outcome, bar in
                     bar
                         .scaleEffect(x: outcome == .won && barsRest ? 0 : 1, anchor: .trailing)
                         .moving(Motion.grow(index, of: 7), value: barsRest)
@@ -683,7 +679,7 @@ private struct WatchOverviewPage: View {
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, isCompact ? 6 : 8)
+            .padding(.vertical, isCompact ? 4 : 5)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Theme.panel.opacity(0.92))
@@ -728,11 +724,26 @@ private struct WatchTodayRingsPage: View {
     let date: Date
     var selectRing: ((CompetitionWidgetSnapshot.TodayRings.Row) -> Void)? = nil
 
-    @ScaledMetric(relativeTo: .body) private var scoreSize: CGFloat = 19
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var scoreSize: CGFloat = 18
     @ScaledMetric(relativeTo: .footnote) private var ringPointsSize: CGFloat = 15
 
     private var isCompact: Bool { WKInterfaceDevice.current().screenBounds.width < 175 }
     private var isTrailing: Bool { match.side == .them }
+
+    private func ringSize(for count: Int) -> CGFloat {
+        if isCompact { return count >= 4 ? 48 : 52 }
+        return count >= 4 ? 54 : 60
+    }
+
+    private func ringOrder(_ kind: CompetitionWidgetSnapshot.TodayRings.RingKind) -> Int {
+        switch kind {
+        case .move: 0
+        case .exercise: 1
+        case .stand: 2
+        case .sleep: 3
+        }
+    }
 
     private func ringColor(_ kind: CompetitionWidgetSnapshot.TodayRings.RingKind) -> Color {
         switch kind {
@@ -743,130 +754,162 @@ private struct WatchTodayRingsPage: View {
         }
     }
 
+    private func viewerProgress(for row: CompetitionWidgetSnapshot.TodayRings.Row) -> Double {
+        if row.kind == .sleep {
+            return max(0, (row.points ?? (row.progress * 100)) / 100)
+        }
+        return max(0, row.progress)
+    }
+
+    private func rowAccessibilityLabel(_ row: CompetitionWidgetSnapshot.TodayRings.Row) -> String {
+        let points = row.points.map { ", \(competitionPointsAccessibilityText($0))" } ?? ""
+        return "\(row.title), \(row.detail)\(points)."
+    }
+
     var body: some View {
         let today = match.todayScores(at: date)
         let chase = match.chase(at: date)
-        let rings = match.activeTodayRings(at: date)
+        let activeRows = match.activeTodayRings(at: date)?.rows ?? []
+        let filteredRows: [CompetitionWidgetSnapshot.TodayRings.Row] = {
+            if let allowed = match.customMetrics, !allowed.isEmpty {
+                return activeRows.filter { allowed.contains($0.kind) }
+            }
+            return activeRows
+        }()
+        let orderedRows = filteredRows.sorted { ringOrder($0.kind) < ringOrder($1.kind) }
+        let displayKinds: [CompetitionWidgetSnapshot.TodayRings.RingKind] = {
+            if !orderedRows.isEmpty { return orderedRows.map(\.kind) }
+            if let custom = match.customMetrics, !custom.isEmpty {
+                return custom.sorted { ringOrder($0) < ringOrder($1) }
+            }
+            return [.move, .exercise, .stand]
+        }()
+        let rowByKind = Dictionary(orderedRows.map { ($0.kind, $0) }) { first, _ in first }
+        let hasOpponentPerRing = orderedRows.contains { $0.opponentProgress != nil }
 
-        ScrollView {
-            VStack(alignment: .leading, spacing: isCompact ? 5 : 6) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("TODAY")
-                        .themeLabel(tracking: 1.0)
-                        .foregroundStyle(Theme.secondary)
-                    Spacer()
-                    if today.you != nil || today.them != nil {
-                        HStack(alignment: .firstTextBaseline, spacing: 3) {
-                            Text(today.you.map { competitionPointsText($0) } ?? "–")
-                                .font(.score(size: isCompact ? max(16, scoreSize - 2) : scoreSize))
+        let yourRings = displayKinds.map { kind in
+            CompetitionRing(
+                color: ringColor(kind),
+                progress: rowByKind[kind].map(viewerProgress(for:)) ?? 0
+            )
+        }
+        let opponentRings = displayKinds.map { kind -> CompetitionRing in
+            let progress: Double
+            if let explicit = rowByKind[kind]?.opponentProgress {
+                progress = max(0, explicit)
+            } else if !hasOpponentPerRing, let them = today.them, them > 0 {
+                progress = max(0, them / (Double(displayKinds.count) * 100))
+            } else {
+                progress = 0
+            }
+            return CompetitionRing(color: ringColor(kind), progress: progress)
+        }
+
+        let size = ringSize(for: orderedRows.count)
+        let content = VStack(alignment: .leading, spacing: isCompact ? 4 : 5) {
+            HStack(spacing: isCompact ? 8 : 12) {
+                ringColumn(
+                    rings: yourRings,
+                    points: today.you,
+                    color: Theme.you,
+                    size: size,
+                    owner: "You"
+                )
+                ringColumn(
+                    rings: opponentRings,
+                    points: today.them,
+                    color: Theme.ink,
+                    size: size,
+                    owner: match.name
+                )
+            }
+            .frame(maxWidth: .infinity)
+
+            if !orderedRows.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(orderedRows, id: \.kind) { row in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(row.title)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(ringColor(row.kind))
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(row.points.map { competitionPointsText($0) } ?? "–")
+                                .font(.score(size: isCompact ? max(13, ringPointsSize - 1) : ringPointsSize))
+                                .foregroundStyle(Theme.ink)
+                                .lineLimit(1)
+                                .privacySensitive()
+                        }
+                        .padding(.vertical, 0.5)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectRing?(row) }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(rowAccessibilityLabel(row))
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+
+            if let chase {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let lead = chase.lead {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text("+\(lead)")
+                                .font(.score(size: isCompact ? max(17, scoreSize - 1) : scoreSize))
                                 .foregroundStyle(Theme.you)
-                            Text("–")
-                                .font(.caption2.bold())
-                                .foregroundStyle(Theme.tertiary)
-                            Text(today.them.map { competitionPointsText($0) } ?? "–")
-                                .font(.score(size: isCompact ? max(16, scoreSize - 2) : scoreSize))
+                            Text("TO LEAD")
+                                .font(.caption2.weight(.heavy).width(.condensed))
+                                .tracking(0.7)
                                 .foregroundStyle(Theme.ink)
                         }
-                        .privacySensitive()
-                    }
-                }
-                .padding(.top, isCompact ? 4 : 6)
-
-                if let chase {
-                    VStack(alignment: .leading, spacing: 2) {
-                        if let lead = chase.lead {
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text("+\(lead)")
-                                    .font(.score(size: isCompact ? max(17, scoreSize - 1) : scoreSize))
-                                    .foregroundStyle(Theme.you)
-                                Text("TO LEAD")
-                                    .font(.caption2.weight(.heavy).width(.condensed))
-                                    .tracking(0.7)
-                                    .foregroundStyle(Theme.ink)
-                            }
-                            if let suggestion = chase.suggestion {
-                                Text(suggestion)
-                                    .font(.caption2.weight(.medium))
-                                    .foregroundStyle(Theme.ink)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            } else {
-                                Text(chase.line)
-                                    .font(.caption2)
-                                    .foregroundStyle(Theme.secondary)
-                            }
+                        if let suggestion = chase.suggestion {
+                            Text(suggestion)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(Theme.ink)
+                                .fixedSize(horizontal: false, vertical: true)
                         } else {
                             Text(chase.line)
-                                .font(.caption2.weight(.semibold))
+                                .font(.caption2)
                                 .foregroundStyle(Theme.secondary)
                         }
+                    } else {
+                        Text(chase.line)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Theme.secondary)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 11)
-                            .fill(Theme.youFill.opacity(0.16))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 11)
-                                    .strokeBorder(Theme.youFill.opacity(0.45), lineWidth: 1)
-                            }
-                    )
-                    .privacySensitive()
                 }
-
-                if let rings {
-                    VStack(spacing: isCompact ? 4 : 6) {
-                        ForEach(Array(rings.rows.enumerated()), id: \.offset) { _, row in
-                            let color = ringColor(row.kind)
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                    Text(row.title)
-                                        .font(.caption2.weight(.heavy).width(.condensed))
-                                        .tracking(0.5)
-                                        .textCase(.uppercase)
-                                        .foregroundStyle(color)
-                                        .lineLimit(1)
-                                    Text(row.detail)
-                                        .font(.caption2)
-                                        .foregroundStyle(Theme.secondary)
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.8)
-                                        .privacySensitive()
-                                    Spacer(minLength: 2)
-                                    if let points = row.points {
-                                        Text(competitionPointsText(points))
-                                            .font(.score(size: isCompact ? max(13, ringPointsSize - 2) : ringPointsSize))
-                                            .foregroundStyle(Theme.ink)
-                                            .privacySensitive()
-                                    }
-                                }
-                                GeometryReader { geo in
-                                    ZStack(alignment: .leading) {
-                                        SlantedBar().fill(Theme.track)
-                                        SlantedBar()
-                                            .fill(color)
-                                            .frame(width: row.progress > 0 ? max(8, geo.size.width * min(1, row.progress)) : 0)
-                                    }
-                                }
-                                .frame(height: isCompact ? 5 : 6)
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture { selectRing?(row) }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 11)
+                        .fill(Theme.youFill.opacity(0.16))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 11)
+                                .strokeBorder(Theme.youFill.opacity(0.45), lineWidth: 1)
                         }
-                    }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, isCompact ? 6 : 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 13)
-                            .fill(Theme.panel.opacity(0.92))
-                    )
-                }
+                )
+                .privacySensitive()
             }
-            .padding(.leading, 4)
-            .padding(.trailing, 10)
-            .padding(.bottom, 6)
         }
-        .scrollIndicators(.hidden)
+        .padding(.leading, 4)
+        .padding(.trailing, 10)
+
+        Group {
+            if chase != nil || typeSize >= .accessibility1 {
+                ScrollView {
+                    content
+                        .padding(.bottom, 4)
+                }
+                .scrollIndicators(.hidden)
+            } else {
+                VStack(spacing: 0) {
+                    content
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        }
         .containerBackground(
             LinearGradient(
                 colors: [
@@ -880,6 +923,29 @@ private struct WatchTodayRingsPage: View {
         )
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("watch.today")
+    }
+
+    private func ringColumn(
+        rings: [CompetitionRing],
+        points: Double?,
+        color: Color,
+        size: CGFloat,
+        owner: String
+    ) -> some View {
+        VStack(spacing: 1) {
+            CompetitionRingStack(rings: rings)
+                .frame(width: size, height: size)
+            Text(points.map { competitionPointsText($0) } ?? "–")
+                .font(.score(size: isCompact ? max(15, scoreSize - 2) : scoreSize))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .privacySensitive()
+                .scoreRoll(points, id: "\(match.id)/\(owner)")
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(owner) \(points.map { competitionPointsAccessibilityText($0) } ?? "no points").")
     }
 }
 
@@ -1621,31 +1687,29 @@ private struct WatchFocusedRingSheet: View {
     var body: some View {
         let points = row.points ?? 0
         let remaining = max(0, cap - points)
+        let progress = row.kind == .sleep ? max(0, points / 100) : max(0, row.progress)
         VStack(alignment: .leading, spacing: 8) {
-            Text(row.title.uppercased())
-                .themeLabel(tracking: 1.0)
-                .foregroundStyle(color)
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(competitionPointsText(points))
-                    .font(.score(size: scoreSize))
-                    .foregroundStyle(Theme.ink)
-                Text("/ \(Int(cap))")
-                    .font(.caption.weight(.bold).width(.condensed))
-                    .foregroundStyle(Theme.secondary)
+            HStack(spacing: 10) {
+                CompetitionRingStack(rings: [CompetitionRing(color: color, progress: progress)])
+                    .frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(row.title)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(color)
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(competitionPointsText(points))
+                            .font(.score(size: scoreSize))
+                            .foregroundStyle(Theme.ink)
+                        Text("/ \(Int(cap))")
+                            .font(.caption.weight(.bold).width(.condensed))
+                            .foregroundStyle(Theme.secondary)
+                    }
+                }
             }
             Text(row.detail)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Theme.ink)
                 .privacySensitive()
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    SlantedBar().fill(Theme.track)
-                    SlantedBar()
-                        .fill(color)
-                        .frame(width: row.progress > 0 ? max(8, geo.size.width * min(1, row.progress)) : 0)
-                }
-            }
-            .frame(height: 8)
             Text(remaining > 0 ? "\(competitionPointsText(remaining)) pts to cap" : "Ring cap reached")
                 .font(.caption2)
                 .foregroundStyle(Theme.secondary)
@@ -1671,7 +1735,9 @@ private struct WatchWeeklySummarySheet: View {
     let match: CompetitionWidgetSnapshot.Match
     let date: Date
 
-    @ScaledMetric(relativeTo: .title2) private var numberSize: CGFloat = 24
+    @ScaledMetric(relativeTo: .largeTitle) private var numberSize: CGFloat = 38
+
+    private var isCompact: Bool { WKInterfaceDevice.current().screenBounds.width < 175 }
 
     var body: some View {
         let days = match.playedDayPoints(at: date)
@@ -1693,75 +1759,96 @@ private struct WatchWeeklySummarySheet: View {
             return "\(abs(pct))% below your 28-day pace."
         }()
 
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("WEEKLY SUMMARY")
-                    .themeLabel(tracking: 1.0)
-                    .foregroundStyle(Theme.secondary)
-                Text(headline)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Theme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("DAILY AVG")
-                            .font(.caption2.weight(.bold).width(.condensed))
-                            .foregroundStyle(Theme.secondary)
-                        Text(playedYou.isEmpty ? "–" : competitionPointsText(avg))
-                            .font(.score(size: numberSize))
-                            .foregroundStyle(Theme.you)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: isCompact ? 12 : 14) {
+                    Text(headline)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    statBlock(
+                        label: "Daily average",
+                        labelColor: Theme.you,
+                        value: playedYou.isEmpty ? nil : competitionPointsText(avg)
+                    )
+
+                    if let baseline {
+                        statBlock(
+                            label: "28-day average",
+                            labelColor: Theme.secondary,
+                            value: competitionPointsText(baseline)
+                        )
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    statBlock(
+                        label: "This week",
+                        labelColor: Theme.you,
+                        value: match.userPointsText()
+                    )
+
+                    ZStack(alignment: .bottom) {
+                        HStack(alignment: .bottom, spacing: 4) {
+                            ForEach(Array(days.enumerated()), id: \.offset) { _, day in
+                                let ratio = day.you.map { min(1, max(0.08, $0 / ceiling)) } ?? 0
+                                SlantedBar()
+                                    .fill(day.you == nil ? Theme.track : Theme.youFill)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: day.you == nil ? 4 : 52 * ratio)
+                            }
+                        }
+                        .frame(height: 52, alignment: .bottom)
+                        if let baseline {
+                            Rectangle()
+                                .stroke(Color.white.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                                .frame(height: 1)
+                                .padding(.bottom, min(1, max(0, baseline / ceiling)) * 52)
+                        }
+                    }
                     .padding(8)
-                    .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10))
-                    if let baseline {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("28D BASE")
-                                .font(.caption2.weight(.bold).width(.condensed))
-                                .foregroundStyle(Theme.secondary)
-                            Text(competitionPointsText(baseline))
-                                .font(.score(size: numberSize))
-                                .foregroundStyle(Theme.ink)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
-                        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10))
-                    }
+                    .background(Theme.panel, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityHidden(true)
                 }
-                ZStack(alignment: .bottom) {
-                    HStack(alignment: .bottom, spacing: 4) {
-                        ForEach(Array(days.enumerated()), id: \.offset) { _, day in
-                            let ratio = day.you.map { min(1, max(0.08, $0 / ceiling)) } ?? 0
-                            SlantedBar()
-                                .fill(day.you == nil ? Theme.track : Theme.youFill)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: day.you == nil ? 4 : 52 * ratio)
-                        }
-                    }
-                    .frame(height: 52, alignment: .bottom)
-                    if let baseline {
-                        Rectangle()
-                            .stroke(Color.white.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                            .frame(height: 1)
-                            .padding(.bottom, min(1, max(0, baseline / ceiling)) * 52)
-                    }
-                }
-                .padding(8)
-                .background(Theme.panel, in: RoundedRectangle(cornerRadius: 12))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6)
+                .padding(.bottom, 10)
             }
-            .padding(.horizontal, 6)
-            .padding(.bottom, 6)
+            .navigationTitle("Weekly Summary")
+            .navigationBarTitleDisplayMode(.inline)
+            .containerBackground(
+                LinearGradient(
+                    colors: [Theme.stand.opacity(0.28), Color(hex: 0x0B0B0D)],
+                    startPoint: .topLeading,
+                    endPoint: .bottom
+                ),
+                for: .navigation
+            )
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("watch.weeklySummary")
         }
-        .containerBackground(
-            LinearGradient(
-                colors: [Theme.stand.opacity(0.28), Color(hex: 0x0B0B0D)],
-                startPoint: .topLeading,
-                endPoint: .bottom
-            ),
-            for: .navigation
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("watch.weeklySummary")
+    }
+
+    private func statBlock(label: String, labelColor: Color, value: String?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(labelColor)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value ?? "–")
+                    .font(.score(size: isCompact ? max(32, numberSize - 4) : numberSize))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                if value != nil {
+                    Text("PTS")
+                        .font(.caption.weight(.heavy).width(.condensed))
+                        .foregroundStyle(Theme.ink)
+                }
+            }
+            .privacySensitive()
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(value.map { "\(label), \($0) points." } ?? "\(label), no data.")
     }
 }
 

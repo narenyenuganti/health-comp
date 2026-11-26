@@ -434,6 +434,9 @@ final class CompetitionWatchBoardTests: XCTestCase {
                 ownerAcceptedSnapshot: isCurrent ? ringSnapshot : nil,
                 ownerLatestSnapshot: isCurrent ? ringSnapshot : nil
             )
+            if isCurrent {
+                row.opponentRingPoints = [80, 60, 70]
+            }
             if past {
                 row.ownerRingPoints = [70, 80, 50]
                 row.opponentRingPoints = [80, 60, 70]
@@ -513,6 +516,7 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertEqual(built.todayRings?.dayOrdinal, 5)
         XCTAssertEqual(built.todayRings?.rows.map(\.kind), [.move, .exercise, .stand])
         XCTAssertEqual(built.todayRings?.rows.first?.detail, "450/600 kcal")
+        XCTAssertEqual(built.todayRings?.rows.map(\.opponentProgress), [0.8, 0.6, 0.7])
         XCTAssertNotNil(built.chase?.suggestion)
         XCTAssertEqual(built.rivalry?.wins, 1)
         XCTAssertEqual(built.rivalry?.losses, 0)
