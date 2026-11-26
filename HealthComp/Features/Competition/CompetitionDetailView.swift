@@ -58,6 +58,7 @@ struct CompetitionDetailView: View {
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
@@ -621,24 +622,19 @@ struct CompetitionDetailView: View {
                 timeZone: timeZone
             )
             VStack(alignment: .leading, spacing: 12) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(headline.title)
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(Theme.ink)
+                let headerLayout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+                    : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+                headerLayout {
+                    Text(headline.title)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(Theme.ink)
+                    if !dynamicTypeSize.isAccessibilitySize {
                         Spacer(minLength: 8)
-                        Text(headline.subtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.secondary)
                     }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(headline.title)
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(Theme.ink)
-                        Text(headline.subtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.secondary)
-                    }
+                    Text(headline.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
                 }
                 .padding(.horizontal, 2)
                 .accessibilityElement(children: .ignore)
