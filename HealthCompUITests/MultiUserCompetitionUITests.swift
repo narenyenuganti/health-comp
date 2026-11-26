@@ -472,20 +472,21 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertEqual(latest.label, "Huffing. Jordan reacted to your Day 2")
         attachScreenshot("reactions-match-latest")
         latest.tap()
-        XCTAssertTrue(app.staticTexts["Day 2"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForSelected(app.buttons["competition.strip.day.2"], true))
         let received = element("competition.reaction.received")
         XCTAssertTrue(received.waitForExistence(timeout: 3))
+        scrollToElement(received)
         XCTAssertEqual(received.label, "Huffing. Jordan reacted to your Day 2")
-        attachScreenshot("reactions-day-2-drawer")
-        app.buttons["Close"].firstMatch.tap()
-        XCTAssertTrue(received.waitForNonExistence(timeout: 3))
+        attachScreenshot("reactions-day-2")
 
-        showWeek()
-        let dayThree = app.descendants(matching: .any)["competition.day.3"]
+        let dayThree = app.buttons["competition.strip.day.3"]
         scrollToElement(dayThree)
         dayThree.tap()
+        XCTAssertTrue(waitForSelected(dayThree, true))
+        XCTAssertTrue(received.waitForNonExistence(timeout: 3))
         let fire = app.buttons["competition.react.fire"]
         XCTAssertTrue(fire.waitForExistence(timeout: 3))
+        scrollToElement(fire)
         XCTAssertTrue(text("REACT TO JORDAN’S DAY").exists)
         XCTAssertFalse(text("Jordan sees your reaction on this day.").exists)
         XCTAssertFalse(fire.isSelected)
@@ -494,7 +495,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             waitForSelected(fire, true),
             "Fire is selected after the first tap"
         )
-        attachScreenshot("reactions-day-3-drawer")
+        attachScreenshot("reactions-day-3")
         try app.performAccessibilityAudit(
             for: XCUIAccessibilityAuditType.textClipped
                 .union(.hitRegion)
@@ -505,8 +506,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
             waitForSelected(fire, false),
             "The same preset again removes it"
         )
-        app.buttons["Close"].firstMatch.tap()
-        XCTAssertTrue(fire.waitForNonExistence(timeout: 3))
 
         navigateBackToSharing()
         let jordanAfter = sharingCard(state: "active", name: "Jordan")
@@ -563,32 +562,16 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(jordan)
         jordan.tap()
         XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
-        showWeek()
-        let dayThree = app.descendants(matching: .any)["competition.day.3"]
+        let dayThree = app.buttons["competition.strip.day.3"]
         scrollToElement(dayThree)
         dayThree.tap()
 
-        let title = app.staticTexts["Day 3"]
-        XCTAssertTrue(title.waitForExistence(timeout: 3))
-        title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
-            forDuration: 0.1,
-            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
-        )
         let salute = app.buttons["competition.react.salute"]
         XCTAssertTrue(salute.waitForExistence(timeout: 3))
-        let drawer = app.scrollViews
-            .containing(.button, identifier: "competition.react.salute").firstMatch
-        for _ in 0..<8 {
-            if salute.isHittable, app.frame.contains(salute.frame) { break }
-            drawer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)).press(
-                forDuration: 0.05,
-                thenDragTo: drawer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)),
-                withVelocity: .slow,
-                thenHoldForDuration: 0.2
-            )
-        }
-        attachScreenshot("reactions-day-3-drawer-ax5")
+        scrollToElement(salute)
+        attachScreenshot("reactions-day-3-ax5")
         for kind in ["clap", "fire", "huffing", "salute"] {
+            scrollToElement(app.buttons["competition.react.\(kind)"])
             XCTAssertTrue(app.buttons["competition.react.\(kind)"].isHittable, kind)
         }
         try app.performAccessibilityAudit(
@@ -874,7 +857,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(row.exists)
     }
 
-    func testRemoteDayDrawerShowsRingsThatAddUpToTheDayScore() {
+    func testWeekStripSelectsPastDayAndUpdatesRowsInPlace() {
         launch(.sharing)
         let active = sharingCard(state: "active", name: "Jordan")
         scrollToElement(active)
@@ -883,20 +866,35 @@ final class MultiUserCompetitionUITests: XCTestCase {
             app.navigationBars["Jordan"]
                 .waitForExistence(timeout: 3)
         )
-        showWeek()
-        let day = app.buttons["competition.day.1"]
-        scrollToElement(day)
-        day.tap()
-        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 3))
+        let todayStrip = app.buttons["competition.strip.day.3"]
+        XCTAssertTrue(todayStrip.waitForExistence(timeout: 3))
+        XCTAssertTrue(todayStrip.isSelected)
+        let todayRings = app.otherElements["competition.ownerRings"]
+        XCTAssertTrue(todayRings.waitForExistence(timeout: 3))
+        let todayLabel = todayRings.label
 
-        let summary = app.otherElements["competition.day.1"]
-        XCTAssertTrue(summary.waitForExistence(timeout: 3))
-        XCTAssertTrue(summary.label.contains("You, 500 points"))
-        XCTAssertTrue(summary.label.contains("Jordan, 480 points"))
+        let dayOne = app.buttons["competition.strip.day.1"]
+        XCTAssertTrue(dayOne.waitForExistence(timeout: 3))
+        dayOne.tap()
+        XCTAssertTrue(waitForSelected(dayOne, true))
+        XCTAssertFalse(todayStrip.isSelected)
+
+        let youPair = element("competition.dayPair.you")
+        let opponentPair = element("competition.dayPair.opponent")
+        XCTAssertTrue(youPair.waitForExistence(timeout: 3))
+        XCTAssertTrue(youPair.label.contains("You, 500 points"), youPair.label)
+        XCTAssertTrue(opponentPair.label.contains("Jordan, 480 points"), opponentPair.label)
+
         let rings = app.otherElements["competition.ownerRings"]
         XCTAssertTrue(rings.exists)
+        XCTAssertNotEqual(rings.label, todayLabel)
         XCTAssertTrue(rings.label.contains("Move, 1,000 of 500 kilocalories, 200 points"), rings.label)
         XCTAssertTrue(rings.label.contains("Stand, 12 of 12 hours, 100 points"), rings.label)
+
+        let weekDayTwo = app.buttons["competition.day.2"]
+        scrollToElement(weekDayTwo)
+        weekDayTwo.tap()
+        XCTAssertTrue(waitForSelected(app.buttons["competition.strip.day.2"], true))
     }
 
     func testColdWarmAndSignedOutClaimConfirmationFlows() {
@@ -1632,8 +1630,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
             assertRemoteRenderedConfiguration(expectedConfiguration)
             try app.performAccessibilityAudit(for: auditTypes)
 
-            showWeek()
             let leadLine = app.descendants(matching: .any)["competition.leadLine"]
+            scrollToElement(leadLine)
             XCTAssertTrue(leadLine.waitForExistence(timeout: 3))
             XCTAssertTrue(leadLine.label.hasPrefix("The lead after each day."), leadLine.label)
             let dayContexts: [(ordinal: Int, context: String)] = [
@@ -1796,7 +1794,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
             app.navigationBars["Jordan"]
                 .waitForExistence(timeout: 3)
         )
-        showWeek()
 
         let upcomingDay = app.descendants(matching: .any)["competition.day.7"]
         scrollToElement(upcomingDay)
@@ -2158,12 +2155,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
     private func waitForStatus(_ prefix: String, timeout: TimeInterval = 5) -> Bool {
         app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@",
             "competition.status", prefix)).firstMatch.waitForExistence(timeout: timeout)
-    }
-
-    private func showWeek() {
-        let week = app.buttons["Week"]
-        XCTAssertTrue(week.waitForExistence(timeout: 3))
-        week.tap()
     }
 
     private var moreMenu: XCUIElement {

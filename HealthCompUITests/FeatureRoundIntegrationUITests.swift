@@ -50,11 +50,14 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         XCTAssertTrue(latest.exists)
 
         latest.tap()
-        XCTAssertTrue(app.staticTexts["Day 1"].waitForExistence(timeout: 3))
-        XCTAssertEqual(element("competition.reaction.received").label, "Fire. Sam reacted to your Day 1")
+        XCTAssertTrue(app.buttons["competition.strip.day.1"].isSelected)
+        let received = element("competition.reaction.received")
+        scrollToElement(received)
+        XCTAssertEqual(received.label, "Fire. Sam reacted to your Day 1")
+        scrollToElement(chip("clap"))
         chip("clap").tap()
         XCTAssertTrue(waitFor(chip("clap"), "isSelected == true", timeout: 3))
-        closeDrawer()
+        scrollToElement(sent)
         XCTAssertTrue(sent.exists)
 
         goBack()
@@ -164,7 +167,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         XCTAssertEqual(labels(containing: "belt").count, 0)
         openDay(1)
         XCTAssertFalse(chip("clap").exists)
-        closeDrawer()
         let more = element("competition.more")
         more.tap()
         XCTAssertTrue(app.buttons["competition.practice.end"].waitForExistence(timeout: 3))
@@ -319,15 +321,10 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
     }
 
     private func openDay(_ ordinal: Int) {
-        let week = app.buttons["Week"]
-        if week.waitForExistence(timeout: 2), !week.isSelected {
-            scrollToElement(week)
-            week.tap()
-        }
-        let day = element("competition.day.\(ordinal)")
+        let day = app.buttons["competition.strip.day.\(ordinal)"]
         scrollToElement(day)
         day.tap()
-        XCTAssertTrue(app.staticTexts["Day \(ordinal)"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitFor(day, "isSelected == true", timeout: 3))
     }
 
     private func closeDrawer() {

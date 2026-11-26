@@ -56,7 +56,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertFalse(app.otherElements["competition.scoreHeader.naren"].exists)
         XCTAssertFalse(app.otherElements["competition.scoreHeader.alex"].exists)
         XCTAssertTrue(app.staticTexts["You versus Alex"].exists)
-        XCTAssertFalse(app.buttons["Week"].exists)
+        XCTAssertFalse(app.buttons["competition.strip.day.1"].exists)
         capture("light-small-scheduled")
 
         nextCheckpoint()
@@ -68,7 +68,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(rings.label.contains("200 points"))
         XCTAssertTrue(app.staticTexts["competition.updated"].label.hasPrefix("Updated "))
         XCTAssertFalse(app.otherElements["competition.opponentRings"].exists)
-        showWeek()
         assertSevenPairedDays()
         let futureDay = app.descendants(matching: .any)["competition.day.7"].label
         XCTAssertTrue(futureDay.contains("upcoming"))
@@ -77,12 +76,11 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
 
         for _ in 0..<6 { nextCheckpoint() }
         XCTAssertTrue(waitForStatus("Last day"))
-        app.buttons["Today"].tap()
+        scrollToTop()
         XCTAssertTrue(
             app.descendants(matching: .any)["competition.notSynced"]
                 .waitForExistence(timeout: 3)
         )
-        showWeek()
         let finalDay = app.descendants(matching: .any)["competition.day.7"]
         scrollToElement(finalDay)
         XCTAssertTrue(finalDay.label.contains("You"))
@@ -97,8 +95,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         let tally = app.descendants(matching: .any)["competition.tally"]
         XCTAssertTrue(tally.label.contains("Waiting for your Day 7"), tally.label)
         XCTAssertFalse(tally.label.contains("days 7"))
-        XCTAssertTrue(app.buttons["Day 7"].exists)
-        XCTAssertFalse(app.buttons["Today"].exists)
+        XCTAssertTrue(app.buttons["competition.strip.day.7"].isSelected)
         tapMoreMenuItem("Sync status")
         XCTAssertTrue(
             app.staticTexts.matching(identifier: "competition.lastSync")
@@ -276,7 +273,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
 
         XCTAssertTrue(waitForStatus("Scheduled"))
         XCTAssertTrue(app.staticTexts["You versus Alex"].exists)
-        XCTAssertFalse(app.buttons["Week"].exists)
+        XCTAssertFalse(app.buttons["competition.strip.day.1"].exists)
         XCTAssertFalse(app.otherElements["competition.scoreHeader.naren"].exists)
         XCTAssertFalse(app.otherElements["competition.scoreHeader.alex"].exists)
     }
@@ -294,7 +291,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         )
         XCTAssertFalse(app.otherElements["competition.ownerRings"].exists)
         XCTAssertTrue(waitForStatus("Day 1 of 7"))
-        showWeek()
         let unavailableDay = app.descendants(matching: .any)["competition.day.1"]
         scrollToElement(unavailableDay)
         let unavailableLabel = unavailableDay.label
@@ -440,7 +436,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
 
         for _ in 0..<6 { nextCheckpoint() }
         XCTAssertTrue(waitForStatus("Last day"))
-        tapAfterScrolling(app.buttons["Today"])
         XCTAssertTrue(takes.waitForExistence(timeout: 3))
         XCTAssertTrue(takes.label.hasPrefix("Out of reach today"), takes.label)
         XCTAssertFalse(takes.label.contains("of Move"), takes.label)
@@ -488,7 +483,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         nextCheckpoint()
         XCTAssertTrue(waitForStatus("Day 1 of 7"))
         capture("dark-accessibility-active")
-        showWeek()
         assertSevenPairedDays()
         try app.performAccessibilityAudit(
             for: XCUIAccessibilityAuditType.textClipped
@@ -594,12 +588,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         )
         wait(for: [enabled], timeout: 8)
         button.tap()
-    }
-
-    private func showWeek() {
-        let week = app.buttons["Week"]
-        XCTAssertTrue(week.waitForExistence(timeout: 3))
-        week.tap()
     }
 
     private var moreMenu: XCUIElement {

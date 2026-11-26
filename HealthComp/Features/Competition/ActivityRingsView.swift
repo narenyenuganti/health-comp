@@ -8,6 +8,9 @@ struct CompetitionRingRow: Equatable, Sendable {
     let spokenDetail: String
     let points: Double?
     var goalFraction: Double? = nil
+    var valueText: String? = nil
+    var unitText: String? = nil
+    var sleepReading: CompetitionSleepReading? = nil
 }
 
 struct CompetitionRingPanel: Equatable, Sendable {
@@ -110,7 +113,8 @@ private func activityRingRows(
         guard let goal = reading.goal, goal > 0 else {
             return CompetitionRingRow(
                 metric: metric, title: title, detail: "\(number(value)) \(unit)",
-                spokenDetail: "\(number(value)) \(spokenUnit)", points: points[index]
+                spokenDetail: "\(number(value)) \(spokenUnit)", points: points[index],
+                valueText: number(value), unitText: unit.uppercased()
             )
         }
         return CompetitionRingRow(
@@ -119,7 +123,9 @@ private func activityRingRows(
             detail: "\(number(value))/\(number(goal)) \(unit)",
             spokenDetail: "\(number(value)) of \(number(goal)) \(spokenUnit)",
             points: points[index],
-            goalFraction: value / goal
+            goalFraction: value / goal,
+            valueText: "\(number(value))/\(number(goal))",
+            unitText: unit.uppercased()
         )
     }
 
@@ -145,20 +151,245 @@ private func activityRingRows(
     return rows
 }
 
+struct CompetitionDayRingStacks: Equatable {
+    let owner: [CompetitionRing]
+    let opponent: [CompetitionRing]
+}
+
+func competitionDayRings(
+    _ day: LocalCompetitionDayPresentation,
+    metrics: CompetitionMetrics? = nil
+) -> CompetitionDayRingStacks {
+    let base = metrics ?? day.metrics
+    var effective = base.isEmpty ? .threeRings : base
+    if !effective.includesSleep && day.dailyMaximum > ActivityScore.maximumDailyPoints {
+        effective.insert(.sleep)
+    }
+    let ordered = effective.orderedMetrics
+    guard day.ownerLatestAvailability != .notYetOccurred else {
+        let empty = ordered.map { CompetitionRing(color: $0.color, progress: 0) }
+        return CompetitionDayRingStacks(owner: empty, opponent: empty)
+    }
+
+    let snapshot = day.ownerAcceptedSnapshot ?? day.ownerLatestSnapshot
+    let activeActivityCount = Double(max(effective.activeActivityIndices.count, 1))
+
+    func ownerProgress(_ metric: CompetitionMetric) -> Double {
+        switch metric {
+        case .sleep:
+            let points = day.ownerSleepPoints ?? day.ownerSleepReading?.points ?? 0
+            return max(0, points / 100)
+        case .move, .exercise, .stand:
+            let index = metric == .move ? 0 : metric == .exercise ? 1 : 2
+            if let snapshot {
+                let reading = index == 0 ? snapshot.move : index == 1 ? snapshot.exercise : snapshot.standOrRoll
+                if let value = reading.value, let goal = reading.goal,
+                   value.isFinite, goal.isFinite, goal > 0 {
+                    return max(0, value / goal)
+                }
+                return 0
+            }
+            if let ringPoints = day.ownerRingPoints, ringPoints.count == 3 {
+                return max(0, ringPoints[index] / 100)
+            }
+            if let accepted = day.ownerAcceptedPoints {
+                let activity = max(0, accepted - (day.ownerSleepPoints ?? 0))
+                return max(0, (activity / activeActivityCount) / 100)
+            }
+            return 0
+        }
+    }
+
+    func opponentProgress(_ metric: CompetitionMetric) -> Double {
+        switch metric {
+        case .sleep:
+            let points = day.opponentSleepPoints ?? 0
+            return max(0, points / 100)
+        case .move, .exercise, .stand:
+            let index = metric == .move ? 0 : metric == .exercise ? 1 : 2
+            if let ringPoints = day.opponentRingPoints, ringPoints.count == 3 {
+                return max(0, ringPoints[index] / 100)
+            }
+            if let revealed = day.opponentRevealedPoints {
+                let activity = max(0, revealed - (day.opponentSleepPoints ?? 0))
+                return max(0, (activity / activeActivityCount) / 100)
+            }
+            return 0
+        }
+    }
+
+    return CompetitionDayRingStacks(
+        owner: ordered.map { CompetitionRing(color: $0.color, progress: ownerProgress($0)) },
+        opponent: ordered.map { CompetitionRing(color: $0.color, progress: opponentProgress($0)) }
+    )
+}
+
+func competitionDayWinnerDotColor(_ outcome: CompetitionDayOutcome) -> Color? {
+    switch outcome {
+    case .won: Theme.youFill
+    case .lost: Theme.ink
+    case .tied: Theme.tertiary
+    case .today, .upcoming, .noData: nil
+    }
+}
+
+func competitionDayHeadline(
+    _ day: LocalCompetitionDayPresentation,
+    currentDayOrdinal: Int?,
+    now: Date,
+    opponentName: String,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> (title: String, subtitle: String) {
+    if day.ordinal == currentDayOrdinal {
+        return ("Today", "In progress")
+    }
+    let title = competitionDayText(day.day, now: now, locale: locale, timeZone: timeZone)
+    let subtitle: String = switch competitionDayOutcome(day, currentDayOrdinal: currentDayOrdinal) {
+    case .won: "You won the day"
+    case .lost: "\(opponentName) won the day"
+    case .tied: "Tied"
+    case .today, .upcoming, .noData: "Day \(day.ordinal)"
+    }
+    return (title, subtitle)
+}
+
+func competitionSleepMetadataText(
+    _ reading: CompetitionSleepReading,
+    points: Double?,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> String? {
+    var parts: [String] = []
+    if let bedtime = reading.bedtime {
+        parts.append("Bed \(competitionFormattedDate(bedtime, template: "jmm", locale: locale, timeZone: timeZone))")
+    }
+    if let wakeTime = reading.wakeTime {
+        parts.append("up \(competitionFormattedDate(wakeTime, template: "jmm", locale: locale, timeZone: timeZone))")
+    }
+    if let points {
+        parts.append("score \(competitionPointsText(points, locale: locale))")
+    }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+}
+
+struct CompetitionDayRingPairPanel: View {
+    let day: LocalCompetitionDayPresentation
+    let metrics: CompetitionMetrics
+    let opponentName: String
+
+    @Environment(\.locale) private var locale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .title) private var scoreSize: CGFloat = 28
+
+    var body: some View {
+        let stacks = competitionDayRings(day, metrics: metrics)
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 16))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+        layout {
+            side(
+                rings: stacks.owner,
+                points: day.ownerAcceptedPoints,
+                color: Theme.you,
+                name: "You",
+                rollID: "you",
+                spoken: "You, \(competitionOwnerAccessibilityText(day, locale: locale))",
+                identifier: "competition.dayPair.you"
+            )
+            side(
+                rings: stacks.opponent,
+                points: day.opponentRevealedPoints,
+                color: Theme.ink,
+                name: opponentName,
+                rollID: "opponent",
+                spoken: "\(opponentName), \(opponentSpoken)",
+                identifier: "competition.dayPair.opponent"
+            )
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity)
+        .themePanel()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("competition.dayPair")
+    }
+
+    private var opponentSpoken: String {
+        day.opponentRevealedPoints.map {
+            competitionPointsAccessibilityText($0, locale: locale)
+        } ?? (day.opponentReportedNoData ? "no data" : "not synced")
+    }
+
+    private func side(
+        rings: [CompetitionRing],
+        points: Double?,
+        color: Color,
+        name: String,
+        rollID: String,
+        spoken: String,
+        identifier: String
+    ) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                CompetitionRingStack(rings: rings)
+                    .frame(width: 104, height: 104)
+                    .moving(Motion.grow, value: rings)
+                    .id(reduceMotion ? day.ordinal : 0)
+                    .transition(Motion.appear)
+            }
+            .animation(reduceMotion ? Motion.fade : nil, value: day.ordinal)
+            Text(competitionPointsText(points, locale: locale))
+                .font(.score(size: scoreSize).monospacedDigit())
+                .foregroundStyle(color)
+                .fixedSize()
+                .scoreRoll(points, id: rollID)
+            Text(name)
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+        .accessibilityIdentifier(identifier)
+    }
+}
+
 struct ActivityRingsView: View {
     let panel: CompetitionRingPanel
     var opponentName: String? = nil
+    var hourlyPace: [Double] = []
+    var isToday: Bool = false
     var openNight: (() -> Void)? = nil
 
     @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var showsHourlyPace: Bool {
+        !panel.isPaused
+            && !hourlyPace.isEmpty
+            && !dynamicTypeSize.isAccessibilitySize
+            && panel.rows.contains(where: { $0.metric.isActivityRing })
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if panel.isPaused {
                 CompetitionPausedRingsBanner(opponentName: opponentName)
             }
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(panel.rows.enumerated()), id: \.offset) { _, row in
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(panel.rows.enumerated()), id: \.offset) { offset, row in
+                    if offset > 0 {
+                        Rectangle()
+                            .fill(Theme.hairline)
+                            .frame(height: 1)
+                            .padding(.vertical, 10)
+                    }
                     if row.metric == .sleep, let openNight {
                         Button(action: openNight) { rowView(row, opens: true) }
                             .buttonStyle(.plain)
@@ -171,12 +402,14 @@ struct ActivityRingsView: View {
                     Text("Activity tracking paused")
                         .font(.caption.bold())
                         .foregroundStyle(Theme.ink)
+                        .padding(.top, 10)
                 }
                 if let note = panel.note {
                     Text(note)
                         .font(.caption)
                         .foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 10)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -186,34 +419,143 @@ struct ActivityRingsView: View {
             .accessibilityIdentifier("competition.ownerRings")
             .accessibilityLabel(panel.accessibilityLabel)
             .accessibilityAction(named: "Last night") { openNight?() }
+
+            if showsHourlyPace {
+                Text("Each chart shows your hourly pace for that ring. It stays on this iPhone.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 2)
+                    .accessibilityIdentifier("competition.hourlyPace")
+            }
         }
     }
 
     private func rowView(_ row: CompetitionRingRow, opens: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            SlantedBar()
-                .fill(row.metric.color)
-                .frame(width: 10, height: 10)
-            let title = Text(row.title).fontWeight(.semibold).foregroundStyle(Theme.ink)
-            let detail = Text(" · \(row.detail)").foregroundStyle(Theme.secondary)
-            Text("\(title)\(detail)")
-                .font(.subheadline)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if let points = row.points {
-                Text(competitionPointsText(points, locale: locale))
-                    .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
-                    .foregroundStyle(Theme.ink)
-                    .fixedSize()
-                    .scoreRoll(points, id: row.title)
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
+        return layout {
+            VStack(alignment: .leading, spacing: 2) {
+                titleLine(row)
+                valueLine(row)
+                if row.metric == .sleep {
+                    sleepSubtitle(row)
+                } else if showsHourlyPace {
+                    RingHourlyPaceBars(values: hourlyPace, color: row.metric.color)
+                        .padding(.top, 4)
+                }
             }
-            if opens {
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Theme.tertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 6) {
+                if let points = row.points {
+                    let score = Text(competitionPointsText(points, locale: locale))
+                        .font(.title3.weight(.heavy).width(.condensed).monospacedDigit())
+                        .foregroundStyle(Theme.ink)
+                    let unit = Text(" pts")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.secondary)
+                    Text("\(score)\(unit)")
+                        .fixedSize()
+                        .scoreRoll(points, id: row.metric)
+                }
+                if opens {
+                    DisclosureChevron()
+                }
             }
         }
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func titleLine(_ row: CompetitionRingRow) -> some View {
+        if row.metric == .sleep, row.sleepReading != nil {
+            let name = Text(row.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.ink)
+            let suffix = Text(isToday ? " · last night" : " · night before")
+                .font(.caption)
+                .foregroundStyle(Theme.secondary)
+            Text("\(name)\(suffix)")
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(row.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func valueLine(_ row: CompetitionRingRow) -> some View {
+        if row.metric == .sleep, let reading = row.sleepReading, reading.minutesAsleep > 0 {
+            let total = Int(reading.minutesAsleep.rounded())
+            let hours = Text("\(total / 60)")
+                .font(.title3.weight(.heavy).width(.condensed).monospacedDigit())
+            let hourUnit = Text("H")
+                .font(.caption2.weight(.bold).width(.condensed))
+            let minutes = Text(" \((total % 60).formatted(.number.precision(.integerLength(2))))")
+                .font(.title3.weight(.heavy).width(.condensed).monospacedDigit())
+            let minuteUnit = Text("M")
+                .font(.caption2.weight(.bold).width(.condensed))
+            Text("\(hours)\(hourUnit)\(minutes)\(minuteUnit)")
+                .foregroundStyle(Theme.sleep)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if let valueText = row.valueText {
+            let value = Text(valueText)
+                .font(.title3.weight(.heavy).width(.condensed).monospacedDigit())
+            let unit = row.unitText.map {
+                Text(" \($0)").font(.caption2.weight(.bold).width(.condensed))
+            } ?? Text("")
+            Text("\(value)\(unit)")
+                .foregroundStyle(row.metric.color)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(row.detail)
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func sleepSubtitle(_ row: CompetitionRingRow) -> some View {
+        if let reading = row.sleepReading,
+           reading.minutesAsleep > 0,
+           let subtitle = competitionSleepMetadataText(
+               reading,
+               points: row.points,
+               locale: locale,
+               timeZone: timeZone
+           ) {
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+        }
+    }
+}
+
+private struct RingHourlyPaceBars: View {
+    let values: [Double]
+    let color: Color
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 2) {
+            ForEach(values.indices, id: \.self) { hour in
+                let value = min(max(values[hour], 0), 1)
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(color)
+                    .opacity(value > 0.05 ? 1 : 0.18)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: max(2, 30 * value))
+            }
+        }
+        .frame(height: 30, alignment: .bottom)
+        .moving(Motion.grow, value: values)
+        .accessibilityHidden(true)
     }
 }
 

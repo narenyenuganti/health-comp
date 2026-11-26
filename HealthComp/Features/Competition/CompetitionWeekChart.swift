@@ -8,6 +8,8 @@ struct CompetitionWeekChart: View {
     let opponentName: String
     var showsDates = false
     var isGrown = true
+    var highlightBackground: Color = Theme.panel
+    var rowBackground: Color = Theme.panel
     var selectDay: ((LocalCompetitionDayPresentation) -> Void)?
     var clap: CompetitionDayClap?
 
@@ -25,7 +27,7 @@ struct CompetitionWeekChart: View {
                 .background {
                     if day.ordinal == currentDayOrdinal, dynamicTypeSize < .xxLarge {
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Theme.panel)
+                            .fill(highlightBackground)
                             .padding(.horizontal, -6)
                     }
                 }
@@ -85,7 +87,8 @@ struct CompetitionWeekChart: View {
                 day: day,
                 isToday: day.ordinal == currentDayOrdinal,
                 now: now,
-                opponentName: opponentName
+                opponentName: opponentName,
+                background: rowBackground
             )
         } else {
             HeadToHeadDayRow(
@@ -348,8 +351,19 @@ struct CompetitionRingLegend: View {
         swatch(Theme.ink, opponentName.uppercased())
     }
 
+    private var metrics: CompetitionMetrics {
+        let base = days.first?.metrics ?? .threeRings
+        var effective = base.isEmpty ? .threeRings : base
+        if !effective.includesSleep && days.contains(where: { $0.dailyMaximum > ActivityScore.maximumDailyPoints }) {
+            effective.insert(.sleep)
+        }
+        return effective
+    }
+
     private var showsRings: Bool {
-        days.contains { ringSegments($0).count == 3 }
+        days.contains { day in
+            ringSegments(day).contains { $0.color != Theme.youFill }
+        }
     }
 
     private var standTitle: String {
@@ -357,9 +371,12 @@ struct CompetitionRingLegend: View {
     }
 
     private var accessibilityText: String {
-        [
+        let names = metrics.orderedMetrics.map { metric in
+            metric == .stand ? standTitle.capitalized : metric.title
+        }
+        return [
             showsRings
-                ? "Move, Exercise and \(standTitle.capitalized) are your rings."
+                ? "\(names.formatted(.list(type: .and))) are your rings."
                 : "The top bar is yours.",
             "The bottom bar is \(opponentName).",
         ].compactMap { $0 }.joined(separator: " ")
@@ -368,9 +385,9 @@ struct CompetitionRingLegend: View {
     @ViewBuilder
     private var rings: some View {
         if showsRings {
-            swatch(Theme.move, "MOVE")
-            swatch(Theme.exercise, "EXERCISE")
-            swatch(Theme.stand, standTitle)
+            ForEach(metrics.orderedMetrics) { metric in
+                swatch(metric.color, metric == .stand ? standTitle : metric.shortTitle)
+            }
         } else {
             swatch(Theme.youFill, "YOU")
         }
@@ -476,6 +493,7 @@ struct CompetitionLeadLineView: View {
     let opponentName: String
     var isDrawn = true
     var sideLabels: (you: String, them: String)?
+    var surface: Color = Theme.ground
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -602,7 +620,7 @@ struct CompetitionLeadLineView: View {
                 }
                 Circle()
                     .fill(last > 0 ? Theme.youFill : last < 0 ? Theme.ink : Theme.outline)
-                    .stroke(Theme.ground, lineWidth: 2)
+                    .stroke(surface, lineWidth: 2)
                     .frame(width: 12, height: 12)
                     .scaleEffect(isDrawn ? 1 : 0)
                     .moving(arrival(Double(lastDay)), value: isDrawn)
@@ -635,7 +653,7 @@ struct CompetitionLeadLineView: View {
     }
 
     private func momentMarker(_ index: Int, _ moment: CompetitionLeadMoment, at point: CGPoint) -> some View {
-        CompetitionLeadMomentBadge(number: index + 1, isYours: moment.isYours)
+        CompetitionLeadMomentBadge(number: index + 1, isYours: moment.isYours, surface: surface)
             .scaleEffect(isDrawn ? 1 : 0)
             .moving(arrival(Double(moment.index)), value: isDrawn)
             .position(point)
@@ -695,6 +713,7 @@ struct CompetitionLeadLineView: View {
 private struct CompetitionLeadMomentBadge: View {
     let number: Int
     let isYours: Bool
+    var surface: Color = Theme.ground
 
     var body: some View {
         Text("\(number)")
@@ -703,7 +722,7 @@ private struct CompetitionLeadMomentBadge: View {
             .foregroundStyle(isYours ? Theme.ink : Theme.ground)
             .frame(width: 22, height: 22)
             .background(isYours ? Theme.youFill : Theme.ink, in: Circle())
-            .overlay { Circle().stroke(Theme.ground, lineWidth: 2) }
+            .overlay { Circle().stroke(surface, lineWidth: 2) }
             .accessibilityHidden(true)
     }
 }
@@ -822,6 +841,7 @@ private struct StackedDayRow: View {
     let isToday: Bool
     let now: Date
     let opponentName: String
+    var background: Color = Theme.panel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -839,7 +859,7 @@ private struct StackedDayRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .themePanel(cornerRadius: 14)
+        .background(background, in: RoundedRectangle(cornerRadius: 14))
     }
 
     private var ownerState: CompetitionChartState {
@@ -1016,6 +1036,17 @@ func weekdayText(_ day: CompetitionDay, locale: Locale = .current) -> String {
     calendar.locale = locale
     let index = calendar.component(.weekday, from: date) - 1
     return calendar.shortWeekdaySymbols[index]
+}
+
+func weekdayInitial(_ day: CompetitionDay, locale: Locale = .current) -> String {
+    guard let date = competitionDayDate(day) else {
+        return String(day.day)
+    }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = competitionDayTimeZone
+    calendar.locale = locale
+    let index = calendar.component(.weekday, from: date) - 1
+    return calendar.veryShortWeekdaySymbols[index]
 }
 
 func weekdayName(_ day: CompetitionDay, locale: Locale = .current) -> String {
