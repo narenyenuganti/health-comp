@@ -116,7 +116,7 @@ final class HealthCompWatchUITests: XCTestCase {
         if button.waitForExistence(timeout: 5), button.isHittable {
             button.tap()
         } else {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.14)).tap()
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.16, dy: 0.88)).tap()
         }
     }
 
@@ -215,6 +215,44 @@ final class HealthCompWatchUITests: XCTestCase {
         XCTAssertTrue(today.waitForExistence(timeout: 15))
         XCTAssertTrue(today.label.contains("7h 48m"), today.label)
         shoot(todayApp, "watch-sleep-today")
+
+        let sleepOnlyApp = launch("sleepOnly", "--watch-page", "today")
+        let sleepOnly = element(sleepOnlyApp, "watch.today")
+        XCTAssertTrue(sleepOnly.waitForExistence(timeout: 15))
+        XCTAssertTrue(sleepOnly.label.contains("7h 48m"), sleepOnly.label)
+        XCTAssertTrue(sleepOnly.label.contains("Sam 78 points"), sleepOnly.label)
+        shoot(sleepOnlyApp, "watch-sleep-only-today")
+    }
+
+    func testCornerButtonsOpenSummaryAndTrophies() {
+        let summaryApp = launch("beltLive")
+        XCTAssertTrue(element(summaryApp, "watch.match").waitForExistence(timeout: 15))
+        let summaryButton = element(summaryApp, "watch.summary.button")
+        XCTAssertTrue(summaryButton.waitForExistence(timeout: 5))
+        XCTAssertLessThan(summaryButton.frame.midX, summaryApp.frame.midX)
+        XCTAssertLessThan(summaryButton.frame.midY, summaryApp.frame.midY)
+        summaryButton.tap()
+        XCTAssertTrue(element(summaryApp, "watch.weeklySummary").waitForExistence(timeout: 5))
+
+        let trophyApp = launch("beltLive")
+        XCTAssertTrue(element(trophyApp, "watch.match").waitForExistence(timeout: 15))
+        let trophiesButton = element(trophyApp, "watch.trophies.button")
+        XCTAssertTrue(trophiesButton.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(trophiesButton.frame.midX, trophyApp.frame.midX)
+        XCTAssertGreaterThan(trophiesButton.frame.midY, trophyApp.frame.midY)
+        trophiesButton.tap()
+        let trophies = element(trophyApp, "watch.trophies")
+        XCTAssertTrue(trophies.waitForExistence(timeout: 5))
+        XCTAssertTrue(trophies.label.contains("Title Belt"), trophies.label)
+
+        let cardApp = launch("card")
+        XCTAssertTrue(element(cardApp, "watch.match").waitForExistence(timeout: 15))
+        let matchesButton = element(cardApp, "watch.matches.button")
+        XCTAssertTrue(matchesButton.waitForExistence(timeout: 5))
+        XCTAssertLessThan(matchesButton.frame.midX, cardApp.frame.midX)
+        XCTAssertGreaterThan(matchesButton.frame.midY, cardApp.frame.midY)
+        matchesButton.tap()
+        XCTAssertTrue(element(cardApp, "watch.card").waitForExistence(timeout: 5))
     }
 
     func testOneMatchHidesMatchesButton() {
