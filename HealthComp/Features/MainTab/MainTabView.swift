@@ -874,7 +874,8 @@ struct MainTabView: View {
                     recordLink: recordLink(competition, in: publication),
                     replayIntro: CompetitionVersusIntroGate.isEnabled
                         && competitionVersusIntroContent(competition, in: publication, isReplay: true) != nil
-                        ? { replaysVersus = true } : nil
+                        ? { replaysVersus = true } : nil,
+                    initialSelectedDayOrdinal: selectedDayOrdinals[id]
                 )
 
             case .completed, .archived:
@@ -963,7 +964,8 @@ struct MainTabView: View {
                         await store.send(.competition(.pullToRefresh)).finish()
                     }.value
                 },
-                endPractice: { store.send(.competition(.deleteTapped(id))) }
+                endPractice: { store.send(.competition(.deleteTapped(id))) },
+                initialSelectedDayOrdinal: selectedDayOrdinals[id]
             )
         }
     }

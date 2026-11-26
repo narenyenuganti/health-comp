@@ -476,7 +476,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                         labNudges[id] = .sent(MultiUserCompetitionTestLabFixtures.labNow)
                     }),
                     reactions: reactionControl(id),
-                    recordLink: recordLink(competition)
+                    recordLink: recordLink(competition),
+                    initialSelectedDayOrdinal: selectedDayOrdinals[id]
                 )
             case .completed, .archived:
                 CompetitionResultView(
