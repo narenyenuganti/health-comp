@@ -308,10 +308,10 @@ final class ReactionsUITests: XCTestCase {
         try audit("long-name-day")
     }
 
-    func testHomeToolbarDropsLogoAndPullToRefreshLoadsIncomingReaction() {
+    func testHomeToolbarKeepsLogoAndPullToRefreshLoadsIncomingReaction() {
         launch()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["home.logo"].exists)
+        XCTAssertTrue(app.buttons["home.logo"].exists)
         let before = card("active", "Jordan")
         XCTAssertTrue(before.waitForExistence(timeout: 5))
         XCTAssertFalse(before.label.contains("Fire"), before.label)

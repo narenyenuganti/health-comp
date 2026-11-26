@@ -19,6 +19,8 @@ struct MainTabView: View {
     @State private var newMatchLineup: GroupMatchLineup?
     @State private var opensDuel = false
     @State private var isPracticePresented = false
+    @State private var isLogoUpdating = false
+    @State private var isTodayRingsPresented = false
     @State private var isTourPresented = false
     @State private var isLaunchSlow = false
     @State private var isVersusPlaying = false
@@ -249,7 +251,8 @@ struct MainTabView: View {
                         refresh: { [store] in
                             await store.send(.competition(.pullToRefresh)).finish()
                         },
-                        openRecap: { recapPeriod = $0 }
+                        openRecap: { recapPeriod = $0 },
+                        isUpdating: isLogoUpdating
                     )
                     .sheet(isPresented: $isChallengePresented, onDismiss: dismissChallengeSheet) {
                         challengeSheet(publication: publication)
@@ -270,6 +273,13 @@ struct MainTabView: View {
                         requestSleepAccess: { store.send(.competition(.sleepAccessRequested)) }
                     )
                 }
+            }
+            .sheet(isPresented: $isTodayRingsPresented, onDismiss: { store.send(.todayActivityLoaded(nil)) }) {
+                CompetitionTodayRingsSheet(
+                    competitions: store.competition.publication?.dashboard.competitions ?? [],
+                    activity: store.todayActivity,
+                    loadActivity: { await store.send(.todayActivityRequested).finish() }
+                )
             }
             .navigationDestination(for: CompetitionHomeRoute.self) { route in
                 switch route {
@@ -703,6 +713,13 @@ struct MainTabView: View {
     @ToolbarContentBuilder
     private var homeToolbar: some ToolbarContent {
         if isToolbarShown {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: updateThenShowRings) {
+                    BrandMark(spins: isLogoUpdating).frame(height: 26)
+                }
+                .accessibilityLabel("Today’s rings")
+                .accessibilityIdentifier("home.logo")
+            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if store.competition.publication?.source == .remoteParticipants {
                     CompetitionChallengeButton {
@@ -756,6 +773,19 @@ struct MainTabView: View {
 
     private func retry() async {
         await store.send(.competition(.pullToRefresh)).finish()
+    }
+
+    private func updateThenShowRings() {
+        guard !isLogoUpdating else { return }
+        isLogoUpdating = true
+        Task {
+            let clock = ContinuousClock()
+            let lap = clock.now + .seconds(0.75)
+            await retry()
+            try? await clock.sleep(until: lap)
+            isLogoUpdating = false
+            isTodayRingsPresented = true
+        }
     }
 
     private var navigationPath: Binding<[CompetitionID]> {

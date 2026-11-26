@@ -324,11 +324,11 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["competition.history.open"].exists)
     }
 
-    func testHomeWithOnlyMatchHistoryShowsLargeTitleWithoutLogo() {
+    func testHomeWithOnlyMatchHistoryShowsLargeTitleAndLogo() {
         launchLab(setup: "after-records", arguments: ["-AppleInterfaceStyle", "Dark"])
         XCTAssertTrue(text("Nothing live right now").waitForExistence(timeout: 8))
         XCTAssertTrue(app.navigationBars["Home"].exists)
-        XCTAssertFalse(app.buttons["home.logo"].exists)
+        XCTAssertTrue(app.buttons["home.logo"].exists)
         XCTAssertTrue(app.buttons["competition.create.open"].exists)
         XCTAssertTrue(app.buttons["competition.history.open"].exists)
         let home = XCTAttachment(screenshot: app.screenshot())
