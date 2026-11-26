@@ -898,7 +898,6 @@ private struct CompetitionDetailWeekStrip: View {
     let select: (Int) -> Void
 
     @Environment(\.locale) private var locale
-    @ScaledMetric(relativeTo: .caption2) private var initialSize: CGFloat = 22
 
     var body: some View {
         HStack(spacing: 2) {
@@ -953,7 +952,8 @@ private struct CompetitionDetailWeekStrip: View {
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(isSelected ? Theme.onInk : isFuture ? Theme.faint : Theme.secondary)
                 .fixedSize()
-                .frame(width: min(initialSize, 44), height: min(initialSize, 44))
+                .padding(4)
+                .frame(minWidth: 22, minHeight: 22)
                 .background(isSelected ? Theme.ink : .clear, in: Circle())
                 .animation(Motion.fade, value: isSelected)
             CompetitionRingStack(rings: rings)
