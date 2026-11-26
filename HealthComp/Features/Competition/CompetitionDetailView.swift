@@ -898,6 +898,7 @@ private struct CompetitionDetailWeekStrip: View {
     let select: (Int) -> Void
 
     @Environment(\.locale) private var locale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .caption2) private var initialSize: CGFloat = 22
 
     var body: some View {
@@ -949,13 +950,20 @@ private struct CompetitionDetailWeekStrip: View {
         let outcome = competitionDayOutcome(day, currentDayOrdinal: currentDayOrdinal)
         let dotColor = competitionDayWinnerDotColor(outcome)
         return VStack(spacing: 4) {
-            Text(weekdayInitial(day.day, locale: locale))
-                .font(.caption2.weight(.bold))
-                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                .foregroundStyle(isSelected ? Theme.onInk : isFuture ? Theme.faint : Theme.secondary)
-                .frame(width: min(initialSize, 30), height: min(initialSize, 30))
-                .background(isSelected ? Theme.ink : .clear, in: Circle())
-                .animation(Motion.fade, value: isSelected)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    Circle()
+                        .fill(isSelected ? Theme.ink : .clear)
+                        .frame(width: 8, height: 8)
+                } else {
+                    Text(weekdayInitial(day.day, locale: locale))
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(isSelected ? Theme.onInk : isFuture ? Theme.faint : Theme.secondary)
+                        .frame(width: initialSize, height: initialSize)
+                        .background(isSelected ? Theme.ink : .clear, in: Circle())
+                }
+            }
+            .animation(Motion.fade, value: isSelected)
             CompetitionRingStack(rings: rings)
                 .frame(width: 34, height: 34)
             Circle()
