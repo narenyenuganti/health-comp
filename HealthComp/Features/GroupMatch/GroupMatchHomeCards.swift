@@ -79,8 +79,6 @@ private struct GroupMatchHomeCard: View {
         .accessibilityLabel(accessibilityText)
     }
 
-    private var isLive: Bool { match.liveDay != nil }
-
     private var stateWord: String {
         switch match.lifecycle {
         case .pending: match.viewer.invite == .invited ? "Invite" : "Waiting"
@@ -103,27 +101,59 @@ private struct GroupMatchHomeCard: View {
         }
     }
 
+    private var stateText: String {
+        switch match.lifecycle {
+        case .completed, .archived:
+            if let trailing { return "Final · \(trailing)" }
+            return "Final"
+        default:
+            return trailing ?? stateWord
+        }
+    }
+
+    private var doublesTeammateName: String? {
+        guard match.format == .doubles else { return nil }
+        return match.seats.first { $0.team == match.viewer.team && $0.id != match.viewerSeatID }?.name
+    }
+
+    private var doublesOpponentTeamName: String? {
+        guard match.format == .doubles, competitionShouldShowScores(match.lifecycle) else { return nil }
+        return match.standingRows.first { $0.subject != match.viewerSubject }.map { match.name(of: $0.subject) }
+    }
+
+    private var titleText: Text {
+        if let opponents = doublesOpponentTeamName {
+            let lead = Text(opponents)
+                .font(.headline)
+                .foregroundStyle(Theme.ink)
+            if let teammate = doublesTeammateName {
+                let partner = Text(" · with \(teammate)")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.secondary)
+                return Text("\(lead)\(partner)")
+            }
+            return lead
+        }
+        return Text(match.format.title)
+            .font(.headline)
+            .foregroundStyle(Theme.ink)
+    }
+
     private var statusRow: some View {
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
         return layout {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if isLive {
-                    Circle().fill(Theme.ink).frame(width: 8, height: 8)
-                }
-                let state = Text(stateWord).foregroundStyle(Theme.ink)
-                let format = Text(" · \(match.format.title)").foregroundStyle(Theme.secondary)
-                Text("\(state)\(format)")
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                titleText
+                    .fixedSize(horizontal: false, vertical: true)
                 CompetitionMetricBadge(metrics: match.metrics)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if let trailing {
-                Text(trailing).foregroundStyle(Theme.secondary)
-            }
+            Text(stateText)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(Theme.secondary)
         }
-        .themeLabel()
-        .textCase(.uppercase)
     }
 
     private func names(_ seats: [GroupMatchSeat]) -> String {
@@ -236,15 +266,11 @@ private struct GroupMatchHomeCard: View {
     }
 
     private func team(_ row: GroupMatchStandingRow, isYours: Bool, alignment: HorizontalAlignment) -> some View {
-        VStack(alignment: alignment, spacing: 6) {
-            Text(match.name(of: row.subject))
-                .themeLabel()
-                .textCase(.uppercase)
-            Text(GroupMatchPresentation.pointsText(row.centipoints))
-                .font(.score(size: teamScore).monospacedDigit())
-                .fixedSize()
-        }
-        .foregroundStyle(isYours ? Theme.you : Theme.ink)
+        Text(GroupMatchPresentation.pointsText(row.centipoints))
+            .font(.score(size: teamScore).monospacedDigit())
+            .fixedSize()
+            .foregroundStyle(isYours ? Theme.you : Theme.ink)
+            .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, alignment: alignment == .trailing ? .trailing : .leading)
     }
 
     private var accessibilityText: String {

@@ -206,14 +206,7 @@ struct CompetitionSharingView: View {
             rained: { motionSeen = motionSeen.raining(layout.allItems) }
         )
         .navigationTitle("Home")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Color.clear
-                    .frame(width: 1, height: 1)
-                    .accessibilityHidden(true)
-            }
-        }
+        .navigationBarTitleDisplayMode(.large)
         .sheet(
             isPresented: Binding(
                 get: { presentsChallengeSheet && isChallengePresented },
@@ -568,7 +561,7 @@ struct CompetitionHeroCard: View {
     @Environment(\.timeZone) private var timeZone
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             statusRow
                 .animation(Motion.fade, value: isUpdating)
 
@@ -585,7 +578,7 @@ struct CompetitionHeroCard: View {
                 HeroScoreboard(competition: competition, isCompact: isCompact, belt: belt)
                     .transition(Motion.appear)
                 statement
-                    .font(.body)
+                    .font(.subheadline)
                     .foregroundStyle(Theme.secondary)
                     .transition(Motion.appear)
             } else {
@@ -593,7 +586,7 @@ struct CompetitionHeroCard: View {
                     .transition(Motion.appear)
             }
 
-            CompetitionWeekStrip(
+            CompetitionHomeWeekStrip(
                 days: competition.days,
                 currentDayOrdinal: competition.currentDayOrdinal
             )
@@ -619,8 +612,8 @@ struct CompetitionHeroCard: View {
 
             if !isCompact {
                 HStack(spacing: 6) {
-                    Text("MATCH DETAILS")
-                        .themeLabel(tracking: 1.4)
+                    Text("Match details")
+                        .font(.subheadline.weight(.semibold))
                     Image(systemName: "arrow.right")
                         .font(.footnote.weight(.bold))
                 }
@@ -634,7 +627,7 @@ struct CompetitionHeroCard: View {
 
     private var statusRow: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
                 statusLeading
                 Spacer(minLength: 8)
                 statusTrailing
@@ -644,40 +637,63 @@ struct CompetitionHeroCard: View {
                 statusTrailing
             }
         }
-        .themeLabel()
-        .textCase(.uppercase)
     }
 
     private var statusLeading: some View {
-        HStack(spacing: 8) {
-            Text(status.title)
-                .foregroundStyle(isLive ? Theme.ink : Theme.secondary)
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            titleText
+                .fixedSize(horizontal: false, vertical: true)
             CompetitionMetricBadge(metrics: competition.metrics)
         }
     }
 
+    private var titleText: Text {
+        let name = Text(competition.opponentDisplayName)
+            .font(.headline)
+            .foregroundStyle(Theme.ink)
+        if competition.isPractice {
+            let practice = Text(" · Practice")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(Theme.secondary)
+            return Text("\(name)\(practice)")
+        }
+        return name
+    }
+
     @ViewBuilder
     private var statusTrailing: some View {
-        if isUpdating {
-            Text("Updating…")
-                .foregroundStyle(Theme.secondary)
-        } else if let timing = status.timing {
-            Text(timing)
+        if let text = cardStateText {
+            Text(text)
+                .font(.footnote.weight(.medium))
                 .foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var status: CompetitionStatusText {
-        competitionStatusText(competition, style: .card, locale: locale, timeZone: timeZone)
+    private var cardStateText: String? {
+        if isUpdating { return "Updating…" }
+        switch competition.lifecycle {
+        case let .active(dayOrdinal):
+            return "Day \(dayOrdinal) of 7"
+        case .endsToday:
+            return "Last day"
+        case .tallying:
+            if let deadline = competition.tally?.bestAvailableDeadline,
+               competition.evaluatedAt < deadline {
+                return "Final score by \(competitionDeadlineText(deadline, now: competition.evaluatedAt, locale: locale, timeZone: timeZone))"
+            }
+            return "Final score pending"
+        case .scheduled:
+            return status.timing ?? "Scheduled"
+        case .completed, .archived:
+            return status.timing ?? status.title
+        default:
+            return status.title
+        }
     }
 
-    private var isLive: Bool {
-        guard !isCompact else { return false }
-        switch competition.lifecycle {
-        case .active, .endsToday: return true
-        default: return false
-        }
+    private var status: CompetitionStatusText {
+        competitionStatusText(competition, style: .card, locale: locale, timeZone: timeZone)
     }
 
     private var margin: Double {
@@ -705,12 +721,71 @@ struct CompetitionHeroCard: View {
     }
 
     private var scheduledHeadline: some View {
-        let you = Text("YOU").foregroundStyle(Theme.you)
-        let vs = Text("  VS  ").foregroundStyle(Theme.tertiary)
-        let opponent = Text(competition.opponentDisplayName.uppercased(with: locale))
+        let you = Text("You").foregroundStyle(Theme.you)
+        let vs = Text(" vs ").foregroundStyle(Theme.tertiary)
+        let opponent = Text(competition.opponentDisplayName)
             .foregroundStyle(Theme.ink)
         return Text("\(you)\(vs)\(opponent)")
-            .font(.title2.weight(.heavy).width(.condensed))
+            .font(.title3.weight(.bold))
+    }
+}
+
+private struct CompetitionHomeWeekStrip: View {
+    let days: [LocalCompetitionDayPresentation]
+    let currentDayOrdinal: Int?
+
+    @Environment(\.locale) private var locale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.launchStage) private var launchStage
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(Array(days.enumerated()), id: \.element.ordinal) { index, day in
+                VStack(spacing: 5) {
+                    CompetitionDayBar(outcome: outcome(day), todayColor: leaderColor(day))
+                        .frame(height: 8)
+                        .scaleEffect(x: launchStage == .waiting ? 0 : 1, anchor: .leading)
+                        .moving(Motion.grow(index, of: days.count), value: launchStage)
+                    if dynamicTypeSize < .xxLarge {
+                        Text(singleLetterWeekday(day.day, locale: locale))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(day.ordinal == currentDayOrdinal ? Theme.ink : Theme.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .animation(Motion.fade, value: days.map(outcome))
+        .animation(Motion.fade, value: days.map(leaderColor))
+        .accessibilityHidden(true)
+    }
+
+    private func outcome(_ day: LocalCompetitionDayPresentation) -> CompetitionDayOutcome {
+        competitionDayOutcome(day, currentDayOrdinal: currentDayOrdinal)
+    }
+
+    private func leaderColor(_ day: LocalCompetitionDayPresentation) -> Color {
+        guard let owner = day.ownerAcceptedPoints,
+              let opponent = day.opponentRevealedPoints
+        else {
+            return Theme.outline
+        }
+        return competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent) >= 0
+            ? Theme.you : Theme.ink
+    }
+
+    private func singleLetterWeekday(_ day: CompetitionDay, locale: Locale) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.locale = locale
+        guard let date = calendar.date(
+            from: DateComponents(year: day.year, month: day.month, day: day.day)
+        ) else {
+            return ""
+        }
+        let index = calendar.component(.weekday, from: date) - 1
+        return calendar.veryShortWeekdaySymbols[index]
     }
 }
 
@@ -719,7 +794,6 @@ private struct HeroScoreboard: View {
     let belt: CompetitionBelt?
 
     @ScaledMetric private var scoreSize: CGFloat
-    @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 28
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.launchStage) private var launchStage
 
@@ -731,38 +805,14 @@ private struct HeroScoreboard: View {
 
     var body: some View {
         layout {
-            side(
-                .you,
-                name: "You",
-                avatar: PersonAvatar(name: competition.ownerDisplayName, size: avatarSize, isYou: true),
-                route: competitionOwnProfileRoute(for: competition),
-                points: competition.userPoints,
-                color: Theme.you,
-                trailing: false
-            )
+            side(.you, points: competition.userPoints, color: Theme.you, trailing: false)
             if !isStacked {
-                Rectangle()
-                    .fill(Theme.outline)
+                Color.clear
                     .frame(width: 2, height: scoreSize)
                     .launchLanding(.score)
-                    .scaleEffect(y: launchStage == .waiting ? 0 : 1)
-                    .rotationEffect(.degrees(12))
-                    .moving(Motion.grow, value: launchStage)
                     .accessibilityHidden(true)
             }
-            side(
-                .them,
-                name: competition.opponentDisplayName,
-                avatar: PersonAvatar(
-                    name: competition.opponentDisplayName,
-                    photo: competition.opponentProfileID,
-                    size: avatarSize
-                ),
-                route: competitionProfileRoute(for: competition),
-                points: competition.opponentPoints,
-                color: Theme.ink,
-                trailing: !isStacked
-            )
+            side(.them, points: competition.opponentPoints, color: Theme.ink, trailing: !isStacked)
         }
     }
 
@@ -772,58 +822,30 @@ private struct HeroScoreboard: View {
 
     private var layout: AnyLayout {
         isStacked
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(alignment: .bottom, spacing: 8))
     }
 
     private func side(
         _ holder: CompetitionBeltHolder,
-        name: String,
-        avatar: PersonAvatar,
-        route: CompetitionHomeRoute?,
         points: Double,
         color: Color,
         trailing: Bool
     ) -> some View {
-        VStack(alignment: trailing ? .trailing : .leading, spacing: 2) {
-            if belt?.holder == holder {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
-                        avatar
-                            .modifier(CompetitionProfileTap(route: route))
-                        Text(name.uppercased(with: .current))
-                            .themeLabel(tracking: 1.4)
-                            .lineLimit(1)
-                        beltCount(holder)
-                    }
-                    VStack(alignment: trailing ? .trailing : .leading, spacing: 4) {
-                        nameRow(name: name, avatar: avatar, route: route)
-                        beltCount(holder)
-                    }
-                }
-            } else {
-                nameRow(name: name, avatar: avatar, route: route)
+        let shown = launchStage == .waiting ? 0 : points
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            if trailing, belt?.holder == holder {
+                beltCount(holder)
             }
-            let shown = launchStage == .waiting ? 0 : points
             Text(competitionPointsText(shown))
                 .font(.score(size: scoreSize).monospacedDigit())
                 .scoreRoll(shown, id: competition.id)
+            if !trailing, belt?.holder == holder {
+                beltCount(holder)
+            }
         }
         .foregroundStyle(color)
         .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
-    }
-
-    private func nameRow(
-        name: String,
-        avatar: PersonAvatar,
-        route: CompetitionHomeRoute?
-    ) -> some View {
-        HStack(spacing: 8) {
-            avatar
-                .modifier(CompetitionProfileTap(route: route))
-            Text(name.uppercased(with: .current))
-                .themeLabel(tracking: 1.4)
-        }
     }
 
     private func beltCount(_ holder: CompetitionBeltHolder) -> some View {
@@ -832,7 +854,7 @@ private struct HeroScoreboard: View {
             let defenses = belt?.current?.defenses ?? 0
             if defenses > 0 {
                 Text("×\(defenses)")
-                    .font(.themeLabel.monospacedDigit())
+                    .font(.caption.weight(.bold).monospacedDigit())
                     .accessibilityHidden(true)
             }
         }
@@ -1102,8 +1124,7 @@ private struct CompetitionBeltChip: View {
         HStack(spacing: 6) {
             CompetitionBeltMark(holder: holder)
             Text(text)
-                .themeLabel()
-                .textCase(.uppercase)
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(holder == .you ? Theme.you : Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .contentTransition(.opacity)
@@ -1425,7 +1446,7 @@ private struct CompetitionRecordRow: View {
 struct CompetitionHistoryView: View {
     let publication: LocalCompetitionPublication
     var openRecap: ((CompetitionRecapPeriod) -> Void)? = nil
-    var openMatch: ((CompetitionID) -> Void)? = nil
+    var openMatch: ((CompetitionID, Int?) -> Void)? = nil
 
     @State private var filter = CompetitionWeekFilter.all
     @State private var person: String?
@@ -1477,9 +1498,11 @@ struct CompetitionHistoryView: View {
             CompetitionHistoryCalendarSheet(
                 competitions: publication.dashboard.competitions,
                 now: publication.evaluatedAt,
-                openMatch: { id in openMatch?(id) }
+                openMatch: { id, dayOrdinal in openMatch?(id, dayOrdinal) }
             )
             .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Theme.ground)
         }
     }
 
@@ -2278,18 +2301,21 @@ enum CompetitionHomeRoute: Hashable {
     case ownBadges
     case ownRecords
     case records(String)
-    case competition(CompetitionID)
+    case competition(CompetitionID, dayOrdinal: Int? = nil)
 
     static func stack(
         path: Binding<[CompetitionID]>,
         showsHistory: Binding<Bool>,
         person: Binding<String?>,
         personPlace: Binding<CompetitionPersonPlace> = .constant(CompetitionPersonPlace()),
-        showsFriends: Binding<Bool> = .constant(false)
+        showsFriends: Binding<Bool> = .constant(false),
+        dayOrdinals: Binding<[CompetitionID: Int]> = .constant([:])
     ) -> Binding<[CompetitionHomeRoute]> {
         Binding(
             get: {
-                var routes = path.wrappedValue.map(CompetitionHomeRoute.competition)
+                var routes = path.wrappedValue.map {
+                    CompetitionHomeRoute.competition($0, dayOrdinal: dayOrdinals.wrappedValue[$0])
+                }
                 let place = personPlace.wrappedValue
                 var people: [CompetitionHomeRoute] = place.showsOwnProfile ? [.ownProfile] : []
                 if place.showsOwnProfile, place.showsOwnBadges { people.append(.ownBadges) }
@@ -2345,12 +2371,15 @@ enum CompetitionHomeRoute: Hashable {
                     showsOwnBadges: routes.contains(.ownBadges),
                     showsOwnRecords: routes.contains(.ownRecords)
                 )
-                path.wrappedValue = routes.compactMap { route in
-                    guard case let .competition(id) = route else {
-                        return nil
-                    }
-                    return id
+                var ordinals: [CompetitionID: Int] = [:]
+                var ids: [CompetitionID] = []
+                for route in routes {
+                    guard case let .competition(id, dayOrdinal) = route else { continue }
+                    ids.append(id)
+                    if let dayOrdinal { ordinals[id] = dayOrdinal }
                 }
+                dayOrdinals.wrappedValue = ordinals
+                path.wrappedValue = ids
             }
         )
     }
@@ -2365,7 +2394,7 @@ enum CompetitionHomeRoute: Hashable {
             get: { routes.wrappedValue },
             set: { newRoutes in
                 if let matchID = newRoutes.lazy.compactMap({
-                    if case let .competition(id) = $0 { return id }
+                    if case let .competition(id, _) = $0 { return id }
                     return nil
                 }).first {
                     let hadFriends = routes.wrappedValue.contains(.friends)

@@ -21,7 +21,7 @@ final class AppleFitnessFeaturesTests: XCTestCase {
         }
     }
 
-    func testRivalTrophiesAndCalendarEntries() {
+    func testRivalTrophiesAndCalendarEntries() throws {
         let weeks = [
             week(0, "Maya", you: Array(repeating: 420, count: 7), them: Array(repeating: 380, count: 7)),
             week(1, "Maya", you: Array(repeating: 460, count: 7), them: Array(repeating: 400, count: 7)),
@@ -36,9 +36,41 @@ final class AppleFitnessFeaturesTests: XCTestCase {
 
         let entries = competitionCalendarEntries(weeks)
         XCTAssertEqual(entries.count, 21)
+        let sampleEntry = try XCTUnwrap(entries.values.first)
+        XCTAssertTrue((1...7).contains(sampleEntry.dayOrdinal))
+        XCTAssertEqual(sampleEntry.rings.count, 3)
+        XCTAssertEqual(sampleEntry.rings.map(\.color), [Theme.move, Theme.exercise, Theme.stand])
         let months = competitionCalendarMonths(from: entries)
         XCTAssertFalse(months.isEmpty)
         XCTAssertTrue(months.allSatisfy { (0...6).contains($0.leadingBlanks) })
+
+        var sleepWeek = week(3, "Sam", you: Array(repeating: 300, count: 7), them: Array(repeating: 250, count: 7))
+        sleepWeek.metrics = [.move, .sleep]
+        sleepWeek.days[0].metrics = [.move, .sleep]
+        sleepWeek.days[0].ownerRingPoints = [120, 80, 90]
+        sleepWeek.days[0].ownerSleepPoints = 84
+        let sleepRings = competitionCalendarDayRings(sleepWeek.days[0], metrics: sleepWeek.metrics)
+        XCTAssertEqual(sleepRings.count, 2)
+        XCTAssertEqual(sleepRings[0].color, Theme.move)
+        XCTAssertEqual(sleepRings[0].progress, 1.2, accuracy: 0.001)
+        XCTAssertEqual(sleepRings[1].color, Theme.sleep)
+        XCTAssertEqual(sleepRings[1].progress, 0.84, accuracy: 0.001)
+
+        var path: [CompetitionID] = []
+        var showsHistory = true
+        var person: String?
+        var ordinals: [CompetitionID: Int] = [:]
+        let stack = CompetitionHomeRoute.stack(
+            path: .init(get: { path }, set: { path = $0 }),
+            showsHistory: .init(get: { showsHistory }, set: { showsHistory = $0 }),
+            person: .init(get: { person }, set: { person = $0 }),
+            dayOrdinals: .init(get: { ordinals }, set: { ordinals = $0 })
+        )
+        let targetID = weeks[0].id
+        stack.wrappedValue.append(.competition(targetID, dayOrdinal: 4))
+        XCTAssertEqual(path, [targetID])
+        XCTAssertEqual(ordinals[targetID], 4)
+        XCTAssertEqual(stack.wrappedValue, [.history, .competition(targetID, dayOrdinal: 4)])
     }
 
     func testMatchFormSummaryAndRivalryTrends() {

@@ -253,6 +253,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var labNudges: [CompetitionID: CompetitionFeature.NudgeStatus] = [:]
     @State private var ownReactions: [CompetitionReactionKey: CompetitionReactionKind] = [:]
     @State private var recapPeriod: CompetitionRecapPeriod?
+    @State private var selectedDayOrdinals: [CompetitionID: Int] = [:]
     @State private var judgesNotificationStatus = "Loading sample photos"
     @State private var judgesPhotos = ProfilePhotoImages(ownID: MultiUserCompetitionTestLabFixtures.ownProfileID)
 
@@ -329,7 +330,11 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                 .navigationDestination(for: CompetitionHomeRoute.self) { route in
                     switch route {
                     case .history:
-                        CompetitionHistoryView(publication: publication, openRecap: { recapPeriod = $0 })
+                        CompetitionHistoryView(
+                            publication: publication,
+                            openRecap: { recapPeriod = $0 },
+                            openMatch: { homeStack.wrappedValue.append(.competition($0, dayOrdinal: $1)) }
+                        )
                     case .friends, .profile:
                         EmptyView()
                     case .ownProfile:
@@ -353,7 +358,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                         )
                     case let .records(identity):
                         CompetitionRecordsView(publication: publication, opponentIdentity: identity)
-                    case let .competition(id):
+                    case let .competition(id, _):
                         destination(id)
                     }
                 }
@@ -444,7 +449,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             path: $path,
             showsHistory: $showsHistory,
             person: $historyPerson,
-            personPlace: $personPlace
+            personPlace: $personPlace,
+            dayOrdinals: $selectedDayOrdinals
         )
     }
 

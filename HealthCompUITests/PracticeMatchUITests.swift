@@ -324,24 +324,17 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["competition.history.open"].exists)
     }
 
-    func testTodaysRingsWithOnlyMatchHistory() {
+    func testHomeWithOnlyMatchHistoryShowsLargeTitleWithoutLogo() {
         launchLab(setup: "after-records", arguments: ["-AppleInterfaceStyle", "Dark"])
         XCTAssertTrue(text("Nothing live right now").waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["Home"].exists)
+        XCTAssertFalse(app.buttons["home.logo"].exists)
+        XCTAssertTrue(app.buttons["competition.create.open"].exists)
+        XCTAssertTrue(app.buttons["competition.history.open"].exists)
         let home = XCTAttachment(screenshot: app.screenshot())
         home.name = "Home without an active competition"
         home.lifetime = .keepAlways
         add(home)
-
-        app.buttons["home.logo"].tap()
-        XCTAssertTrue(text("YOUR RINGS TODAY").waitForExistence(timeout: 5))
-        for label in ["Move, 384 of 500 kilocalories", "Exercise, 24 of 30 minutes", "Stand, 7 of 12 hours"] {
-            let reading = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
-            XCTAssertTrue(reading.waitForExistence(timeout: 5), label)
-        }
-        let rings = XCTAttachment(screenshot: app.screenshot())
-        rings.name = "Personal rings today"
-        rings.lifetime = .keepAlways
-        add(rings)
     }
 
     func testOnlyARealMatchAsksForNotifications() {
